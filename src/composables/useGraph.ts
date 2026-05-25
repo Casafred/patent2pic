@@ -1,12 +1,10 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { graphEngine } from '@/services/graph/engine'
 import { useEditorStore } from '@/stores/editor'
-import { useGraphStore } from '@/stores/graph'
 
 export function useGraph() {
   const containerRef = ref<HTMLElement | null>(null)
   const editorStore = useEditorStore()
-  const graphStore = useGraphStore()
   const isReady = ref(false)
 
   function initGraph(container: HTMLElement): void {
@@ -17,11 +15,13 @@ export function useGraph() {
   }
 
   function bindEvents(): void {
-    graphEngine.on('node:click', ({ node }: { node: { id: string } }) => {
+    graphEngine.on('node:click', (args: unknown) => {
+      const { node } = args as { node: { id: string } }
       editorStore.selectNodes([node.id])
     })
 
-    graphEngine.on('edge:click', ({ edge }: { edge: { id: string } }) => {
+    graphEngine.on('edge:click', (args: unknown) => {
+      const { edge } = args as { edge: { id: string } }
       editorStore.selectEdges([edge.id])
     })
 
@@ -37,7 +37,8 @@ export function useGraph() {
       editorStore.markDirty()
     })
 
-    graphEngine.on('scale', ({ sx }: { sx: number }) => {
+    graphEngine.on('scale', (args: unknown) => {
+      const { sx } = args as { sx: number }
       editorStore.setZoom(sx)
     })
   }

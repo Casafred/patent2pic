@@ -138,7 +138,7 @@
 import { ref, computed } from 'vue'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { useAIStore } from '@/stores/ai'
-import { testConnection, getDefaultBaseUrl, getProviderDisplayName } from '@/services/ai/client'
+import { testConnection, getDefaultBaseUrl } from '@/services/ai/client'
 import type { AIProviderType } from '@/types/ai'
 
 defineProps<{ visible: boolean }>()

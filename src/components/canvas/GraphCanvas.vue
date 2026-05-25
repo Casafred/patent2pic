@@ -46,7 +46,6 @@ import { useGraph } from '@/composables/useGraph'
 import { useKeyboard } from '@/composables/useKeyboard'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
-import { graphEngine } from '@/services/graph/engine'
 import { getDefaultNodeStyle, getDefaultEdgeStyle } from '@/services/graph/style-registry'
 import CellEditDialog from '../common/CellEditDialog.vue'
 import type { NodeType, RelationType } from '@/types/graph'
@@ -94,7 +93,8 @@ watch(() => graphStore.extractResult, (newResult) => {
 })
 
 function bindExtraEvents(): void {
-  engine.on('node:dblclick', ({ node }: { node: { id: string; getData: () => Record<string, unknown> } }) => {
+  engine.on('node:dblclick', (args: unknown) => {
+    const { node } = args as { node: { id: string; getData: () => Record<string, unknown> } }
     const data = node.getData()
     editCellId.value = node.id
     editIsNode.value = true
@@ -104,7 +104,8 @@ function bindExtraEvents(): void {
     editDialogVisible.value = true
   })
 
-  engine.on('edge:dblclick', ({ edge }: { edge: { id: string; getData: () => Record<string, unknown> } }) => {
+  engine.on('edge:dblclick', (args: unknown) => {
+    const { edge } = args as { edge: { id: string; getData: () => Record<string, unknown> } }
     const data = edge.getData()
     editCellId.value = edge.id
     editIsNode.value = false
@@ -114,17 +115,20 @@ function bindExtraEvents(): void {
     editDialogVisible.value = true
   })
 
-  engine.on('node:contextmenu', ({ node, e }: { node: { id: string }; e: { clientX: number; clientY: number } }) => {
+  engine.on('node:contextmenu', (args: unknown) => {
+    const { node, e } = args as { node: { id: string }; e: { clientX: number; clientY: number; preventDefault?: () => void } }
     e.preventDefault?.()
     showContextMenu(e.clientX, e.clientY, 'node', node.id)
   })
 
-  engine.on('edge:contextmenu', ({ edge, e }: { edge: { id: string }; e: { clientX: number; clientY: number } }) => {
+  engine.on('edge:contextmenu', (args: unknown) => {
+    const { edge, e } = args as { edge: { id: string }; e: { clientX: number; clientY: number; preventDefault?: () => void } }
     e.preventDefault?.()
     showContextMenu(e.clientX, e.clientY, 'edge', edge.id)
   })
 
-  engine.on('blank:contextmenu', ({ e }: { e: { clientX: number; clientY: number } }) => {
+  engine.on('blank:contextmenu', (args: unknown) => {
+    const { e } = args as { e: { clientX: number; clientY: number; preventDefault?: () => void } }
     e.preventDefault?.()
     showContextMenu(e.clientX, e.clientY, 'blank', '')
   })
@@ -212,12 +216,12 @@ function handleEditSave(data: { originalText: string; chineseText: string; nodeT
     const edge = cell as unknown as { getLabels: () => unknown[]; setLabels: (labels: unknown[]) => void; setData: (data: Record<string, unknown>) => void }
     const labels = edge.getLabels()
     if (labels.length > 0) {
-      edge.setLabels([{
-        ...labels[0],
+      const newLabel = Object.assign({}, labels[0] as Record<string, unknown>, {
         attrs: {
           label: { text: `${data.originalText}\n${data.chineseText}` },
         },
-      }])
+      })
+      edge.setLabels([newLabel])
     }
     const prevData = (cell.getData() as Record<string, unknown>) || {}
     edge.setData({ ...prevData, originalText: data.originalText, chineseText: data.chineseText, relationType: data.relationType })
