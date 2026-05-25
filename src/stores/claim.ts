@@ -1,0 +1,43 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import type { Claim } from '@/types/claim'
+
+export const useClaimStore = defineStore('claim', () => {
+  const rawText = ref('')
+  const claims = ref<Claim[]>([])
+  const activeClaimId = ref<string | null>(null)
+  const history = ref<string[]>([])
+
+  function setText(text: string): void {
+    rawText.value = text
+    if (text && !history.value.includes(text)) {
+      history.value = [text, ...history.value].slice(0, 20)
+    }
+  }
+
+  function setClaims(parsed: Claim[]): void {
+    claims.value = parsed
+    if (parsed.length > 0 && !activeClaimId.value) {
+      activeClaimId.value = parsed[0].id
+    }
+  }
+
+  function setActiveClaim(id: string): void {
+    activeClaimId.value = id
+  }
+
+  function getActiveClaim(): Claim | undefined {
+    return claims.value.find(c => c.id === activeClaimId.value)
+  }
+
+  return {
+    rawText,
+    claims,
+    activeClaimId,
+    history,
+    setText,
+    setClaims,
+    setActiveClaim,
+    getActiveClaim,
+  }
+})

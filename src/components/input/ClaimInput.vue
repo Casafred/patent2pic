@@ -1,0 +1,199 @@
+<template>
+  <div class="claim-input">
+    <div class="section-header">
+      <h3>权利要求输入</h3>
+      <el-button
+        size="small"
+        type="primary"
+        :disabled="!claimStore.rawText.trim() || aiStore.isExtracting || !aiStore.activeApiKey"
+        @click="handleGenerate"
+      >
+        <el-icon v-if="aiStore.isExtracting" class="is-loading"><Loading /></el-icon>
+        {{ aiStore.isExtracting ? '抽取中...' : '生成分解图' }}
+      </el-button>
+    </div>
+
+    <el-input
+      v-model="claimStore.rawText"
+      type="textarea"
+      :rows="16"
+      placeholder="请粘贴专利独立权利要求文本...&#10;&#10;支持同时粘贴多条独立权利要求，系统将自动识别分段。"
+      resize="none"
+      class="claim-textarea"
+      @input="handleTextInput"
+    />
+
+    <div class="input-footer">
+      <span class="char-count">{{ claimStore.rawText.length }} 字</span>
+      <el-button size="small" text @click="claimStore.rawText = ''">清空</el-button>
+    </div>
+
+    <div v-if="claimStore.claims.length > 1" class="claim-list">
+      <div class="claim-list-header">
+        <h4>识别到 {{ claimStore.claims.length }} 条权利要求</h4>
+      </div>
+      <div
+        v-for="claim in claimStore.claims"
+        :key="claim.id"
+        :class="['claim-item', { active: claim.id === claimStore.activeClaimId }]"
+        @click="claimStore.setActiveClaim(claim.id)"
+      >
+        <span class="claim-index">{{ claim.index }}</span>
+        <span class="claim-preview">{{ getClaimPreview(claim) }}</span>
+      </div>
+    </div>
+
+    <div v-if="aiStore.isExtracting" class="extract-progress">
+      <el-progress :percentage="100" :indeterminate="true" :show-text="false" />
+      <p class="progress-text">AI 正在分析权利要求结构...</p>
+    </div>
+
+    <div v-if="extractError" class="extract-error">
+      <el-alert :title="extractError" type="error" :closable="false" show-icon />
+      <el-button size="small" type="primary" @click="handleGenerate" style="margin-top: 8px">重试</el-button>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { Loading } from '@element-plus/icons-vue'
+import { useClaimStore } from '@/stores/claim'
+import { useAIStore } from '@/stores/ai'
+import { useAIExtract } from '@/composables/useAIExtract'
+import { parseClaims, getClaimPreview } from '@/services/claim/parser'
+
+const claimStore = useClaimStore()
+const aiStore = useAIStore()
+const { extractActiveClaim, error: extractError } = useAIExtract()
+
+function handleTextInput(): void {
+  const claims = parseClaims(claimStore.rawText)
+  claimStore.setClaims(claims)
+}
+
+async function handleGenerate(): Promise<void> {
+  if (!claimStore.rawText.trim()) return
+  if (!aiStore.activeApiKey) return
+
+  if (claimStore.claims.length === 0) {
+    handleTextInput()
+  }
+
+  await extractActiveClaim()
+}
+</script>
+
+<style scoped>
+.claim-input {
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-header h3 {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.claim-textarea :deep(.el-textarea__inner) {
+  font-size: var(--font-size-sm);
+  line-height: 1.8;
+  border-radius: var(--radius-md);
+  border-color: var(--border-color);
+}
+
+.claim-textarea :deep(.el-textarea__inner):focus {
+  border-color: var(--color-primary);
+}
+
+.input-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.char-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.claim-list {
+  margin-top: var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.claim-list-header {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-tertiary);
+}
+
+.claim-list-header h4 {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.claim-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  border-top: 1px solid var(--border-color-light);
+  transition: background 0.15s;
+}
+
+.claim-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.claim-item.active {
+  background: var(--color-primary-bg);
+  border-left: 3px solid var(--color-primary);
+}
+
+.claim-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--color-primary);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.claim-preview {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.extract-progress {
+  margin-top: var(--spacing-sm);
+}
+
+.progress-text {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  text-align: center;
+  margin-top: var(--spacing-xs);
+}
+
+.extract-error {
+  margin-top: var(--spacing-sm);
+}
+</style>
