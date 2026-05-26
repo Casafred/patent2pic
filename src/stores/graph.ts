@@ -82,6 +82,14 @@ export const useGraphStore = defineStore('graph', () => {
     }
   }
 
+  function setTabs(data: TabData[]): void {
+    tabs.value = data
+  }
+
+  function setActiveTabId(id: string): void {
+    activeTabId.value = id
+  }
+
   function setExtractResult(result: ExtractResult): void {
     extractResult.value = result
   }
@@ -150,6 +158,8 @@ export const useGraphStore = defineStore('graph', () => {
     addTab,
     removeTab,
     setActiveTab,
+    setActiveTabId,
+    setTabs,
     updateTabExtractResult,
     updateTabSerializedGraph,
     updateTabName,

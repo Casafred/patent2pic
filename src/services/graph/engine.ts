@@ -342,13 +342,41 @@ export class GraphEngine {
     this.graph?.off(event, handler as (...args: never[]) => void)
   }
 
-  async toPNG(_options?: { padding?: number; backgroundColor?: string }): Promise<Blob | null> {
+  async toPNG(options?: { padding?: number; backgroundColor?: string }): Promise<Blob | null> {
     if (!this.graph) return null
-    return null
+
+    return new Promise<Blob | null>((resolve) => {
+      this.graph!.toPNG((dataUrl: string) => {
+        try {
+          const byteString = atob(dataUrl.split(',')[1])
+          const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0]
+          const ab = new ArrayBuffer(byteString.length)
+          const ia = new Uint8Array(ab)
+          for (let i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i)
+          }
+          resolve(new Blob([ab], { type: mimeString }))
+        } catch (err) {
+          console.error('PNG 导出失败:', err)
+          resolve(null)
+        }
+      }, {
+        padding: options?.padding ?? 20,
+        backgroundColor: options?.backgroundColor ?? '#ffffff',
+      })
+    })
   }
 
-  toSVG(): string {
-    return ''
+  toSVG(options?: { padding?: number }): string {
+    if (!this.graph) return ''
+
+    let svgStr = ''
+    this.graph.toSVG((svg: string) => {
+      svgStr = svg
+    }, {
+      padding: options?.padding ?? 20,
+    })
+    return svgStr
   }
 
   toJSON(): Record<string, unknown> {
