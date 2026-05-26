@@ -52,7 +52,7 @@ export function getDefaultModels(providerType: AIProviderType): string[] {
   switch (providerType) {
     case 'openai': return ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo']
     case 'zhipu': return ['glm-4-plus', 'glm-4-flash', 'glm-4-air', 'glm-4']
-    case 'deepseek': return ['deepseek-chat', 'deepseek-reasoner']
+    case 'deepseek': return ['deepseek-v4-flash', 'deepseek-v4-pro']
   }
 }
 
