@@ -15,6 +15,7 @@ import { getDefaultNodeStyle, getDefaultEdgeStyle } from './style-registry'
 
 export class GraphEngine {
   private graph: Graph | null = null
+  private initialGraphJSON: Record<string, unknown> | null = null
 
   init(container: HTMLElement): void {
     this.graph = new Graph({
@@ -143,6 +144,8 @@ export class GraphEngine {
     }
 
     this.graph.stopBatch('build')
+
+    this.initialGraphJSON = this.graph.toJSON()
 
     setTimeout(() => this.fitView(), 100)
   }
@@ -290,6 +293,52 @@ export class GraphEngine {
     const cell = this.graph.getCellById(id)
     if (cell && cell.isEdge()) {
       updateEdgeStyle(cell, style)
+    }
+  }
+
+  bringForward(id: string): void {
+    if (!this.graph) return
+    const cell = this.graph.getCellById(id)
+    if (cell) {
+      const z = cell.getZIndex() ?? 0
+      cell.setZIndex(z + 1)
+    }
+  }
+
+  sendBackward(id: string): void {
+    if (!this.graph) return
+    const cell = this.graph.getCellById(id)
+    if (cell) {
+      const z = cell.getZIndex() ?? 0
+      cell.setZIndex(z - 1)
+    }
+  }
+
+  bringToFront(id: string): void {
+    if (!this.graph) return
+    const cells = this.graph.getCells()
+    let maxZ = 0
+    for (const c of cells) {
+      const z = c.getZIndex() ?? 0
+      if (z > maxZ) maxZ = z
+    }
+    const cell = this.graph.getCellById(id)
+    if (cell) {
+      cell.setZIndex(maxZ + 1)
+    }
+  }
+
+  sendToBack(id: string): void {
+    if (!this.graph) return
+    const cells = this.graph.getCells()
+    let minZ = 0
+    for (const c of cells) {
+      const z = c.getZIndex() ?? 0
+      if (z < minZ) minZ = z
+    }
+    const cell = this.graph.getCellById(id)
+    if (cell) {
+      cell.setZIndex(minZ - 1)
     }
   }
 
@@ -484,6 +533,21 @@ export class GraphEngine {
 
   getZoom(): number {
     return this.graph?.zoom() ?? 1
+  }
+
+  resetToInitial(): boolean {
+    if (!this.graph || !this.initialGraphJSON) return false
+    try {
+      this.graph.fromJSON(this.initialGraphJSON)
+      setTimeout(() => this.fitView(), 100)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  hasInitialState(): boolean {
+    return this.initialGraphJSON !== null
   }
 }
 

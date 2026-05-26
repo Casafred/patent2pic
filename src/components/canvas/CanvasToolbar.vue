@@ -43,6 +43,9 @@
       <el-tooltip content="自动布局" placement="bottom">
         <el-button size="small" @click="engine.applyLayout()">自动布局</el-button>
       </el-tooltip>
+      <el-tooltip content="恢复到初始生成状态" placement="bottom">
+        <el-button size="small" :disabled="!engine.hasInitialState()" @click="handleResetToInitial">重置</el-button>
+      </el-tooltip>
     </div>
 
     <div class="toolbar-divider" />
@@ -59,20 +62,12 @@
     <div class="toolbar-divider" />
 
     <div class="toolbar-group">
-      <el-tooltip content="节点字号" placement="bottom">
+      <el-tooltip content="统一调节字号" placement="bottom">
         <div class="font-size-control">
-          <span class="font-size-label">节点</span>
-          <el-select v-model="nodeFontSize" size="small" style="width: 72px" @change="handleNodeFontSizeChange">
-            <el-option v-for="s in FONT_SIZE_OPTIONS" :key="s" :label="s + 'px'" :value="s" />
-          </el-select>
-        </div>
-      </el-tooltip>
-      <el-tooltip content="连线字号" placement="bottom">
-        <div class="font-size-control">
-          <span class="font-size-label">连线</span>
-          <el-select v-model="edgeFontSize" size="small" style="width: 72px" @change="handleEdgeFontSizeChange">
-            <el-option v-for="s in FONT_SIZE_OPTIONS" :key="s" :label="s + 'px'" :value="s" />
-          </el-select>
+          <span class="font-size-label">字号</span>
+          <el-button size="small" @click="handleFontSizeChange(-1)" :disabled="globalFontSize <= 10">−</el-button>
+          <span class="font-size-value">{{ globalFontSize }}px</span>
+          <el-button size="small" @click="handleFontSizeChange(1)" :disabled="globalFontSize >= 28">+</el-button>
         </div>
       </el-tooltip>
     </div>
@@ -115,9 +110,8 @@
 
 <script setup lang="ts">
 import { RefreshLeft, RefreshRight, ArrowDown } from '@element-plus/icons-vue'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { graphEngine } from '@/services/graph/engine'
-import { FONT_SIZE_OPTIONS } from '@/services/graph/style-registry'
 import { useExport } from '@/composables/useExport'
 import { useProjectFile } from '@/composables/useProjectFile'
 import { useGraphStore } from '@/stores/graph'
@@ -128,8 +122,7 @@ import CellEditDialog from '../common/CellEditDialog.vue'
 
 const engine = graphEngine
 const graphStore = useGraphStore()
-const nodeFontSize = ref(graphStore.globalNodeFontSize)
-const edgeFontSize = ref(graphStore.globalEdgeFontSize)
+const globalFontSize = computed(() => Math.round((graphStore.globalNodeFontSize + graphStore.globalEdgeFontSize) / 2))
 const { downloadFile } = useExport()
 const { saveProject, loadProject } = useProjectFile()
 
@@ -139,15 +132,18 @@ const addOriginalText = ref('')
 const addChineseText = ref('')
 const addNodeType = ref<NodeType>('component')
 
-function handleNodeFontSizeChange(size: number): void {
-  graphStore.setGlobalNodeFontSize(size)
-  engine.setAllNodeFontSize(size)
+function handleFontSizeChange(delta: number): void {
+  const newNodeSize = Math.max(10, Math.min(28, graphStore.globalNodeFontSize + delta))
+  const newEdgeSize = Math.max(10, Math.min(28, graphStore.globalEdgeFontSize + delta))
+  graphStore.setGlobalNodeFontSize(newNodeSize)
+  graphStore.setGlobalEdgeFontSize(newEdgeSize)
+  engine.setAllNodeFontSize(newNodeSize)
+  engine.setAllEdgeFontSize(newEdgeSize)
   engine.applyLayout()
 }
 
-function handleEdgeFontSizeChange(size: number): void {
-  graphStore.setGlobalEdgeFontSize(size)
-  engine.setAllEdgeFontSize(size)
+function handleResetToInitial(): void {
+  engine.resetToInitial()
 }
 
 function handleExport(format: string): void {
@@ -247,5 +243,13 @@ function handleAddSave(data: { originalText: string; chineseText: string; nodeTy
   font-size: 11px;
   color: var(--text-tertiary);
   white-space: nowrap;
+}
+
+.font-size-value {
+  font-size: 12px;
+  color: var(--text-primary);
+  min-width: 36px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 </style>

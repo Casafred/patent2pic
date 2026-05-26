@@ -42,10 +42,10 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
         attrs: {
           bg: {
             ref: 'labelText',
-            refX: -6,
-            refY: -4,
-            refWidth: '130%',
-            refHeight: '130%',
+            refX: -8,
+            refY: -6,
+            refWidth: '140%',
+            refHeight: '140%',
             fill: '#ffffff',
             stroke: '#d9d9d9',
             strokeWidth: 1,
@@ -57,6 +57,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
             fontSize: style.fontSize,
             fontFamily: style.fontFamily,
             fill: style.fontColor,
+            fontWeight: 'bold',
             textAnchor: 'middle',
             textVerticalAnchor: 'middle',
           },

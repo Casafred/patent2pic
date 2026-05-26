@@ -27,6 +27,11 @@
         <div class="menu-item" @click="handleMenuAction('addEdge')">添加连接</div>
         <div class="menu-divider" />
         <div class="menu-item" @click="handleMenuAction('createGroup')">添加到限定框</div>
+        <div class="menu-divider" />
+        <div class="menu-item" @click="handleMenuAction('bringToFront')">置于顶层</div>
+        <div class="menu-item" @click="handleMenuAction('bringForward')">上浮一层</div>
+        <div class="menu-item" @click="handleMenuAction('sendBackward')">下移一层</div>
+        <div class="menu-item" @click="handleMenuAction('sendToBack')">置于底层</div>
       </template>
       <template v-if="contextMenu.type === 'edge'">
         <div class="menu-item" @click="handleMenuAction('edit')">编辑</div>
@@ -175,6 +180,18 @@ function handleMenuAction(action: string): void {
     case 'addEdge':
       break
     case 'createGroup':
+      break
+    case 'bringToFront':
+      engine.bringToFront(contextMenu.cellId)
+      break
+    case 'bringForward':
+      engine.bringForward(contextMenu.cellId)
+      break
+    case 'sendBackward':
+      engine.sendBackward(contextMenu.cellId)
+      break
+    case 'sendToBack':
+      engine.sendToBack(contextMenu.cellId)
       break
     case 'fitView':
       engine.fitView()
