@@ -74,42 +74,6 @@ export class GraphEngine {
         allowReverse: false,
       },
     }))
-
-    this.graph.on('edge:mouseenter', ({ edge }) => {
-      edge.addTools([
-        {
-          name: 'vertices',
-          args: {
-            attrs: {
-              fill: '#1890FF',
-            },
-          },
-        },
-        {
-          name: 'segments',
-          args: {
-            attrs: {
-              fill: '#1890FF',
-            },
-          },
-        },
-      ])
-    })
-
-    this.graph.on('edge:mouseleave', ({ edge }) => {
-      edge.removeTools()
-    })
-
-    this.graph.on('edge:dblclick', ({ edge }) => {
-      edge.addTools([
-        {
-          name: 'label-editor',
-          args: {
-            labelIndex: 0,
-          },
-        },
-      ])
-    })
   }
 
   destroy(): void {
