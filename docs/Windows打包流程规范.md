@@ -48,7 +48,54 @@ node --version
 npm --version
 ```
 
-## 3. 项目结构
+## 3. 国内镜像配置（重要）
+
+在国内网络环境下，必须先配置镜像源，否则下载速度极慢甚至超时失败。
+
+### 3.1 Rust/Cargo 镜像配置
+
+使用字节跳动 RsProxy 镜像（推荐）：
+
+```bash
+# 配置 Rustup 镜像
+export RUSTUP_DIST_SERVER="https://rsproxy.cn"
+export RUSTUP_UPDATE_ROOT="https://rsproxy.cn/rustup"
+
+# 安装 Windows target（使用镜像）
+rustup target add x86_64-pc-windows-msvc
+```
+
+### 3.2 Cargo 镜像配置
+
+创建或编辑 `~/.cargo/config.toml`：
+
+```bash
+mkdir -p ~/.cargo
+cat > ~/.cargo/config.toml << 'EOF'
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy]
+registry = "https://rsproxy.cn/crates.io-index"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[registries.rsproxy]
+index = "https://rsproxy.cn/crates.io-index"
+
+[net]
+git-fetch-with-cli = true
+EOF
+```
+
+### 3.3 安装 cargo-xwin（使用镜像）
+
+```bash
+cargo install cargo-xwin
+```
+
+## 4. 项目结构
 
 ```
 /workspace/
@@ -62,6 +109,7 @@ npm --version
 │   └── icons/
 │       └── icon.ico             # 应用图标
 ├── src/                          # Vue 前端源码
+├── dist/                         # 前端构建产物（编译后端前必须存在）
 ├── portable-build/               # 便携版打包目录
 │   ├── icon.ico
 │   └── 使用说明.txt
@@ -72,7 +120,7 @@ npm --version
 └── vite.config.ts               # Vite 配置
 ```
 
-## 4. 版本号管理
+## 5. 版本号管理
 
 版本号定义在以下文件中，发布新版本时需同步修改：
 
@@ -83,22 +131,28 @@ npm --version
 | `package.json` | `"version": "x.x.x"` |
 | `nsis-build/nsis-installer.nsi` | `!define PRODUCT_VERSION "x.x.x"` |
 
-## 5. 打包流程
+## 6. 打包流程
 
-### 5.1 步骤一：安装依赖
+### 6.1 步骤一：安装依赖
 
 ```bash
 # 安装 Node.js 依赖
 cd /workspace
 npm install
-
-# 安装 Rust 依赖（首次或 Cargo.lock 变更后）
-cd src-tauri
-cargo fetch
-cd ..
 ```
 
-### 5.2 步骤二：交叉编译 Windows 版本
+### 6.2 步骤二：构建前端（必须先于后端编译）
+
+**重要**：Tauri 编译时会检查 `frontendDist` 配置的路径是否存在。如果前端未构建，后端编译会失败。
+
+```bash
+cd /workspace
+npm run build
+```
+
+构建成功后会在 `/workspace/dist/` 目录生成前端产物。
+
+### 6.3 步骤三：交叉编译 Windows 版本
 
 ```bash
 cd /workspace/src-tauri
@@ -114,7 +168,7 @@ src-tauri/target/x86_64-pc-windows-msvc/release/
 └── patent2pic_lib.dll  # 动态链接库
 ```
 
-### 5.3 步骤三：打包便携版
+### 6.4 步骤四：打包便携版
 
 ```bash
 # 复制编译产物到便携版目录
@@ -136,7 +190,7 @@ zip -9 /workspace/Patent2Pic_0.2.0_x64-portable.zip \
 - `icon.ico` - 应用图标
 - `使用说明.txt` - 使用说明
 
-### 5.4 步骤四：打包 NSIS 安装包
+### 6.5 步骤五：打包 NSIS 安装包
 
 ```bash
 # 复制编译产物到 NSIS 目录
@@ -151,14 +205,14 @@ makensis nsis-installer.nsi
 cp Patent2Pic_0.2.0_x64-setup.exe /workspace/
 ```
 
-## 6. 输出产物
+## 7. 输出产物
 
 | 文件名 | 说明 | 预期大小 |
 |--------|------|----------|
 | `Patent2Pic_X.X.X_x64-portable.zip` | 便携版，解压即用 | ~3.5 MB |
 | `Patent2Pic_X.X.X_x64-setup.exe` | NSIS 安装包 | ~3.7 MB |
 
-## 7. NSIS 安装包说明
+## 8. NSIS 安装包说明
 
 NSIS 脚本位于 `nsis-build/nsis-installer.nsi`，主要功能：
 
@@ -176,7 +230,7 @@ NSIS 脚本位于 `nsis-build/nsis-installer.nsi`，主要功能：
 !define PRODUCT_VERSION "0.2.0"
 ```
 
-## 8. 系统要求
+## 9. 系统要求
 
 运行环境要求：
 
@@ -184,9 +238,30 @@ NSIS 脚本位于 `nsis-build/nsis-installer.nsi`，主要功能：
 - x64 架构
 - Microsoft Edge WebView2 运行时（Windows 10 2004+ 和 Windows 11 已内置）
 
-## 9. 常见问题
+## 10. 常见问题
 
-### 9.1 cargo-xwin 下载 MSVC CRT 失败
+### 10.1 frontendDist 路径不存在
+
+**错误信息**：
+```
+error: proc macro panicked
+ = help: message: The `frontendDist` configuration is set to `"../dist"` but this path doesn't exist
+```
+
+**原因**：后端编译前未构建前端，`dist/` 目录不存在。
+
+**解决方案**：先执行前端构建：
+```bash
+cd /workspace && npm run build
+```
+
+### 10.2 Rust/Cargo 下载超时
+
+**原因**：国内访问 Rust 官方源速度慢。
+
+**解决方案**：配置国内镜像（见第 3 节）。
+
+### 10.3 cargo-xwin 下载 MSVC CRT 失败
 
 首次运行 `cargo xwin` 会自动下载 MSVC CRT，需要网络连接。如果下载缓慢，可设置代理：
 
@@ -194,7 +269,7 @@ NSIS 脚本位于 `nsis-build/nsis-installer.nsi`，主要功能：
 export https_proxy=http://your-proxy:port
 ```
 
-### 9.2 编译产物缺失 .dll 文件
+### 10.4 编译产物缺失 .dll 文件
 
 确保 `Cargo.toml` 中包含 cdylib 配置：
 
@@ -204,7 +279,7 @@ name = "patent2pic_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 ```
 
-### 9.3 NSIS 打包失败
+### 10.5 NSIS 打包失败
 
 确保 `nsis-build/` 目录中存在以下文件：
 - `nsis-installer.nsi`
@@ -212,7 +287,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 - `patent2pic.exe`
 - `patent2pic_lib.dll`
 
-## 10. 一键打包脚本
+## 11. 一键打包脚本
 
 可将以下命令整合为脚本：
 
@@ -225,13 +300,18 @@ WORKSPACE="/workspace"
 
 echo "=== 开始打包 Patent2Pic v${VERSION} ==="
 
+# 构建前端
+echo "[1/5] 构建前端..."
+cd ${WORKSPACE}
+npm run build
+
 # 编译
-echo "[1/4] 交叉编译 Windows 版本..."
+echo "[2/5] 交叉编译 Windows 版本..."
 cd ${WORKSPACE}/src-tauri
 cargo xwin build --release --target x86_64-pc-windows-msvc
 
 # 便携版
-echo "[2/4] 打包便携版..."
+echo "[3/5] 打包便携版..."
 cp ${WORKSPACE}/src-tauri/target/x86_64-pc-windows-msvc/release/patent2pic.exe ${WORKSPACE}/portable-build/
 cp ${WORKSPACE}/src-tauri/target/x86_64-pc-windows-msvc/release/patent2pic_lib.dll ${WORKSPACE}/portable-build/
 cd ${WORKSPACE}/portable-build
@@ -240,7 +320,7 @@ zip -9 ${WORKSPACE}/Patent2Pic_${VERSION}_x64-portable.zip \
     patent2pic.exe patent2pic_lib.dll icon.ico 使用说明.txt
 
 # NSIS 安装包
-echo "[3/4] 打包 NSIS 安装包..."
+echo "[4/5] 打包 NSIS 安装包..."
 cp ${WORKSPACE}/src-tauri/target/x86_64-pc-windows-msvc/release/patent2pic.exe ${WORKSPACE}/nsis-build/
 cp ${WORKSPACE}/src-tauri/target/x86_64-pc-windows-msvc/release/patent2pic_lib.dll ${WORKSPACE}/nsis-build/
 cd ${WORKSPACE}/nsis-build
@@ -248,21 +328,38 @@ makensis nsis-installer.nsi
 cp Patent2Pic_${VERSION}_x64-setup.exe ${WORKSPACE}/
 
 # 完成
-echo "[4/4] 打包完成！"
+echo "[5/5] 打包完成！"
 ls -lh ${WORKSPACE}/Patent2Pic_${VERSION}_x64-*.zip ${WORKSPACE}/Patent2Pic_${VERSION}_x64-*.exe
 ```
 
-## 11. 新环境快速部署
+## 12. 新环境快速部署
 
 在新的云端环境执行以下命令即可完成环境配置：
 
 ```bash
+# 配置 Rustup 镜像
+export RUSTUP_DIST_SERVER="https://rsproxy.cn"
+export RUSTUP_UPDATE_ROOT="https://rsproxy.cn/rustup"
+
 # 安装 Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source $HOME/.cargo/env
 
 # 安装 Windows target
 rustup target add x86_64-pc-windows-msvc
+
+# 配置 Cargo 镜像
+mkdir -p ~/.cargo
+cat > ~/.cargo/config.toml << 'EOF'
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[net]
+git-fetch-with-cli = true
+EOF
 
 # 安装 cargo-xwin
 cargo install cargo-xwin
