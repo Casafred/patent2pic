@@ -1,7 +1,14 @@
 import type { EdgeData } from '@/types/graph'
 import { getDefaultEdgeStyle, arrowTypeToMarker } from './style-registry'
 
-export function buildEdge(data: EdgeData): Record<string, unknown> {
+function getEdgeLabelText(data: EdgeData, isChinese: boolean): string {
+  if (isChinese) {
+    return data.chineseText || data.originalText
+  }
+  return `${data.originalText}\n${data.chineseText}`
+}
+
+export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<string, unknown> {
   const style = data.style || getDefaultEdgeStyle(data.relationType)
   const marker = arrowTypeToMarker(style.arrowType)
 
@@ -22,7 +29,7 @@ export function buildEdge(data: EdgeData): Record<string, unknown> {
       {
         attrs: {
           label: {
-            text: `${data.originalText}\n${data.chineseText}`,
+            text: getEdgeLabelText(data, isChinese),
             fontSize: style.fontSize,
             fontFamily: style.fontFamily,
             fill: style.fontColor,

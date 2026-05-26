@@ -41,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useGraph } from '@/composables/useGraph'
 import { useKeyboard } from '@/composables/useKeyboard'
 import { useEditorStore } from '@/stores/editor'
@@ -84,12 +84,6 @@ onMounted(() => {
 onUnmounted(() => {
   destroyGraph()
   window.removeEventListener('click', hideContextMenu)
-})
-
-watch(() => graphStore.extractResult, (newResult) => {
-  if (newResult && engine.getGraph()) {
-    engine.batchBuild(newResult)
-  }
 })
 
 function bindExtraEvents(): void {
@@ -192,6 +186,14 @@ function handleMenuAction(action: string): void {
   }
 }
 
+function getLabelText(data: { originalText: string; chineseText: string }): string {
+  const isChinese = graphStore.activeTab?.isChinese ?? false
+  if (isChinese) {
+    return data.chineseText || data.originalText
+  }
+  return `${data.originalText}\n${data.chineseText}`
+}
+
 function handleEditSave(data: { originalText: string; chineseText: string; nodeType?: NodeType; relationType?: RelationType }): void {
   const graph = engine.getGraph()
   if (!graph) return
@@ -199,9 +201,11 @@ function handleEditSave(data: { originalText: string; chineseText: string; nodeT
   const cell = graph.getCellById(editCellId.value)
   if (!cell) return
 
+  const labelText = getLabelText(data)
+
   if (cell.isNode()) {
     const node = cell as unknown as { attr: (path: string, value?: unknown) => unknown; setData: (data: Record<string, unknown>) => void }
-    node.attr('label/text', `${data.originalText}\n${data.chineseText}`)
+    node.attr('label/text', labelText)
     const prevData = (cell.getData() as Record<string, unknown>) || {}
     node.setData({ ...prevData, originalText: data.originalText, chineseText: data.chineseText, nodeType: data.nodeType })
 
@@ -218,7 +222,7 @@ function handleEditSave(data: { originalText: string; chineseText: string; nodeT
     if (labels.length > 0) {
       const newLabel = Object.assign({}, labels[0] as Record<string, unknown>, {
         attrs: {
-          label: { text: `${data.originalText}\n${data.chineseText}` },
+          label: { text: labelText },
         },
       })
       edge.setLabels([newLabel])

@@ -5,8 +5,9 @@
     </div>
     <div class="center-panel">
       <CanvasToolbar />
+      <TabBar />
       <div class="canvas-area">
-        <GraphCanvas />
+        <GraphCanvas ref="graphCanvasRef" />
       </div>
     </div>
     <div class="right-panel" v-if="editorStore.activePanel === 'style' || hasSelection">
@@ -16,18 +17,49 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ClaimInput from '../input/ClaimInput.vue'
 import GraphCanvas from '../canvas/GraphCanvas.vue'
 import CanvasToolbar from '../canvas/CanvasToolbar.vue'
+import TabBar from '../canvas/TabBar.vue'
 import StylePanel from '../panel/StylePanel.vue'
 import { useEditorStore } from '@/stores/editor'
+import { useGraphStore } from '@/stores/graph'
+import { graphEngine } from '@/services/graph/engine'
 
 const editorStore = useEditorStore()
+const graphStore = useGraphStore()
+const graphCanvasRef = ref<InstanceType<typeof GraphCanvas> | null>(null)
 
 const hasSelection = computed(() =>
   editorStore.selectedNodeIds.length > 0 || editorStore.selectedEdgeIds.length > 0,
 )
+
+watch(() => graphStore.activeTabId, (newTabId, oldTabId) => {
+  if (!newTabId || newTabId === oldTabId) return
+
+  if (oldTabId) {
+    const oldTab = graphStore.tabs.find(t => t.id === oldTabId)
+    if (oldTab) {
+      const json = graphEngine.toJSON()
+      graphStore.updateTabSerializedGraph(oldTabId, json)
+    }
+  }
+
+  const newTab = graphStore.tabs.find(t => t.id === newTabId)
+  if (!newTab) return
+
+  const graph = graphEngine.getGraph()
+  if (!graph) return
+
+  graph.clearCells()
+
+  if (newTab.serializedGraph && Object.keys(newTab.serializedGraph).length > 0) {
+    graphEngine.fromJSON(newTab.serializedGraph)
+  } else if (newTab.extractResult) {
+    graphEngine.batchBuild(newTab.extractResult, undefined, newTab.isChinese)
+  }
+})
 </script>
 
 <style scoped>

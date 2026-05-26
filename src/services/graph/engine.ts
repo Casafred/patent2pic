@@ -77,7 +77,7 @@ export class GraphEngine {
     return this.graph
   }
 
-  batchBuild(result: ExtractResult, layoutOptions?: DagreLayoutOptions): void {
+  batchBuild(result: ExtractResult, layoutOptions?: DagreLayoutOptions, isChinese: boolean = false): void {
     if (!this.graph) return
 
     this.graph.startBatch('build')
@@ -112,17 +112,17 @@ export class GraphEngine {
     }
 
     for (const nodeData of nodeDataList) {
-      const config = buildNode(nodeData)
+      const config = buildNode(nodeData, isChinese)
       this.graph.addNode(config)
     }
 
     for (const edgeData of edgeDataList) {
-      const config = buildEdge(edgeData)
+      const config = buildEdge(edgeData, isChinese)
       this.graph.addEdge(config)
     }
 
     if (result.groups && result.groups.length > 0) {
-      this.renderGroups(result.groups)
+      this.renderGroups(result.groups, isChinese)
     }
 
     this.graph.stopBatch('build')
@@ -130,7 +130,7 @@ export class GraphEngine {
     setTimeout(() => this.fitView(), 100)
   }
 
-  private renderGroups(groups: ExtractGroup[]): void {
+  private renderGroups(groups: ExtractGroup[], isChinese: boolean = false): void {
     if (!this.graph) return
 
     for (const group of groups) {
@@ -142,7 +142,6 @@ export class GraphEngine {
 
       if (memberNodes.length === 0) continue
 
-      // Calculate bounding box manually
       let minX = Infinity
       let minY = Infinity
       let maxX = -Infinity
@@ -159,7 +158,9 @@ export class GraphEngine {
       }
 
       const padding = 20
-      const groupLabel = `${group.label.original}\n${group.label.chinese}`
+      const groupLabel = isChinese
+        ? (group.label.chinese || group.label.original)
+        : `${group.label.original}\n${group.label.chinese}`
 
       this.graph.addNode({
         id: group.id,
@@ -343,12 +344,10 @@ export class GraphEngine {
 
   async toPNG(_options?: { padding?: number; backgroundColor?: string }): Promise<Blob | null> {
     if (!this.graph) return null
-    // Skip export for now since toPNG may not exist
     return null
   }
 
   toSVG(): string {
-    // Skip export for now since toSVG may not exist
     return ''
   }
 

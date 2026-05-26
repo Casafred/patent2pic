@@ -1,7 +1,14 @@
 import type { NodeData } from '@/types/graph'
 import { getDefaultNodeStyle } from './style-registry'
 
-export function buildNode(data: NodeData): Record<string, unknown> {
+function getLabelText(data: NodeData, isChinese: boolean): string {
+  if (isChinese) {
+    return data.chineseText || data.originalText
+  }
+  return `${data.originalText}\n${data.chineseText}`
+}
+
+export function buildNode(data: NodeData, isChinese: boolean = false): Record<string, unknown> {
   const style = data.style || getDefaultNodeStyle(data.nodeType)
 
   return {
@@ -21,7 +28,7 @@ export function buildNode(data: NodeData): Record<string, unknown> {
         ry: style.borderRadius,
       },
       label: {
-        text: `${data.originalText}\n${data.chineseText}`,
+        text: getLabelText(data, isChinese),
         fontSize: style.fontSize,
         fontFamily: style.fontFamily,
         fill: style.fontColor,
