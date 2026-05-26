@@ -1,6 +1,7 @@
 <template>
   <div class="graph-canvas" ref="canvasContainerRef">
     <div class="canvas-viewport" ref="viewportRef"></div>
+    <GraphLegend />
     <div class="canvas-status">
       <span class="zoom-label">{{ Math.round(editorStore.zoom * 100) }}%</span>
     </div>
@@ -48,6 +49,7 @@ import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
 import { getDefaultNodeStyle, getDefaultEdgeStyle } from '@/services/graph/style-registry'
 import CellEditDialog from '../common/CellEditDialog.vue'
+import GraphLegend from './GraphLegend.vue'
 import type { NodeType, RelationType } from '@/types/graph'
 
 const editorStore = useEditorStore()
