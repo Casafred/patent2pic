@@ -46,7 +46,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
             refY: -6,
             refWidth: '140%',
             refHeight: '140%',
-            fill: '#ffffff',
+            fill: style.labelBgColor || '#ffffff',
             fillOpacity: 1,
             stroke: '#d9d9d9',
             strokeWidth: 1,
@@ -73,6 +73,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
       originalText: data.originalText,
       chineseText: data.chineseText,
       relationType: data.relationType,
+      labelDetached: false,
     },
   }
 
@@ -93,7 +94,7 @@ export function updateEdgeStyle(edge: unknown, style: Partial<EdgeData['style']>
     },
   })
 
-  if (style.fontSize || style.fontFamily || style.fontColor || style.labelBgColor) {
+  if (style.fontSize !== undefined || style.fontFamily !== undefined || style.fontColor !== undefined || style.labelBgColor !== undefined) {
     const label = e.getLabels()[0]
     if (label) {
       const existingLabel = label as Record<string, unknown>
@@ -101,19 +102,19 @@ export function updateEdgeStyle(edge: unknown, style: Partial<EdgeData['style']>
       const existingBg = (existingAttrs.bg || {}) as Record<string, unknown>
       const existingLabelText = (existingAttrs.labelText || {}) as Record<string, unknown>
       
+      const newLabelText: Record<string, unknown> = { ...existingLabelText }
+      if (style.fontSize !== undefined) newLabelText.fontSize = style.fontSize
+      if (style.fontFamily !== undefined) newLabelText.fontFamily = style.fontFamily
+      if (style.fontColor !== undefined) newLabelText.fill = style.fontColor
+
+      const newBg: Record<string, unknown> = { ...existingBg }
+      if (style.labelBgColor !== undefined) newBg.fill = style.labelBgColor
+
       const newLabel = {
         ...existingLabel,
         attrs: {
-          bg: {
-            ...existingBg,
-            fill: style.labelBgColor || existingBg.fill,
-          },
-          labelText: {
-            ...existingLabelText,
-            fontSize: style.fontSize || existingLabelText.fontSize,
-            fontFamily: style.fontFamily || existingLabelText.fontFamily,
-            fill: style.fontColor || existingLabelText.fill,
-          },
+          bg: newBg,
+          labelText: newLabelText,
         },
       }
       e.setLabels([newLabel])

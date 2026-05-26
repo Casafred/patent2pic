@@ -36,6 +36,10 @@
       <template v-if="contextMenu.type === 'edge'">
         <div class="menu-item" @click="handleMenuAction('edit')">编辑</div>
         <div class="menu-item" @click="handleMenuAction('delete')">删除</div>
+        <div class="menu-divider" />
+        <div class="menu-item" @click="handleMenuAction('toggleLabelDetach')">
+          {{ engine.isEdgeLabelDetached(contextMenu.cellId) ? '锁定到线条' : '脱离线条自由移动' }}
+        </div>
       </template>
       <template v-if="contextMenu.type === 'blank'">
         <div class="menu-item" @click="handleMenuAction('fitView')">适配画布</div>
@@ -48,6 +52,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { useGraph } from '@/composables/useGraph'
 import { useKeyboard } from '@/composables/useKeyboard'
 import { useEditorStore } from '@/stores/editor'
@@ -147,7 +152,7 @@ function hideContextMenu(): void {
   contextMenu.visible = false
 }
 
-function handleMenuAction(action: string): void {
+async function handleMenuAction(action: string): Promise<void> {
   contextMenu.visible = false
   const graph = engine.getGraph()
   if (!graph) return
@@ -172,10 +177,68 @@ function handleMenuAction(action: string): void {
       editDialogVisible.value = true
       break
     }
-    case 'delete':
-      engine.removeNode(contextMenu.cellId)
-      engine.removeEdge(contextMenu.cellId)
-      editorStore.clearSelection()
+    case 'delete': {
+      if (contextMenu.type === 'node') {
+        const connectedEdgeIds = engine.getConnectedEdgeIds(contextMenu.cellId)
+        
+        if (connectedEdgeIds.length > 0) {
+          try {
+            await ElMessageBox.confirm(
+              `该节点有 ${connectedEdgeIds.length} 条连接的边关系，请选择删除方式：`,
+              '确认删除节点',
+              {
+                distinguishCancelAndClose: true,
+                confirmButtonText: '删除节点和相关边',
+                cancelButtonText: '仅删除节点',
+                type: 'warning',
+              }
+            )
+            engine.removeNodeWithOption(contextMenu.cellId, true)
+            editorStore.clearSelection()
+          } catch (action: unknown) {
+            if (action === 'cancel') {
+              engine.removeNodeWithOption(contextMenu.cellId, false)
+              editorStore.clearSelection()
+            }
+          }
+        } else {
+          try {
+            await ElMessageBox.confirm(
+              '确定要删除此节点吗？',
+              '确认删除',
+              {
+                confirmButtonText: '删除',
+                cancelButtonText: '取消',
+                type: 'warning',
+              }
+            )
+            engine.removeNodeWithOption(contextMenu.cellId, true)
+            editorStore.clearSelection()
+          } catch {
+            // 用户取消
+          }
+        }
+      } else {
+        try {
+          await ElMessageBox.confirm(
+            '确定要删除此边关系吗？',
+            '确认删除',
+            {
+              confirmButtonText: '删除',
+              cancelButtonText: '取消',
+              type: 'warning',
+            }
+          )
+          engine.removeEdge(contextMenu.cellId)
+          editorStore.clearSelection()
+        } catch {
+          // 用户取消
+        }
+      }
+      break
+    }
+    case 'toggleLabelDetach':
+      engine.toggleEdgeLabelDetached(contextMenu.cellId)
       break
     case 'addEdge':
       break

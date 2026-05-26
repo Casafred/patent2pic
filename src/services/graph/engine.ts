@@ -82,6 +82,40 @@ export class GraphEngine {
         allowReverse: false,
       },
     }))
+
+    this.bindEdgeLabelConstraint()
+  }
+
+  private bindEdgeLabelConstraint(): void {
+    if (!this.graph) return
+
+    this.graph.on('edge:label:drag:end', ({ edge }: { edge: { 
+      getData: () => Record<string, unknown> | undefined
+      getLabels: () => unknown[]
+      setLabels: (labels: unknown[]) => void
+    } }) => {
+      const data = edge.getData()
+      if (data?.labelDetached) return
+
+      const labels = edge.getLabels()
+      if (labels.length === 0) return
+
+      const label = labels[0] as Record<string, unknown>
+      const position = label.position as { distance?: number; offset?: { x: number; y: number } } | undefined
+      
+      if (position && typeof position.distance === 'number') {
+        let distance = position.distance
+        distance = Math.max(0, Math.min(1, distance))
+        
+        edge.setLabels([{
+          ...label,
+          position: {
+            distance,
+            offset: { x: 0, y: 0 },
+          },
+        }])
+      }
+    })
   }
 
   destroy(): void {
@@ -269,6 +303,28 @@ export class GraphEngine {
     this.graph?.getCellById(id)?.remove()
   }
 
+  removeNodeWithOption(id: string, removeEdges: boolean = true): void {
+    if (!this.graph) return
+    const cell = this.graph.getCellById(id)
+    if (!cell || !cell.isNode()) return
+
+    if (removeEdges) {
+      const edges = this.graph.getConnectedEdges(cell)
+      edges.forEach(edge => edge.remove())
+    }
+
+    cell.remove()
+  }
+
+  getConnectedEdgeIds(nodeId: string): string[] {
+    if (!this.graph) return []
+    const cell = this.graph.getCellById(nodeId)
+    if (!cell || !cell.isNode()) return []
+    
+    const edges = this.graph.getConnectedEdges(cell)
+    return edges.map(e => e.id)
+  }
+
   updateNodeStyle(id: string, style: Partial<NodeData['style']>): void {
     if (!this.graph) return
     const cell = this.graph.getCellById(id)
@@ -294,6 +350,58 @@ export class GraphEngine {
     if (cell && cell.isEdge()) {
       updateEdgeStyle(cell, style)
     }
+  }
+
+  toggleEdgeLabelDetached(edgeId: string): boolean {
+    if (!this.graph) return false
+    const cell = this.graph.getCellById(edgeId)
+    if (!cell || !cell.isEdge()) return false
+
+    const edge = cell as unknown as {
+      getData: () => Record<string, unknown> | undefined
+      setData: (data: Record<string, unknown>) => void
+      getLabels: () => unknown[]
+      setLabels: (labels: unknown[]) => void
+    }
+
+    const data = edge.getData() || {}
+    const isDetached = !(data.labelDetached as boolean)
+    
+    edge.setData({ ...data, labelDetached: isDetached })
+
+    const labels = edge.getLabels()
+    if (labels.length > 0) {
+      const label = labels[0] as Record<string, unknown>
+      const existingAttrs = (label.attrs || {}) as Record<string, unknown>
+      const existingBg = (existingAttrs.bg || {}) as Record<string, unknown>
+      const existingLabelText = (existingAttrs.labelText || {}) as Record<string, unknown>
+      
+      edge.setLabels([{
+        ...label,
+        attrs: {
+          bg: {
+            ...existingBg,
+            stroke: isDetached ? '#fa8c16' : '#d9d9d9',
+            strokeWidth: isDetached ? 2 : 1,
+          },
+          labelText: existingLabelText,
+        },
+      }])
+    }
+
+    return isDetached
+  }
+
+  isEdgeLabelDetached(edgeId: string): boolean {
+    if (!this.graph) return false
+    const cell = this.graph.getCellById(edgeId)
+    if (!cell || !cell.isEdge()) return false
+
+    const edge = cell as unknown as {
+      getData: () => Record<string, unknown> | undefined
+    }
+    const data = edge.getData()
+    return !!(data?.labelDetached as boolean)
   }
 
   bringForward(id: string): void {
@@ -486,8 +594,11 @@ export class GraphEngine {
     this.graph?.off(event, handler as (...args: never[]) => void)
   }
 
-  async toPNG(options?: { padding?: number; backgroundColor?: string }): Promise<Blob | null> {
+  async toPNG(options?: { padding?: number; backgroundColor?: string; scale?: number }): Promise<Blob | null> {
     if (!this.graph) return null
+
+    const padding = options?.padding ?? 40
+    const backgroundColor = options?.backgroundColor ?? '#ffffff'
 
     return new Promise<Blob | null>((resolve) => {
       this.graph!.toPNG((dataUrl: string) => {
@@ -505,8 +616,38 @@ export class GraphEngine {
           resolve(null)
         }
       }, {
-        padding: options?.padding ?? 20,
-        backgroundColor: options?.backgroundColor ?? '#ffffff',
+        padding,
+        backgroundColor,
+        quality: 1,
+      })
+    })
+  }
+
+  async toHighQualityPNG(options?: { padding?: number; backgroundColor?: string; scale?: number }): Promise<Blob | null> {
+    if (!this.graph) return null
+
+    const padding = options?.padding ?? 40
+    const backgroundColor = options?.backgroundColor ?? '#ffffff'
+
+    return new Promise<Blob | null>((resolve) => {
+      this.graph!.toPNG((dataUrl: string) => {
+        try {
+          const byteString = atob(dataUrl.split(',')[1])
+          const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0]
+          const ab = new ArrayBuffer(byteString.length)
+          const ia = new Uint8Array(ab)
+          for (let i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i)
+          }
+          resolve(new Blob([ab], { type: mimeString }))
+        } catch (err) {
+          console.error('高清 PNG 导出失败:', err)
+          resolve(null)
+        }
+      }, {
+        padding,
+        backgroundColor,
+        quality: 1,
       })
     })
   }
