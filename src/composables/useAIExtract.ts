@@ -8,6 +8,13 @@ import { parseExtractResult } from '@/services/ai/extractor'
 import { graphEngine } from '@/services/graph/engine'
 import type { ExtractResult } from '@/types/ai'
 
+function isChineseText(text: string): boolean {
+  const chineseChars = text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g)
+  const totalChars = text.replace(/[\s\d\p{P}]/gu, '').length
+  if (totalChars === 0) return false
+  return (chineseChars?.length ?? 0) / totalChars > 0.3
+}
+
 export function useAIExtract() {
   const aiStore = useAIStore()
   const claimStore = useClaimStore()
@@ -20,6 +27,10 @@ export function useAIExtract() {
     aiStore.extractError = null
     streamContent.value = ''
     error.value = null
+
+    const isChinese = isChineseText(claimText)
+
+    const tab = graphStore.addTab(undefined, isChinese)
 
     try {
       const messages = buildMessages(claimText)
@@ -45,14 +56,17 @@ export function useAIExtract() {
       const result = parseExtractResult(fullContent)
       result.claimId = claimStore.activeClaimId || ''
 
-      graphStore.setExtractResult(result)
-      graphEngine.batchBuild(result)
+      graphStore.updateTabExtractResult(tab.id, result)
+      graphStore.updateTabName(tab.id, `权利要求 ${graphStore.tabs.length}`)
+
+      graphEngine.batchBuild(result, undefined, isChinese)
 
       return result
     } catch (err) {
       const message = (err as Error).message || '抽取失败'
       aiStore.extractError = message
       error.value = message
+      graphStore.removeTab(tab.id)
       return null
     } finally {
       aiStore.isExtracting = false

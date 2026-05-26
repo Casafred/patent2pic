@@ -1,4 +1,4 @@
-import type { GraphJSON } from '@/types/graph'
+
 import { serializeGraph, deserializeGraph } from '@/services/graph/serializer'
 import { graphEngine } from '@/services/graph/engine'
 import { buildNode } from '@/services/graph/node-builder'

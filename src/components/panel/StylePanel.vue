@@ -126,7 +126,7 @@ import { ref, reactive, computed, watch } from 'vue'
 import { useEditorStore } from '@/stores/editor'
 import { graphEngine } from '@/services/graph/engine'
 import { getDefaultNodeStyle, getDefaultEdgeStyle, lineStyleToDasharray, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, LINE_STYLE_OPTIONS, ARROW_TYPE_OPTIONS } from '@/services/graph/style-registry'
-import type { NodeStyle, EdgeStyle, ArrowType } from '@/types/graph'
+import type { NodeStyle, EdgeStyle } from '@/types/graph'
 
 const editorStore = useEditorStore()
 

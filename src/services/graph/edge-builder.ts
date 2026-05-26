@@ -1,12 +1,18 @@
-import { Graph } from '@antv/x6'
 import type { EdgeData } from '@/types/graph'
 import { getDefaultEdgeStyle, arrowTypeToMarker } from './style-registry'
 
-export function buildEdge(data: EdgeData): Graph.Metadata['edges'][number] {
+function getEdgeLabelText(data: EdgeData, isChinese: boolean): string {
+  if (isChinese) {
+    return data.chineseText || data.originalText
+  }
+  return `${data.originalText}\n${data.chineseText}`
+}
+
+export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<string, unknown> {
   const style = data.style || getDefaultEdgeStyle(data.relationType)
   const marker = arrowTypeToMarker(style.arrowType)
 
-  const edgeConfig: Graph.Metadata['edges'][number] = {
+  const edgeConfig: Record<string, unknown> = {
     id: data.id,
     source: { cell: data.source, port: data.sourcePort },
     target: { cell: data.target, port: data.targetPort },
@@ -23,7 +29,7 @@ export function buildEdge(data: EdgeData): Graph.Metadata['edges'][number] {
       {
         attrs: {
           label: {
-            text: `${data.originalText}\n${data.chineseText}`,
+            text: getEdgeLabelText(data, isChinese),
             fontSize: style.fontSize,
             fontFamily: style.fontFamily,
             fill: style.fontColor,
@@ -49,10 +55,11 @@ export function buildEdge(data: EdgeData): Graph.Metadata['edges'][number] {
   return edgeConfig
 }
 
-export function updateEdgeStyle(edge: Graph.Edge, style: Partial<EdgeData['style']>): void {
+export function updateEdgeStyle(edge: unknown, style: Partial<EdgeData['style']>): void {
   const marker = style.arrowType ? arrowTypeToMarker(style.arrowType) : undefined
+  const e = edge as { attr: (attrs: Record<string, unknown>) => void; getLabels: () => unknown[]; setLabels: (labels: unknown[]) => void }
 
-  edge.attr({
+  e.attr({
     line: {
       stroke: style.stroke,
       strokeWidth: style.strokeWidth,
@@ -63,10 +70,9 @@ export function updateEdgeStyle(edge: Graph.Edge, style: Partial<EdgeData['style
   })
 
   if (style.fontSize || style.fontFamily || style.fontColor || style.labelBgColor) {
-    const label = edge.getLabels()[0]
+    const label = e.getLabels()[0]
     if (label) {
-      edge.setLabels([{
-        ...label,
+      const newLabel = Object.assign({}, label as Record<string, unknown>, {
         attrs: {
           label: {
             fontSize: style.fontSize,
@@ -77,7 +83,8 @@ export function updateEdgeStyle(edge: Graph.Edge, style: Partial<EdgeData['style
             fill: style.labelBgColor,
           },
         },
-      }])
+      })
+      e.setLabels([newLabel])
     }
   }
 }

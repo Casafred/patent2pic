@@ -102,7 +102,8 @@ export class OpenAIProvider implements AIProviderAdapter {
   }
 
   private extractMeta(params: ChatParams & { _meta?: { baseUrl?: string; apiKey?: string } }): { baseUrl: string; apiKey: string } {
-    const meta = (params as Record<string, unknown>)._meta as { baseUrl?: string; apiKey?: string } | undefined
+    const paramsAny = params as unknown as Record<string, unknown>
+    const meta = paramsAny._meta as { baseUrl?: string; apiKey?: string } | undefined
     return {
       baseUrl: meta?.baseUrl || 'https://api.openai.com',
       apiKey: meta?.apiKey || '',

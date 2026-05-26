@@ -43,6 +43,9 @@
       <el-tooltip content="自动布局" placement="bottom">
         <el-button size="small" @click="engine.applyLayout()">自动布局</el-button>
       </el-tooltip>
+      <el-tooltip content="清空画布" placement="bottom">
+        <el-button size="small" type="danger" @click="handleClearCanvas">清空</el-button>
+      </el-tooltip>
     </div>
 
     <div class="toolbar-spacer" />
@@ -69,9 +72,11 @@ import { RefreshLeft, RefreshRight, ArrowDown } from '@element-plus/icons-vue'
 import { graphEngine } from '@/services/graph/engine'
 import { useExport } from '@/composables/useExport'
 import { useProjectFile } from '@/composables/useProjectFile'
+import { useGraphStore } from '@/stores/graph'
 import type { ExportFormat } from '@/types/app'
 
 const engine = graphEngine
+const graphStore = useGraphStore()
 const { downloadFile } = useExport()
 const { saveProject, loadProject } = useProjectFile()
 
@@ -85,6 +90,14 @@ async function handleSaveProject(): Promise<void> {
 
 async function handleLoadProject(): Promise<void> {
   await loadProject()
+}
+
+function handleClearCanvas(): void {
+  const graph = engine.getGraph()
+  if (graph) {
+    graph.clearCells()
+  }
+  graphStore.clearActiveTabGraph()
 }
 </script>
 

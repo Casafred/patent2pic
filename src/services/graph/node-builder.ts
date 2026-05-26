@@ -1,8 +1,14 @@
-import { Graph, Shape } from '@antv/x6'
 import type { NodeData } from '@/types/graph'
 import { getDefaultNodeStyle } from './style-registry'
 
-export function buildNode(data: NodeData): Graph.Metadata['nodes'][number] {
+function getLabelText(data: NodeData, isChinese: boolean): string {
+  if (isChinese) {
+    return data.chineseText || data.originalText
+  }
+  return `${data.originalText}\n${data.chineseText}`
+}
+
+export function buildNode(data: NodeData, isChinese: boolean = false): Record<string, unknown> {
   const style = data.style || getDefaultNodeStyle(data.nodeType)
 
   return {
@@ -22,7 +28,7 @@ export function buildNode(data: NodeData): Graph.Metadata['nodes'][number] {
         ry: style.borderRadius,
       },
       label: {
-        text: `${data.originalText}\n${data.chineseText}`,
+        text: getLabelText(data, isChinese),
         fontSize: style.fontSize,
         fontFamily: style.fontFamily,
         fill: style.fontColor,
@@ -48,47 +54,46 @@ export function buildNode(data: NodeData): Graph.Metadata['nodes'][number] {
       originalText: data.originalText,
       chineseText: data.chineseText,
       nodeType: data.nodeType,
-      sourceSentence: data.sourceSentence,
     },
   }
 }
 
-export function updateNodeStyle(node: Graph.Node, style: Partial<NodeData['style']>): void {
+export function updateNodeStyle(node: unknown, style: Partial<NodeData['style']>): void {
+  const n = node as unknown as {
+    attr: (path: string, value?: unknown) => unknown
+    getSize: () => { width: number; height: number }
+    resize: (width: number, height: number) => void
+  }
   const currentStyle = {
-    fill: node.attr('body/fill') as string,
-    stroke: node.attr('body/stroke') as string,
-    strokeWidth: node.attr('body/strokeWidth') as number,
-    strokeDasharray: node.attr('body/strokeDasharray') as string | null,
-    rx: node.attr('body/rx') as number,
-    ry: node.attr('body/ry') as number,
-    fontSize: node.attr('label/fontSize') as number,
-    fontFamily: node.attr('label/fontFamily') as string,
-    fontColor: node.attr('label/fill') as string,
-    fontWeight: node.attr('label/fontWeight') as string,
-    fontStyle: node.attr('label/fontStyle') as string,
+    fill: n.attr('body/fill') as string,
+    stroke: n.attr('body/stroke') as string,
+    strokeWidth: n.attr('body/strokeWidth') as number,
+    strokeDasharray: n.attr('body/strokeDasharray') as string | null,
+    rx: n.attr('body/rx') as number,
+    ry: n.attr('body/ry') as number,
+    fontSize: n.attr('label/fontSize') as number,
+    fontFamily: n.attr('label/fontFamily') as string,
+    fontColor: n.attr('label/fill') as string,
+    fontWeight: n.attr('label/fontWeight') as string,
+    fontStyle: n.attr('label/fontStyle') as string,
   }
 
   const merged = { ...currentStyle, ...style }
 
-  node.attr({
-    body: {
-      fill: merged.fill,
-      stroke: merged.stroke,
-      strokeWidth: merged.strokeWidth,
-      strokeDasharray: merged.strokeDasharray ?? '',
-      rx: merged.rx ?? merged.borderRadius ?? 8,
-      ry: merged.ry ?? merged.borderRadius ?? 8,
-    },
-    label: {
-      fontSize: merged.fontSize,
-      fontFamily: merged.fontFamily,
-      fill: merged.fontColor,
-      fontWeight: merged.fontWeight,
-      fontStyle: merged.fontStyle,
-    },
-  })
+  n.attr('body/fill', merged.fill)
+  n.attr('body/stroke', merged.stroke)
+  n.attr('body/strokeWidth', merged.strokeWidth)
+  n.attr('body/strokeDasharray', merged.strokeDasharray ?? '')
+  n.attr('body/rx', merged.rx ?? merged.borderRadius ?? 8)
+  n.attr('body/ry', merged.ry ?? merged.borderRadius ?? 8)
+  n.attr('label/fontSize', merged.fontSize)
+  n.attr('label/fontFamily', merged.fontFamily)
+  n.attr('label/fill', merged.fontColor)
+  n.attr('label/fontWeight', merged.fontWeight)
+  n.attr('label/fontStyle', merged.fontStyle)
 
   if (style.width || style.height) {
-    node.resize(style.width || node.getSize().width, style.height || node.getSize().height)
+    const size = n.getSize()
+    n.resize(style.width || size.width, style.height || size.height)
   }
 }

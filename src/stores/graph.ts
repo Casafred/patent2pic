@@ -1,13 +1,86 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { NodeData, EdgeData, GroupData, GraphJSON } from '@/types/graph'
 import type { ExtractResult } from '@/types/ai'
 
+export interface TabData {
+  id: string
+  name: string
+  extractResult: ExtractResult | null
+  serializedGraph: Record<string, unknown> | null
+  isChinese: boolean
+}
+
 export const useGraphStore = defineStore('graph', () => {
+  const tabs = ref<TabData[]>([])
+  const activeTabId = ref<string>('')
   const nodes = ref<NodeData[]>([])
   const edges = ref<EdgeData[]>([])
   const groups = ref<GroupData[]>([])
   const extractResult = ref<ExtractResult | null>(null)
+
+  const activeTab = computed(() =>
+    tabs.value.find(t => t.id === activeTabId.value) || null,
+  )
+
+  let tabCounter = 0
+
+  function addTab(name?: string, isChinese: boolean = false): TabData {
+    tabCounter++
+    const tab: TabData = {
+      id: `tab-${Date.now()}-${tabCounter}`,
+      name: name || `画布 ${tabCounter}`,
+      extractResult: null,
+      serializedGraph: null,
+      isChinese,
+    }
+    tabs.value.push(tab)
+    activeTabId.value = tab.id
+    return tab
+  }
+
+  function removeTab(id: string): void {
+    const index = tabs.value.findIndex(t => t.id === id)
+    if (index === -1) return
+
+    tabs.value.splice(index, 1)
+
+    if (activeTabId.value === id) {
+      if (tabs.value.length > 0) {
+        const newIndex = Math.min(index, tabs.value.length - 1)
+        activeTabId.value = tabs.value[newIndex].id
+      } else {
+        activeTabId.value = ''
+      }
+    }
+  }
+
+  function setActiveTab(id: string): void {
+    if (activeTabId.value !== id) {
+      activeTabId.value = id
+    }
+  }
+
+  function updateTabExtractResult(id: string, result: ExtractResult): void {
+    const tab = tabs.value.find(t => t.id === id)
+    if (tab) {
+      tab.extractResult = result
+    }
+  }
+
+  function updateTabSerializedGraph(id: string, json: Record<string, unknown>): void {
+    const tab = tabs.value.find(t => t.id === id)
+    if (tab) {
+      tab.serializedGraph = json
+    }
+  }
+
+  function updateTabName(id: string, name: string): void {
+    const tab = tabs.value.find(t => t.id === id)
+    if (tab) {
+      tab.name = name
+    }
+  }
 
   function setExtractResult(result: ExtractResult): void {
     extractResult.value = result
@@ -46,6 +119,15 @@ export const useGraphStore = defineStore('graph', () => {
     extractResult.value = null
   }
 
+  function clearActiveTabGraph(): void {
+    const tab = activeTab.value
+    if (tab) {
+      tab.extractResult = null
+      tab.serializedGraph = null
+    }
+    clearGraph()
+  }
+
   function toJSON(): GraphJSON {
     return {
       version: '1.0.0',
@@ -58,10 +140,19 @@ export const useGraphStore = defineStore('graph', () => {
   }
 
   return {
+    tabs,
+    activeTabId,
+    activeTab,
     nodes,
     edges,
     groups,
     extractResult,
+    addTab,
+    removeTab,
+    setActiveTab,
+    updateTabExtractResult,
+    updateTabSerializedGraph,
+    updateTabName,
     setExtractResult,
     setNodes,
     setEdges,
@@ -69,6 +160,7 @@ export const useGraphStore = defineStore('graph', () => {
     updateNodeStyle,
     updateEdgeStyle,
     clearGraph,
+    clearActiveTabGraph,
     toJSON,
   }
 })
