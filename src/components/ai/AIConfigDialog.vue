@@ -2,12 +2,23 @@
   <el-dialog
     :model-value="visible"
     @update:model-value="$emit('update:visible', $event)"
-    title="API 配置"
+    title="设置"
     width="560px"
     :close-on-click-modal="false"
     destroy-on-close
   >
-    <div class="ai-config">
+    <div class="settings-tabs">
+      <button
+        v-for="tab in settingsTabs"
+        :key="tab.key"
+        :class="['settings-tab', { active: activeSettingsTab === tab.key }]"
+        @click="activeSettingsTab = tab.key"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <div v-if="activeSettingsTab === 'api'" class="ai-config">
       <div class="provider-tabs">
         <button
           v-for="p in providerTypes"
@@ -114,6 +125,8 @@
       </div>
     </div>
 
+    <PromptSettings v-if="activeSettingsTab === 'prompt'" />
+
     <el-dialog
       v-model="showAddModel"
       title="添加模型"
@@ -140,11 +153,19 @@ import { QuestionFilled } from '@element-plus/icons-vue'
 import { useAIStore } from '@/stores/ai'
 import { testConnection, getDefaultBaseUrl } from '@/services/ai/client'
 import type { AIProviderType } from '@/types/ai'
+import PromptSettings from './PromptSettings.vue'
 
 defineProps<{ visible: boolean }>()
 defineEmits<{ 'update:visible': [value: boolean] }>()
 
 const aiStore = useAIStore()
+
+const activeSettingsTab = ref<'api' | 'prompt'>('api')
+
+const settingsTabs = [
+  { key: 'api' as const, label: 'API 配置' },
+  { key: 'prompt' as const, label: '提示词设置' },
+]
 
 const providerTypes: { type: AIProviderType; label: string }[] = [
   { type: 'zhipu', label: '智谱 (GLM)' },
@@ -195,6 +216,38 @@ function handleReset(): void {
 </script>
 
 <style scoped>
+.settings-tabs {
+  display: flex;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.settings-tab {
+  flex: 1;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-tab.active {
+  background: var(--bg-secondary);
+  color: var(--color-primary);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-tab:hover:not(.active) {
+  color: var(--text-primary);
+}
+
 .ai-config {
   display: flex;
   flex-direction: column;

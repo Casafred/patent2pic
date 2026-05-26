@@ -239,6 +239,47 @@ export class GraphEngine {
     }
   }
 
+  setAllNodeFontSize(fontSize: number): void {
+    if (!this.graph) return
+    this.graph.startBatch('fontSize')
+    const nodes = this.graph.getNodes()
+    for (const node of nodes) {
+      const n = node as unknown as { attr: (path: string, value?: unknown) => unknown; resize: (w: number, h: number) => void; getSize: () => { width: number; height: number } }
+      n.attr('label/fontSize', fontSize)
+      const scaleFactor = fontSize / 13
+      const newWidth = Math.max(80, Math.round(160 * scaleFactor))
+      const newHeight = Math.max(40, Math.round(60 * scaleFactor))
+      n.resize(newWidth, newHeight)
+    }
+    this.graph.stopBatch('fontSize')
+  }
+
+  setAllEdgeFontSize(fontSize: number): void {
+    if (!this.graph) return
+    this.graph.startBatch('fontSize')
+    const edges = this.graph.getEdges()
+    for (const edge of edges) {
+      const e = edge as { getLabels: () => unknown[]; setLabels: (labels: unknown[]) => void }
+      const labels = e.getLabels()
+      if (labels.length > 0) {
+        const firstLabel = labels[0] as Record<string, unknown>
+        const firstAttrs = (firstLabel.attrs || {}) as Record<string, unknown>
+        const firstLabelAttrs = (firstAttrs.label || {}) as Record<string, unknown>
+        const newLabel = Object.assign({}, firstLabel, {
+          attrs: {
+            ...firstAttrs,
+            label: {
+              ...firstLabelAttrs,
+              fontSize,
+            },
+          },
+        })
+        e.setLabels([newLabel])
+      }
+    }
+    this.graph.stopBatch('fontSize')
+  }
+
   applyLayout(options?: DagreLayoutOptions): void {
     if (!this.graph) return
 

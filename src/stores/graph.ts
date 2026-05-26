@@ -19,6 +19,9 @@ export const useGraphStore = defineStore('graph', () => {
   const groups = ref<GroupData[]>([])
   const extractResult = ref<ExtractResult | null>(null)
 
+  const globalNodeFontSize = ref<number>(13)
+  const globalEdgeFontSize = ref<number>(11)
+
   const activeTab = computed(() =>
     tabs.value.find(t => t.id === activeTabId.value) || null,
   )
@@ -120,6 +123,14 @@ export const useGraphStore = defineStore('graph', () => {
     }
   }
 
+  function setGlobalNodeFontSize(size: number): void {
+    globalNodeFontSize.value = size
+  }
+
+  function setGlobalEdgeFontSize(size: number): void {
+    globalEdgeFontSize.value = size
+  }
+
   function clearGraph(): void {
     nodes.value = []
     edges.value = []
@@ -155,6 +166,8 @@ export const useGraphStore = defineStore('graph', () => {
     edges,
     groups,
     extractResult,
+    globalNodeFontSize,
+    globalEdgeFontSize,
     addTab,
     removeTab,
     setActiveTab,
@@ -169,6 +182,8 @@ export const useGraphStore = defineStore('graph', () => {
     setGroups,
     updateNodeStyle,
     updateEdgeStyle,
+    setGlobalNodeFontSize,
+    setGlobalEdgeFontSize,
     clearGraph,
     clearActiveTabGraph,
     toJSON,
