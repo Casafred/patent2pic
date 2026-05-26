@@ -8,8 +8,28 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue'
 import TitleBar from './components/layout/TitleBar.vue'
 import AppLayout from './components/layout/AppLayout.vue'
+import { useAutoSave } from '@/composables/useAutoSave'
+
+const { registerBeforeUnload, loadFromLocalStorage, startIntervalSave } = useAutoSave()
+
+let cleanupBeforeUnload: (() => void) | null = null
+let cleanupInterval: (() => void) | null = null
+
+onMounted(() => {
+  cleanupBeforeUnload = registerBeforeUnload()
+  cleanupInterval = startIntervalSave()
+  setTimeout(() => {
+    loadFromLocalStorage()
+  }, 300)
+})
+
+onUnmounted(() => {
+  cleanupBeforeUnload?.()
+  cleanupInterval?.()
+})
 </script>
 
 <style scoped>

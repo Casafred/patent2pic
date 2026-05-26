@@ -1,8 +1,5 @@
 
-import { serializeGraph, deserializeGraph } from '@/services/graph/serializer'
 import { graphEngine } from '@/services/graph/engine'
-import { buildNode } from '@/services/graph/node-builder'
-import { buildEdge } from '@/services/graph/edge-builder'
 import { useGraphStore } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
 
@@ -19,17 +16,18 @@ export function useProjectFile() {
     if (!graph) return
 
     const claim = claimStore.getActiveClaim()
-    const json = serializeGraph(
-      graphStore.nodes,
-      graphStore.edges,
-      graphStore.groups,
-      claim?.id || '',
-    )
+
+    const currentTab = graphStore.activeTab
+    if (currentTab) {
+      graphStore.updateTabSerializedGraph(currentTab.id, graphEngine.toJSON())
+    }
 
     const projectData = {
       version: '1.0.0',
       claimText: claim?.rawText || claimStore.rawText,
-      graph: json,
+      graphJSON: graphEngine.toJSON(),
+      tabs: graphStore.tabs,
+      activeTabId: graphStore.activeTabId,
     }
 
     const content = JSON.stringify(projectData, null, 2)
@@ -128,27 +126,34 @@ export function useProjectFile() {
         claimStore.setText(data.claimText)
       }
 
-      if (data.graph) {
-        const graphData = deserializeGraph(data.graph)
-        graphStore.setNodes(graphData.nodes)
-        graphStore.setEdges(graphData.edges)
-        graphStore.setGroups(graphData.groups)
+      if (data.tabs && Array.isArray(data.tabs) && data.tabs.length > 0) {
+        graphStore.setTabs(data.tabs)
+        graphStore.setActiveTabId(data.activeTabId || data.tabs[0].id)
 
+        const activeTab = graphStore.activeTab
+        const graphJSON = activeTab?.serializedGraph || data.graphJSON
+
+        if (graphJSON) {
+          const graph = graphEngine.getGraph()
+          if (graph) {
+            graph.clearCells()
+            graphEngine.fromJSON(graphJSON)
+            setTimeout(() => graphEngine.fitView(), 100)
+          }
+        }
+      } else if (data.graphJSON) {
         const graph = graphEngine.getGraph()
         if (graph) {
           graph.clearCells()
-
-          for (const nodeData of graphData.nodes) {
-            const config = buildNode(nodeData)
-            graph.addNode(config)
-          }
-
-          for (const edgeData of graphData.edges) {
-            const config = buildEdge(edgeData)
-            graph.addEdge(config)
-          }
-
-          graphEngine.fitView()
+          graphEngine.fromJSON(data.graphJSON)
+          setTimeout(() => graphEngine.fitView(), 100)
+        }
+      } else if (data.graph) {
+        const graph = graphEngine.getGraph()
+        if (graph) {
+          graph.clearCells()
+          graphEngine.fromJSON(data.graph)
+          setTimeout(() => graphEngine.fitView(), 100)
         }
       }
 
