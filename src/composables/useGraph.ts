@@ -16,8 +16,12 @@ export function useGraph() {
 
   function bindEvents(): void {
     graphEngine.on('node:click', (args: unknown) => {
-      const { node } = args as { node: { id: string } }
-      editorStore.selectNodes([node.id])
+      const { node, e } = args as { node: { id: string }; e: { ctrlKey: boolean; metaKey: boolean } }
+      if (e.ctrlKey || e.metaKey) {
+        editorStore.toggleNodeInSelection(node.id)
+      } else {
+        editorStore.selectNodes([node.id])
+      }
     })
 
     graphEngine.on('edge:click', (args: unknown) => {

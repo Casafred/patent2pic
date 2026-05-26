@@ -1,62 +1,78 @@
 <template>
   <div class="claim-input">
-    <div class="section-header">
-      <h3>权利要求输入</h3>
-      <el-button
-        size="small"
-        type="primary"
-        :disabled="!claimStore.rawText.trim() || aiStore.isExtracting || !aiStore.activeApiKey"
-        @click="handleGenerate"
-      >
-        <el-icon v-if="aiStore.isExtracting" class="is-loading"><Loading /></el-icon>
-        {{ aiStore.isExtracting ? '抽取中...' : '生成分解图' }}
-      </el-button>
-    </div>
-
-    <el-input
-      v-model="claimStore.rawText"
-      type="textarea"
-      :rows="16"
-      placeholder="请粘贴专利独立权利要求文本...&#10;&#10;支持同时粘贴多条独立权利要求，系统将自动识别分段。"
-      resize="none"
-      class="claim-textarea"
-      @input="handleTextInput"
-    />
-
-    <div class="input-footer">
-      <span class="char-count">{{ claimStore.rawText.length }} 字</span>
-      <el-button size="small" text @click="claimStore.rawText = ''">清空</el-button>
-    </div>
-
-    <div v-if="claimStore.claims.length > 1" class="claim-list">
-      <div class="claim-list-header">
-        <h4>识别到 {{ claimStore.claims.length }} 条权利要求</h4>
+    <template v-if="!claimStore.isInputCollapsed">
+      <div class="section-header">
+        <h3>权利要求输入</h3>
+        <el-button
+          size="small"
+          type="primary"
+          :disabled="!claimStore.rawText.trim() || aiStore.isExtracting || !aiStore.activeApiKey"
+          @click="handleGenerate"
+        >
+          <el-icon v-if="aiStore.isExtracting" class="is-loading"><Loading /></el-icon>
+          {{ aiStore.isExtracting ? '抽取中...' : '生成分解图' }}
+        </el-button>
       </div>
-      <div
-        v-for="claim in claimStore.claims"
-        :key="claim.id"
-        :class="['claim-item', { active: claim.id === claimStore.activeClaimId }]"
-        @click="claimStore.setActiveClaim(claim.id)"
-      >
-        <span class="claim-index">{{ claim.index }}</span>
-        <span class="claim-preview">{{ getClaimPreview(claim) }}</span>
+
+      <el-input
+        v-model="claimStore.rawText"
+        type="textarea"
+        :rows="16"
+        placeholder="请粘贴专利独立权利要求文本...&#10;&#10;支持同时粘贴多条独立权利要求，系统将自动识别分段。"
+        resize="none"
+        class="claim-textarea"
+        @input="handleTextInput"
+      />
+
+      <div class="input-footer">
+        <span class="char-count">{{ claimStore.rawText.length }} 字</span>
+        <el-button size="small" text @click="claimStore.rawText = ''">清空</el-button>
       </div>
-    </div>
 
-    <div v-if="aiStore.isExtracting" class="extract-progress">
-      <el-progress :percentage="100" :indeterminate="true" :show-text="false" />
-      <p class="progress-text">AI 正在分析权利要求结构...</p>
-    </div>
+      <div v-if="claimStore.claims.length > 1" class="claim-list">
+        <div class="claim-list-header">
+          <h4>识别到 {{ claimStore.claims.length }} 条权利要求</h4>
+        </div>
+        <div
+          v-for="claim in claimStore.claims"
+          :key="claim.id"
+          :class="['claim-item', { active: claim.id === claimStore.activeClaimId }]"
+          @click="claimStore.setActiveClaim(claim.id)"
+        >
+          <span class="claim-index">{{ claim.index }}</span>
+          <span class="claim-preview">{{ getClaimPreview(claim) }}</span>
+        </div>
+      </div>
 
-    <div v-if="extractError" class="extract-error">
-      <el-alert :title="extractError" type="error" :closable="false" show-icon />
-      <el-button size="small" type="primary" @click="handleGenerate" style="margin-top: 8px">重试</el-button>
-    </div>
+      <div v-if="aiStore.isExtracting" class="extract-progress">
+        <el-progress :percentage="100" :indeterminate="true" :show-text="false" />
+        <p class="progress-text">AI 正在分析权利要求结构...</p>
+      </div>
+
+      <div v-if="extractError" class="extract-error">
+        <el-alert :title="extractError" type="error" :closable="false" show-icon />
+        <el-button size="small" type="primary" @click="handleGenerate" style="margin-top: 8px">重试</el-button>
+      </div>
+    </template>
+
+    <template v-else>
+      <div class="collapsed-bar" @click="claimStore.expandInput()">
+        <div class="collapsed-info">
+          <span class="collapsed-label">权利要求 {{ activeClaimIndex }}</span>
+          <span class="collapsed-preview">{{ collapsedPreview }}</span>
+        </div>
+        <el-button size="small" text class="expand-btn">
+          <el-icon><ArrowDown /></el-icon>
+          展开
+        </el-button>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Loading } from '@element-plus/icons-vue'
+import { computed } from 'vue'
+import { Loading, ArrowDown } from '@element-plus/icons-vue'
 import { useClaimStore } from '@/stores/claim'
 import { useAIStore } from '@/stores/ai'
 import { useAIExtract } from '@/composables/useAIExtract'
@@ -65,6 +81,18 @@ import { parseClaims, getClaimPreview } from '@/services/claim/parser'
 const claimStore = useClaimStore()
 const aiStore = useAIStore()
 const { extractActiveClaim, error: extractError } = useAIExtract()
+
+const activeClaimIndex = computed(() => {
+  const claim = claimStore.getActiveClaim()
+  return claim ? claim.index : ''
+})
+
+const collapsedPreview = computed(() => {
+  const claim = claimStore.getActiveClaim()
+  if (!claim) return ''
+  const preview = getClaimPreview(claim)
+  return preview.length > 40 ? preview.slice(0, 40) + '...' : preview
+})
 
 function handleTextInput(): void {
   const claims = parseClaims(claimStore.rawText)
@@ -79,7 +107,10 @@ async function handleGenerate(): Promise<void> {
     handleTextInput()
   }
 
-  await extractActiveClaim()
+  const result = await extractActiveClaim()
+  if (result) {
+    claimStore.collapseInput()
+  }
 }
 </script>
 
@@ -195,5 +226,52 @@ async function handleGenerate(): Promise<void> {
 
 .extract-error {
   margin-top: var(--spacing-sm);
+}
+
+.collapsed-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s;
+  border: 1px solid var(--border-color-light);
+}
+
+.collapsed-bar:hover {
+  background: var(--color-primary-bg);
+  border-color: var(--color-primary);
+}
+
+.collapsed-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+
+.collapsed-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.collapsed-preview {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expand-btn {
+  flex-shrink: 0;
+  color: var(--text-secondary) !important;
 }
 </style>
