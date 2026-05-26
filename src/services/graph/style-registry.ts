@@ -38,7 +38,7 @@ export function getDefaultEdgeStyle(relationType: RelationType): EdgeStyle {
     strokeWidth: 1.5,
     strokeDasharray: styleMap.strokeDasharray,
     arrowType: styleMap.arrowType,
-    fontSize: 13,
+    fontSize: 15,
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontColor: '#4e5969',
     labelBgColor: '#ffffff',

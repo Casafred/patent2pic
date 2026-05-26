@@ -47,6 +47,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
             refWidth: '140%',
             refHeight: '140%',
             fill: '#ffffff',
+            fillOpacity: 1,
             stroke: '#d9d9d9',
             strokeWidth: 1,
             rx: 4,

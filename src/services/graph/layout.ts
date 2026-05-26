@@ -17,8 +17,8 @@ export function applyDagreLayout(
   g.setDefaultEdgeLabel(() => ({}))
   g.setGraph({
     rankdir: options?.rankdir ?? 'TB',
-    nodesep: options?.nodesep ?? 50,
-    ranksep: options?.ranksep ?? 70,
+    nodesep: options?.nodesep ?? 80,
+    ranksep: options?.ranksep ?? 100,
     align: options?.align,
     marginx: 40,
     marginy: 40,

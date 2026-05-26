@@ -20,7 +20,7 @@ export const useGraphStore = defineStore('graph', () => {
   const extractResult = ref<ExtractResult | null>(null)
 
   const globalNodeFontSize = ref<number>(15)
-  const globalEdgeFontSize = ref<number>(13)
+  const globalEdgeFontSize = ref<number>(15)
 
   const activeTab = computed(() =>
     tabs.value.find(t => t.id === activeTabId.value) || null,

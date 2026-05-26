@@ -347,12 +347,8 @@ export class GraphEngine {
     this.graph.startBatch('fontSize')
     const nodes = this.graph.getNodes()
     for (const node of nodes) {
-      const n = node as unknown as { attr: (path: string, value?: unknown) => unknown; resize: (w: number, h: number) => void; getSize: () => { width: number; height: number } }
+      const n = node as unknown as { attr: (path: string, value?: unknown) => unknown }
       n.attr('label/fontSize', fontSize)
-      const scaleFactor = fontSize / 13
-      const newWidth = Math.max(80, Math.round(160 * scaleFactor))
-      const newHeight = Math.max(40, Math.round(60 * scaleFactor))
-      n.resize(newWidth, newHeight)
     }
     this.graph.stopBatch('fontSize')
   }
@@ -366,17 +362,19 @@ export class GraphEngine {
       const labels = e.getLabels()
       if (labels.length > 0) {
         const firstLabel = labels[0] as Record<string, unknown>
-        const firstAttrs = (firstLabel.attrs || {}) as Record<string, unknown>
-        const firstLabelAttrs = (firstAttrs.label || {}) as Record<string, unknown>
-        const newLabel = Object.assign({}, firstLabel, {
+        const existingAttrs = (firstLabel.attrs || {}) as Record<string, unknown>
+        const existingBg = (existingAttrs.bg || {}) as Record<string, unknown>
+        const existingLabelText = (existingAttrs.labelText || {}) as Record<string, unknown>
+        const newLabel = {
+          ...firstLabel,
           attrs: {
-            ...firstAttrs,
-            label: {
-              ...firstLabelAttrs,
+            bg: existingBg,
+            labelText: {
+              ...existingLabelText,
               fontSize,
             },
           },
-        })
+        }
         e.setLabels([newLabel])
       }
     }
