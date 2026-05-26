@@ -46,7 +46,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
             refY: -6,
             refWidth: '140%',
             refHeight: '140%',
-            fill: '#ffffff',
+            fill: style.labelBgColor || '#ffffff',
             fillOpacity: 1,
             stroke: '#d9d9d9',
             strokeWidth: 1,
@@ -73,6 +73,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
       originalText: data.originalText,
       chineseText: data.chineseText,
       relationType: data.relationType,
+      labelDetached: false,
     },
   }
 
