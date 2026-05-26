@@ -5,6 +5,7 @@ import { History } from '@antv/x6-plugin-history'
 import { Clipboard } from '@antv/x6-plugin-clipboard'
 import { MiniMap } from '@antv/x6-plugin-minimap'
 import { Export } from '@antv/x6-plugin-export'
+import { Transform } from '@antv/x6-plugin-transform'
 import type { NodeData, EdgeData } from '@/types/graph'
 import type { ExtractResult, ExtractGroup } from '@/types/ai'
 import { buildNode, updateNodeStyle } from './node-builder'
@@ -66,6 +67,13 @@ export class GraphEngine {
     this.graph.use(new Clipboard({ enabled: true }))
     this.graph.use(new MiniMap({ width: 160, height: 100, padding: 10 }))
     this.graph.use(new Export())
+    this.graph.use(new Transform({
+      resizing: {
+        enabled: true,
+        preserveAspectRatio: false,
+        allowReverse: false,
+      },
+    }))
   }
 
   destroy(): void {
@@ -206,6 +214,45 @@ export class GraphEngine {
     const config = buildNode(data)
     this.graph.addNode(config)
     return data.id
+  }
+
+  addGroup(id: string, label: string, x: number, y: number, width: number = 300, height: number = 200): string {
+    if (!this.graph) throw new Error('画布未初始化')
+    this.graph.addNode({
+      id,
+      x,
+      y,
+      width,
+      height,
+      shape: 'rect',
+      zIndex: -1,
+      attrs: {
+        body: {
+          fill: '#fafafa',
+          stroke: '#fa8c16',
+          strokeWidth: 1.5,
+          strokeDasharray: '6 3',
+          rx: 8,
+          ry: 8,
+        },
+        label: {
+          text: label,
+          fontSize: 11,
+          fill: '#fa8c16',
+          fontWeight: 'bold',
+          textAnchor: 'left',
+          textVerticalAnchor: 'top',
+          refX: 12,
+          refY: 8,
+        },
+      },
+      data: {
+        isGroup: true,
+        label: { original: label, chinese: '' },
+        memberNodeIds: [],
+      },
+    })
+    return id
   }
 
   removeNode(id: string): void {
