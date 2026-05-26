@@ -4,6 +4,7 @@ import { Snapline } from '@antv/x6-plugin-snapline'
 import { History } from '@antv/x6-plugin-history'
 import { Clipboard } from '@antv/x6-plugin-clipboard'
 import { MiniMap } from '@antv/x6-plugin-minimap'
+import { Export } from '@antv/x6-plugin-export'
 import type { NodeData, EdgeData } from '@/types/graph'
 import type { ExtractResult, ExtractGroup } from '@/types/ai'
 import { buildNode, updateNodeStyle } from './node-builder'
@@ -64,6 +65,7 @@ export class GraphEngine {
     this.graph.use(new History({ enabled: true }))
     this.graph.use(new Clipboard({ enabled: true }))
     this.graph.use(new MiniMap({ width: 160, height: 100, padding: 10 }))
+    this.graph.use(new Export())
   }
 
   destroy(): void {
@@ -367,14 +369,12 @@ export class GraphEngine {
     })
   }
 
-  toSVG(options?: { padding?: number }): string {
+  toSVG(_options?: { padding?: number }): string {
     if (!this.graph) return ''
 
     let svgStr = ''
     this.graph.toSVG((svg: string) => {
       svgStr = svg
-    }, {
-      padding: options?.padding ?? 20,
     })
     return svgStr
   }
