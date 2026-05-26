@@ -26,7 +26,7 @@ export class GraphEngine {
         type: 'dot',
         args: { color: '#ddd', thickness: 1 },
       },
-      panning: { enabled: true, eventTypes: ['leftMouseDown', 'mouseWheel'] },
+      panning: { enabled: true, eventTypes: ['rightMouseDown', 'mouseWheel'] },
       mousewheel: { enabled: true, zoomAtMousePosition: true, modifiers: null, minScale: 0.1, maxScale: 3 },
       connecting: {
         router: 'manhattan',
@@ -74,6 +74,42 @@ export class GraphEngine {
         allowReverse: false,
       },
     }))
+
+    this.graph.on('edge:mouseenter', ({ edge }) => {
+      edge.addTools([
+        {
+          name: 'vertices',
+          args: {
+            attrs: {
+              fill: '#1890FF',
+            },
+          },
+        },
+        {
+          name: 'segments',
+          args: {
+            attrs: {
+              fill: '#1890FF',
+            },
+          },
+        },
+      ])
+    })
+
+    this.graph.on('edge:mouseleave', ({ edge }) => {
+      edge.removeTools()
+    })
+
+    this.graph.on('edge:dblclick', ({ edge }) => {
+      edge.addTools([
+        {
+          name: 'label-editor',
+          args: {
+            labelIndex: 0,
+          },
+        },
+      ])
+    })
   }
 
   destroy(): void {

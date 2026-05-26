@@ -222,11 +222,21 @@ function handleEditSave(data: { originalText: string; chineseText: string; nodeT
     const edge = cell as unknown as { getLabels: () => unknown[]; setLabels: (labels: unknown[]) => void; setData: (data: Record<string, unknown>) => void }
     const labels = edge.getLabels()
     if (labels.length > 0) {
-      const newLabel = Object.assign({}, labels[0] as Record<string, unknown>, {
+      const existingLabel = labels[0] as Record<string, unknown>
+      const existingAttrs = (existingLabel.attrs || {}) as Record<string, unknown>
+      const existingLabelText = (existingAttrs.labelText || {}) as Record<string, unknown>
+      const existingBg = (existingAttrs.bg || {}) as Record<string, unknown>
+      
+      const newLabel = {
+        ...existingLabel,
         attrs: {
-          label: { text: labelText },
+          bg: existingBg,
+          labelText: {
+            ...existingLabelText,
+            text: labelText,
+          },
         },
-      })
+      }
       edge.setLabels([newLabel])
     }
     const prevData = (cell.getData() as Record<string, unknown>) || {}
