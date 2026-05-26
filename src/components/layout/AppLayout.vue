@@ -2,6 +2,7 @@
   <div class="app-layout">
     <div class="left-panel">
       <ClaimInput />
+      <ClaimReader />
     </div>
     <div class="center-panel">
       <CanvasToolbar />
@@ -19,6 +20,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import ClaimInput from '../input/ClaimInput.vue'
+import ClaimReader from '../input/ClaimReader.vue'
 import GraphCanvas from '../canvas/GraphCanvas.vue'
 import CanvasToolbar from '../canvas/CanvasToolbar.vue'
 import TabBar from '../canvas/TabBar.vue'
@@ -75,6 +77,8 @@ watch(() => graphStore.activeTabId, (newTabId, oldTabId) => {
   border-right: 1px solid var(--border-color);
   background: var(--bg-secondary);
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .center-panel {

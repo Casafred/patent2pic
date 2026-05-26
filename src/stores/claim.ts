@@ -7,6 +7,7 @@ export const useClaimStore = defineStore('claim', () => {
   const claims = ref<Claim[]>([])
   const activeClaimId = ref<string | null>(null)
   const history = ref<string[]>([])
+  const isInputCollapsed = ref(false)
 
   function setText(text: string): void {
     rawText.value = text
@@ -30,14 +31,25 @@ export const useClaimStore = defineStore('claim', () => {
     return claims.value.find(c => c.id === activeClaimId.value)
   }
 
+  function collapseInput(): void {
+    isInputCollapsed.value = true
+  }
+
+  function expandInput(): void {
+    isInputCollapsed.value = false
+  }
+
   return {
     rawText,
     claims,
     activeClaimId,
     history,
+    isInputCollapsed,
     setText,
     setClaims,
     setActiveClaim,
     getActiveClaim,
+    collapseInput,
+    expandInput,
   }
 })

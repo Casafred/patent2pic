@@ -13,6 +13,16 @@ export const useEditorStore = defineStore('editor', () => {
     selectedEdgeIds.value = []
   }
 
+  function toggleNodeInSelection(id: string): void {
+    const idx = selectedNodeIds.value.indexOf(id)
+    if (idx >= 0) {
+      selectedNodeIds.value.splice(idx, 1)
+    } else {
+      selectedNodeIds.value.push(id)
+    }
+    selectedEdgeIds.value = []
+  }
+
   function selectEdges(ids: string[]): void {
     selectedEdgeIds.value = ids
     selectedNodeIds.value = []
@@ -46,6 +56,7 @@ export const useEditorStore = defineStore('editor', () => {
     zoom,
     isDirty,
     selectNodes,
+    toggleNodeInSelection,
     selectEdges,
     clearSelection,
     togglePanel,
