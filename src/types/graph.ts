@@ -36,6 +36,7 @@ export interface NodeData {
   chineseText: string
   nodeType: NodeType
   style: NodeStyle
+  containmentDepth?: number
   x?: number
   y?: number
 }

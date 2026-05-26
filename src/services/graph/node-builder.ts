@@ -54,6 +54,7 @@ export function buildNode(data: NodeData, isChinese: boolean = false): Record<st
       originalText: data.originalText,
       chineseText: data.chineseText,
       nodeType: data.nodeType,
+      containmentDepth: data.containmentDepth,
     },
   }
 }

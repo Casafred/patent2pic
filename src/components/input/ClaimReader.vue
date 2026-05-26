@@ -12,9 +12,14 @@
       <div
         v-for="(segment, sIdx) in renderedSegments"
         :key="sIdx"
-        :class="['segment', { 'segment-highlighted': segment.highlightColor }]"
-        :style="segment.highlightColor ? { backgroundColor: segment.highlightColor.bg, borderLeftColor: segment.highlightColor.border } : {}"
+        :class="['segment', { 'segment-highlighted': segment.highlightColor, 'segment-depth': segment.depthColor }]"
+        :style="buildSegmentStyle(segment)"
       >
+        <span
+          v-if="segment.depthColor && !segment.highlightColor"
+          class="segment-depth-badge"
+          :style="{ backgroundColor: segment.depthColor.stroke, color: '#fff' }"
+        >{{ segment.depthLabel }}</span>
         <span
           v-if="segment.highlightColor"
           class="segment-badge"
@@ -31,7 +36,20 @@
       </div>
     </div>
 
+    <div class="reader-depth-legend" v-if="depthLegendItems.length > 0">
+      <span class="legend-title">包含层级</span>
+      <div
+        v-for="item in depthLegendItems"
+        :key="item.depth"
+        class="legend-item"
+      >
+        <span class="legend-dot" :style="{ backgroundColor: item.color.stroke }"></span>
+        <span class="legend-label">{{ item.label }}</span>
+      </div>
+    </div>
+
     <div class="reader-legend" v-if="legendItems.length > 0">
+      <span class="legend-title">选中节点</span>
       <div
         v-for="item in legendItems"
         :key="item.nodeId"
@@ -49,11 +67,17 @@ import { computed, ref, watch, nextTick } from 'vue'
 import { useClaimStore } from '@/stores/claim'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
-import type { ExtractNode } from '@/types/ai'
+import type { ExtractNode, ExtractEdge } from '@/types/ai'
+import { computeContainmentDepth, getContainmentLevelColor } from '@/services/graph/containment'
 
 interface HighlightColor {
   bg: string
   border: string
+}
+
+interface DepthColor {
+  fill: string
+  stroke: string
 }
 
 interface RenderedSegment {
@@ -61,6 +85,8 @@ interface RenderedSegment {
   highlightColor: HighlightColor | null
   nodeLabel: string
   nodeId: string
+  depthColor: DepthColor | null
+  depthLabel: string
 }
 
 const HIGHLIGHT_PALETTE: HighlightColor[] = [
@@ -83,6 +109,32 @@ const extractNodes = computed<ExtractNode[]>(() => {
   const tab = graphStore.activeTab
   if (!tab?.extractResult) return []
   return tab.extractResult.nodes
+})
+
+const extractEdges = computed<ExtractEdge[]>(() => {
+  const tab = graphStore.activeTab
+  if (!tab?.extractResult) return []
+  return tab.extractResult.edges
+})
+
+const containmentDepthMap = computed<Map<string, number>>(() => {
+  return computeContainmentDepth(extractEdges.value)
+})
+
+const depthLegendItems = computed(() => {
+  const depths = new Set<number>()
+  for (const [, depth] of containmentDepthMap.value) {
+    depths.add(depth)
+  }
+  const sorted = Array.from(depths).sort((a, b) => a - b)
+  return sorted.map(depth => {
+    const color = getContainmentLevelColor(depth)
+    return {
+      depth,
+      color: color || { stroke: '#999' },
+      label: color?.label || `层级 ${depth}`,
+    }
+  })
 })
 
 const nodeColorMap = computed<Map<string, { color: HighlightColor; label: string }>>(() => {
@@ -128,6 +180,33 @@ function findMatchingNodeId(sentenceText: string): string | null {
   return null
 }
 
+function findMatchingNodeIdByDepth(sentenceText: string): string | null {
+  for (const [nodeId] of containmentDepthMap.value) {
+    const node = extractNodes.value.find((n: ExtractNode) => n.id === nodeId)
+    if (!node) continue
+
+    const src = node.sourceSentence.trim()
+    const sent = sentenceText.trim()
+
+    if (src === sent) return nodeId
+    if (sent.includes(src) && src.length >= 4) return nodeId
+    if (src.includes(sent) && sent.length >= 4) return nodeId
+  }
+  return null
+}
+
+function buildSegmentStyle(segment: RenderedSegment): Record<string, string> {
+  const style: Record<string, string> = {}
+  if (segment.highlightColor) {
+    style.backgroundColor = segment.highlightColor.bg
+    style.borderLeftColor = segment.highlightColor.border
+  } else if (segment.depthColor) {
+    style.backgroundColor = segment.depthColor.fill
+    style.borderLeftColor = segment.depthColor.stroke
+  }
+  return style
+}
+
 const renderedSegments = computed<RenderedSegment[]>(() => {
   const claim = claimStore.getActiveClaim()
   if (!claim || claim.sentences.length === 0) return []
@@ -141,11 +220,29 @@ const renderedSegments = computed<RenderedSegment[]>(() => {
     const label = info?.label || ''
     const displayLabel = label.length > 12 ? label.slice(0, 12) + '…' : label
 
+    let depthColor: DepthColor | null = null
+    let depthLabel = ''
+    if (!info) {
+      const depthNodeId = findMatchingNodeIdByDepth(sentence.text)
+      if (depthNodeId) {
+        const depth = containmentDepthMap.value.get(depthNodeId)
+        if (depth !== undefined) {
+          const levelColor = getContainmentLevelColor(depth)
+          if (levelColor) {
+            depthColor = { fill: levelColor.fill, stroke: levelColor.stroke }
+            depthLabel = levelColor.label
+          }
+        }
+      }
+    }
+
     segments.push({
       text: sentence.text,
       highlightColor: info ? info.color : null,
       nodeLabel: displayLabel,
       nodeId: matchingNodeId || '',
+      depthColor,
+      depthLabel,
     })
   }
 
@@ -218,6 +315,11 @@ watch(() => editorStore.selectedNodeIds, () => {
   border-left-style: solid;
 }
 
+.segment-depth {
+  border-left-width: 3px;
+  border-left-style: solid;
+}
+
 .segment-badge {
   display: inline-block;
   font-size: 10px;
@@ -227,6 +329,18 @@ watch(() => editorStore.selectedNodeIds, () => {
   margin-right: 6px;
   vertical-align: middle;
   line-height: 1.6;
+}
+
+.segment-depth-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+  line-height: 1.6;
+  opacity: 0.85;
 }
 
 .segment-text {
@@ -246,6 +360,17 @@ watch(() => editorStore.selectedNodeIds, () => {
   font-size: var(--font-size-sm);
 }
 
+.reader-depth-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-color-light);
+  background: var(--bg-tertiary);
+  flex-shrink: 0;
+  align-items: center;
+}
+
 .reader-legend {
   display: flex;
   flex-wrap: wrap;
@@ -254,6 +379,14 @@ watch(() => editorStore.selectedNodeIds, () => {
   border-top: 1px solid var(--border-color-light);
   background: var(--bg-tertiary);
   flex-shrink: 0;
+  align-items: center;
+}
+
+.legend-title {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  margin-right: 4px;
 }
 
 .legend-item {

@@ -12,6 +12,7 @@ import { buildNode, updateNodeStyle } from './node-builder'
 import { buildEdge, updateEdgeStyle } from './edge-builder'
 import { applyDagreLayout, type DagreLayoutOptions } from './layout'
 import { getDefaultNodeStyle, getDefaultEdgeStyle } from './style-registry'
+import { computeContainmentDepth, getContainmentLevelColor } from './containment'
 
 export class GraphEngine {
   private graph: Graph | null = null
@@ -102,13 +103,25 @@ export class GraphEngine {
 
     this.graph.clearCells()
 
-    const nodeDataList: NodeData[] = result.nodes.map(n => ({
-      id: n.id,
-      originalText: n.originalText,
-      chineseText: n.chineseText,
-      nodeType: n.nodeType,
-      style: getDefaultNodeStyle(n.nodeType),
-    }))
+    const depthMap = computeContainmentDepth(result.edges)
+
+    const nodeDataList: NodeData[] = result.nodes.map(n => {
+      const depth = depthMap.get(n.id)
+      const baseStyle = getDefaultNodeStyle(n.nodeType)
+      const levelColor = depth !== undefined ? getContainmentLevelColor(depth) : null
+      const style = levelColor
+        ? { ...baseStyle, fill: levelColor.fill, stroke: levelColor.stroke }
+        : baseStyle
+
+      return {
+        id: n.id,
+        originalText: n.originalText,
+        chineseText: n.chineseText,
+        nodeType: n.nodeType,
+        style,
+        containmentDepth: depth,
+      }
+    })
 
     const edgeDataList: EdgeData[] = result.edges.map(e => ({
       id: e.id,
