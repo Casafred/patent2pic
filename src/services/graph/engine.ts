@@ -30,7 +30,7 @@ export class GraphEngine {
         router: 'manhattan',
         connector: { name: 'rounded', args: { radius: 8 } },
         anchor: 'center',
-        connectionPoint: 'anchor',
+        connectionPoint: 'boundary',
         allowBlank: false,
         allowLoop: false,
         allowMulti: true,
