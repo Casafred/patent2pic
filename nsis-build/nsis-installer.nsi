@@ -35,6 +35,7 @@ Section "MainSection" SEC01
   SetOutPath "$INSTDIR"
   SetOverwrite on
   File "patent2pic.exe"
+  File "patent2pic_lib.dll"
   File "icon.ico"
 
   CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\patent2pic.exe" "" "$INSTDIR\icon.ico"
@@ -63,6 +64,7 @@ Section Uninstall
   Delete "$INSTDIR\${PRODUCT_NAME}.url"
   Delete "$INSTDIR\uninst.exe"
   Delete "$INSTDIR\patent2pic.exe"
+  Delete "$INSTDIR\patent2pic_lib.dll"
   Delete "$INSTDIR\icon.ico"
 
   Delete "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall ${PRODUCT_NAME}.lnk"
