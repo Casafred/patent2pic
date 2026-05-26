@@ -29,21 +29,41 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
     },
     labels: [
       {
+        markup: [
+          {
+            tagName: 'rect',
+            selector: 'bg',
+          },
+          {
+            tagName: 'text',
+            selector: 'labelText',
+          },
+        ],
         attrs: {
-          label: {
+          bg: {
+            ref: 'labelText',
+            refX: -6,
+            refY: -4,
+            refWidth: '130%',
+            refHeight: '130%',
+            fill: '#ffffff',
+            stroke: '#d9d9d9',
+            strokeWidth: 1,
+            rx: 4,
+            ry: 4,
+          },
+          labelText: {
             text: getEdgeLabelText(data, isChinese),
             fontSize: style.fontSize,
             fontFamily: style.fontFamily,
             fill: style.fontColor,
-          },
-          rect: {
-            fill: style.labelBgColor,
-            rx: 4,
-            ry: 4,
+            textAnchor: 'middle',
+            textVerticalAnchor: 'middle',
           },
         },
         position: {
           distance: 0.5,
+          offset: { x: 0, y: 0 },
         },
       },
     ],
@@ -74,18 +94,26 @@ export function updateEdgeStyle(edge: unknown, style: Partial<EdgeData['style']>
   if (style.fontSize || style.fontFamily || style.fontColor || style.labelBgColor) {
     const label = e.getLabels()[0]
     if (label) {
-      const newLabel = Object.assign({}, label as Record<string, unknown>, {
+      const existingLabel = label as Record<string, unknown>
+      const existingAttrs = (existingLabel.attrs || {}) as Record<string, unknown>
+      const existingBg = (existingAttrs.bg || {}) as Record<string, unknown>
+      const existingLabelText = (existingAttrs.labelText || {}) as Record<string, unknown>
+      
+      const newLabel = {
+        ...existingLabel,
         attrs: {
-          label: {
-            fontSize: style.fontSize,
-            fontFamily: style.fontFamily,
-            fill: style.fontColor,
+          bg: {
+            ...existingBg,
+            fill: style.labelBgColor || existingBg.fill,
           },
-          rect: {
-            fill: style.labelBgColor,
+          labelText: {
+            ...existingLabelText,
+            fontSize: style.fontSize || existingLabelText.fontSize,
+            fontFamily: style.fontFamily || existingLabelText.fontFamily,
+            fill: style.fontColor || existingLabelText.fill,
           },
         },
-      })
+      }
       e.setLabels([newLabel])
     }
   }

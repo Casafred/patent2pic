@@ -5,6 +5,7 @@ import { History } from '@antv/x6-plugin-history'
 import { Clipboard } from '@antv/x6-plugin-clipboard'
 import { MiniMap } from '@antv/x6-plugin-minimap'
 import { Export } from '@antv/x6-plugin-export'
+import { Transform } from '@antv/x6-plugin-transform'
 import type { NodeData, EdgeData } from '@/types/graph'
 import type { ExtractResult, ExtractGroup } from '@/types/ai'
 import { buildNode, updateNodeStyle } from './node-builder'
@@ -25,7 +26,7 @@ export class GraphEngine {
         type: 'dot',
         args: { color: '#ddd', thickness: 1 },
       },
-      panning: { enabled: true, eventTypes: ['leftMouseDown', 'mouseWheel'] },
+      panning: { enabled: true, eventTypes: ['rightMouseDown', 'mouseWheel'] },
       mousewheel: { enabled: true, zoomAtMousePosition: true, modifiers: null, minScale: 0.1, maxScale: 3 },
       connecting: {
         router: 'manhattan',
@@ -66,6 +67,49 @@ export class GraphEngine {
     this.graph.use(new Clipboard({ enabled: true }))
     this.graph.use(new MiniMap({ width: 160, height: 100, padding: 10 }))
     this.graph.use(new Export())
+    this.graph.use(new Transform({
+      resizing: {
+        enabled: true,
+        preserveAspectRatio: false,
+        allowReverse: false,
+      },
+    }))
+
+    this.graph.on('edge:mouseenter', ({ edge }) => {
+      edge.addTools([
+        {
+          name: 'vertices',
+          args: {
+            attrs: {
+              fill: '#1890FF',
+            },
+          },
+        },
+        {
+          name: 'segments',
+          args: {
+            attrs: {
+              fill: '#1890FF',
+            },
+          },
+        },
+      ])
+    })
+
+    this.graph.on('edge:mouseleave', ({ edge }) => {
+      edge.removeTools()
+    })
+
+    this.graph.on('edge:dblclick', ({ edge }) => {
+      edge.addTools([
+        {
+          name: 'label-editor',
+          args: {
+            labelIndex: 0,
+          },
+        },
+      ])
+    })
   }
 
   destroy(): void {
@@ -208,6 +252,45 @@ export class GraphEngine {
     return data.id
   }
 
+  addGroup(id: string, label: string, x: number, y: number, width: number = 300, height: number = 200): string {
+    if (!this.graph) throw new Error('画布未初始化')
+    this.graph.addNode({
+      id,
+      x,
+      y,
+      width,
+      height,
+      shape: 'rect',
+      zIndex: -1,
+      attrs: {
+        body: {
+          fill: '#fafafa',
+          stroke: '#fa8c16',
+          strokeWidth: 1.5,
+          strokeDasharray: '6 3',
+          rx: 8,
+          ry: 8,
+        },
+        label: {
+          text: label,
+          fontSize: 11,
+          fill: '#fa8c16',
+          fontWeight: 'bold',
+          textAnchor: 'left',
+          textVerticalAnchor: 'top',
+          refX: 12,
+          refY: 8,
+        },
+      },
+      data: {
+        isGroup: true,
+        label: { original: label, chinese: '' },
+        memberNodeIds: [],
+      },
+    })
+    return id
+  }
+
   removeNode(id: string): void {
     this.graph?.getCellById(id)?.remove()
   }
@@ -237,6 +320,47 @@ export class GraphEngine {
     if (cell && cell.isEdge()) {
       updateEdgeStyle(cell, style)
     }
+  }
+
+  setAllNodeFontSize(fontSize: number): void {
+    if (!this.graph) return
+    this.graph.startBatch('fontSize')
+    const nodes = this.graph.getNodes()
+    for (const node of nodes) {
+      const n = node as unknown as { attr: (path: string, value?: unknown) => unknown; resize: (w: number, h: number) => void; getSize: () => { width: number; height: number } }
+      n.attr('label/fontSize', fontSize)
+      const scaleFactor = fontSize / 13
+      const newWidth = Math.max(80, Math.round(160 * scaleFactor))
+      const newHeight = Math.max(40, Math.round(60 * scaleFactor))
+      n.resize(newWidth, newHeight)
+    }
+    this.graph.stopBatch('fontSize')
+  }
+
+  setAllEdgeFontSize(fontSize: number): void {
+    if (!this.graph) return
+    this.graph.startBatch('fontSize')
+    const edges = this.graph.getEdges()
+    for (const edge of edges) {
+      const e = edge as { getLabels: () => unknown[]; setLabels: (labels: unknown[]) => void }
+      const labels = e.getLabels()
+      if (labels.length > 0) {
+        const firstLabel = labels[0] as Record<string, unknown>
+        const firstAttrs = (firstLabel.attrs || {}) as Record<string, unknown>
+        const firstLabelAttrs = (firstAttrs.label || {}) as Record<string, unknown>
+        const newLabel = Object.assign({}, firstLabel, {
+          attrs: {
+            ...firstAttrs,
+            label: {
+              ...firstLabelAttrs,
+              fontSize,
+            },
+          },
+        })
+        e.setLabels([newLabel])
+      }
+    }
+    this.graph.stopBatch('fontSize')
   }
 
   applyLayout(options?: DagreLayoutOptions): void {

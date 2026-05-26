@@ -43,6 +43,43 @@
       <el-tooltip content="自动布局" placement="bottom">
         <el-button size="small" @click="engine.applyLayout()">自动布局</el-button>
       </el-tooltip>
+    </div>
+
+    <div class="toolbar-divider" />
+
+    <div class="toolbar-group">
+      <el-tooltip content="添加新节点" placement="bottom">
+        <el-button size="small" type="success" @click="handleAddNode">+ 节点</el-button>
+      </el-tooltip>
+      <el-tooltip content="添加组合框" placement="bottom">
+        <el-button size="small" type="warning" @click="handleAddGroup">+ 组合框</el-button>
+      </el-tooltip>
+    </div>
+
+    <div class="toolbar-divider" />
+
+    <div class="toolbar-group">
+      <el-tooltip content="节点字号" placement="bottom">
+        <div class="font-size-control">
+          <span class="font-size-label">节点</span>
+          <el-select v-model="nodeFontSize" size="small" style="width: 72px" @change="handleNodeFontSizeChange">
+            <el-option v-for="s in FONT_SIZE_OPTIONS" :key="s" :label="s + 'px'" :value="s" />
+          </el-select>
+        </div>
+      </el-tooltip>
+      <el-tooltip content="连线字号" placement="bottom">
+        <div class="font-size-control">
+          <span class="font-size-label">连线</span>
+          <el-select v-model="edgeFontSize" size="small" style="width: 72px" @change="handleEdgeFontSizeChange">
+            <el-option v-for="s in FONT_SIZE_OPTIONS" :key="s" :label="s + 'px'" :value="s" />
+          </el-select>
+        </div>
+      </el-tooltip>
+    </div>
+
+    <div class="toolbar-divider" />
+
+    <div class="toolbar-group">
       <el-tooltip content="清空画布" placement="bottom">
         <el-button size="small" type="danger" @click="handleClearCanvas">清空</el-button>
       </el-tooltip>
@@ -64,21 +101,54 @@
         </template>
       </el-dropdown>
     </div>
+
+    <CellEditDialog
+      v-model:visible="addDialogVisible"
+      :is-node="addDialogMode === 'node'"
+      :initial-original-text="addOriginalText"
+      :initial-chinese-text="addChineseText"
+      :initial-node-type="addNodeType"
+      @save="handleAddSave"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { RefreshLeft, RefreshRight, ArrowDown } from '@element-plus/icons-vue'
+import { ref } from 'vue'
 import { graphEngine } from '@/services/graph/engine'
+import { FONT_SIZE_OPTIONS } from '@/services/graph/style-registry'
 import { useExport } from '@/composables/useExport'
 import { useProjectFile } from '@/composables/useProjectFile'
 import { useGraphStore } from '@/stores/graph'
 import type { ExportFormat } from '@/types/app'
+import type { NodeType } from '@/types/graph'
+import { getDefaultNodeStyle } from '@/services/graph/style-registry'
+import CellEditDialog from '../common/CellEditDialog.vue'
 
 const engine = graphEngine
 const graphStore = useGraphStore()
+const nodeFontSize = ref(graphStore.globalNodeFontSize)
+const edgeFontSize = ref(graphStore.globalEdgeFontSize)
 const { downloadFile } = useExport()
 const { saveProject, loadProject } = useProjectFile()
+
+const addDialogVisible = ref(false)
+const addDialogMode = ref<'node' | 'group'>('node')
+const addOriginalText = ref('')
+const addChineseText = ref('')
+const addNodeType = ref<NodeType>('component')
+
+function handleNodeFontSizeChange(size: number): void {
+  graphStore.setGlobalNodeFontSize(size)
+  engine.setAllNodeFontSize(size)
+  engine.applyLayout()
+}
+
+function handleEdgeFontSizeChange(size: number): void {
+  graphStore.setGlobalEdgeFontSize(size)
+  engine.setAllEdgeFontSize(size)
+}
 
 function handleExport(format: string): void {
   downloadFile(format as ExportFormat)
@@ -98,6 +168,44 @@ function handleClearCanvas(): void {
     graph.clearCells()
   }
   graphStore.clearActiveTabGraph()
+}
+
+function handleAddNode(): void {
+  addDialogMode.value = 'node'
+  addOriginalText.value = ''
+  addChineseText.value = ''
+  addNodeType.value = 'component'
+  addDialogVisible.value = true
+}
+
+function handleAddGroup(): void {
+  addDialogMode.value = 'group'
+  addOriginalText.value = ''
+  addChineseText.value = ''
+  addDialogVisible.value = true
+}
+
+function handleAddSave(data: { originalText: string; chineseText: string; nodeType?: NodeType }): void {
+  const graph = engine.getGraph()
+  if (!graph) return
+
+  if (addDialogMode.value === 'node') {
+    const id = `node-${Date.now()}`
+    const style = getDefaultNodeStyle(data.nodeType || 'component')
+    engine.addNode({
+      id,
+      originalText: data.originalText,
+      chineseText: data.chineseText,
+      nodeType: data.nodeType || 'component',
+      style,
+      x: 100,
+      y: 100,
+    })
+  } else {
+    const id = `group-${Date.now()}`
+    const label = data.originalText || '新组合框'
+    engine.addGroup(id, label, 50, 50)
+  }
 }
 </script>
 
@@ -127,5 +235,17 @@ function handleClearCanvas(): void {
 
 .toolbar-spacer {
   flex: 1;
+}
+
+.font-size-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.font-size-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
 </style>
