@@ -16,7 +16,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
     id: data.id,
     source: { cell: data.source, port: data.sourcePort },
     target: { cell: data.target, port: data.targetPort },
-    router: { name: 'manhattan' },
+    router: { name: 'orth' },
     connector: { name: 'rounded', args: { radius: 8 } },
     attrs: {
       line: {
