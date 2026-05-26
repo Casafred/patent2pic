@@ -173,11 +173,29 @@ watch(() => editorStore.selectedEdgeIds, (ids) => {
     if (graph) {
       const cell = graph.getCellById(ids[0])
       if (cell?.isEdge()) {
-        const edge = cell as unknown as { attr: (path: string) => unknown }
+        const edge = cell as unknown as { attr: (path: string) => unknown; getLabels: () => unknown[] }
+        const labels = edge.getLabels()
+        let labelFontColor = '#4e5969'
+        let labelFontSize = 15
+        let labelFontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+        let labelBgColor = '#ffffff'
+        if (labels.length > 0) {
+          const label = labels[0] as Record<string, unknown>
+          const attrs = (label.attrs || {}) as Record<string, unknown>
+          const labelText = (attrs.labelText || {}) as Record<string, unknown>
+          const bg = (attrs.bg || {}) as Record<string, unknown>
+          if (labelText.fill) labelFontColor = labelText.fill as string
+          if (labelText.fontSize) labelFontSize = labelText.fontSize as number
+          if (labelText.fontFamily) labelFontFamily = labelText.fontFamily as string
+          if (bg.fill) labelBgColor = bg.fill as string
+        }
         Object.assign(edgeStyle, {
           stroke: edge.attr('line/stroke'),
           strokeWidth: edge.attr('line/strokeWidth'),
-          fontColor: edge.attr('line/stroke'),
+          fontColor: labelFontColor,
+          fontSize: labelFontSize,
+          fontFamily: labelFontFamily,
+          labelBgColor,
         })
         edgeLineStyle.value = edge.attr('line/strokeDasharray') ? 'dashed' : 'solid'
       }
