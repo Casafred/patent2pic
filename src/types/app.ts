@@ -1,4 +1,4 @@
-export type ExportFormat = 'png' | 'svg' | 'json' | 'p2p'
+export type ExportFormat = 'png' | 'svg' | 'p2p'
 
 export interface ExportOptions {
   format: ExportFormat

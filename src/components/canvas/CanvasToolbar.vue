@@ -80,10 +80,8 @@
         </el-button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="png">导出 PNG</el-dropdown-item>
-            <el-dropdown-item command="png-hd">导出高清 PNG (3x)</el-dropdown-item>
+            <el-dropdown-item command="png">导出 PNG (3x 高清)</el-dropdown-item>
             <el-dropdown-item command="svg">导出 SVG</el-dropdown-item>
-            <el-dropdown-item command="json">导出 JSON</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -138,11 +136,7 @@ function handleResetToInitial(): void {
 }
 
 function handleExport(format: string): void {
-  if (format === 'png-hd') {
-    downloadFile('png-hd')
-  } else {
-    downloadFile(format as ExportFormat)
-  }
+  downloadFile(format as ExportFormat)
 }
 
 async function handleSaveProject(): Promise<void> {
