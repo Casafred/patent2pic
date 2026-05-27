@@ -92,7 +92,13 @@ export class DeepSeekProvider implements AIProviderAdapter {
         }
         try {
           const parsed = JSON.parse(data)
-          const delta = parsed.choices?.[0]?.delta
+          const choice = parsed.choices?.[0]
+          const delta = choice?.delta
+
+          if (choice?.finish_reason === 'length') {
+            throw new Error('模型输出被截断 (finish_reason=length)，请尝试增大 max_tokens 或简化输入')
+          }
+
           if (delta) {
             const content = delta.content || ''
             const reasoningContent = delta.reasoning_content || ''
@@ -112,7 +118,10 @@ export class DeepSeekProvider implements AIProviderAdapter {
               usage: this.parseUsage(parsed.usage),
             }
           }
-        } catch {
+        } catch (e) {
+          if (e instanceof Error && e.message.includes('finish_reason=length')) {
+            throw e
+          }
           continue
         }
       }

@@ -2,7 +2,17 @@ import type { ExtractResult, ExtractNode, ExtractEdge, ExtractGroup } from '@/ty
 
 export function parseExtractResult(raw: string): ExtractResult {
   const jsonStr = extractJSON(raw)
-  const parsed = JSON.parse(jsonStr)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonStr)
+  } catch {
+    const repaired = tryRepairJSON(jsonStr)
+    if (repaired) {
+      parsed = JSON.parse(repaired)
+    } else {
+      throw new Error(`JSON 解析失败，原始响应长度: ${raw.length} 字符。响应可能被截断，请尝试增大 max_tokens`)
+    }
+  }
   return validateExtractResult(parsed)
 }
 
@@ -11,11 +21,61 @@ function extractJSON(text: string): string {
   if (codeBlockMatch) {
     return codeBlockMatch[1].trim()
   }
+
   const braceMatch = text.match(/\{[\s\S]*\}/)
   if (braceMatch) {
     return braceMatch[0]
   }
+
+  const partialBraceMatch = text.match(/\{[\s\S]*/)
+  if (partialBraceMatch) {
+    return partialBraceMatch[0]
+  }
+
   throw new Error('无法从 AI 响应中提取 JSON')
+}
+
+function tryRepairJSON(jsonStr: string): string | null {
+  let str = jsonStr.trim()
+
+  try {
+    JSON.parse(str)
+    return str
+  } catch {}
+
+  for (let i = 0; i < 3; i++) {
+    str = str.replace(/,\s*([}\]])/g, '$1')
+    try {
+      JSON.parse(str)
+      return str
+    } catch {}
+  }
+
+  let depth = 0
+  let inStr = false
+  let escape = false
+  for (const ch of str) {
+    if (escape) { escape = false; continue }
+    if (ch === '\\') { escape = true; continue }
+    if (ch === '"') { inStr = !inStr; continue }
+    if (inStr) continue
+    if (ch === '{' || ch === '[') depth++
+    if (ch === '}' || ch === ']') depth--
+  }
+
+  if (inStr) str += '"'
+
+  while (depth > 0) {
+    str += '}'
+    depth--
+  }
+
+  try {
+    JSON.parse(str)
+    return str
+  } catch {}
+
+  return null
 }
 
 function validateExtractResult(data: unknown): ExtractResult {
