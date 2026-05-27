@@ -1,7 +1,6 @@
 [package]
 name = "patent2pic"
 version = "0.1.0"
-authors = ["Alfred Shi"]
 edition = "2021"
 
 [lib]

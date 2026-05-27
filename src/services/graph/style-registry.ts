@@ -6,6 +6,19 @@ const NODE_TYPE_STYLES: Record<NodeType, Pick<NodeStyle, 'fill' | 'stroke'>> = {
   feature: { fill: '#f6ffed', stroke: '#52c41a' },
 }
 
+const HIERARCHY_LEVEL_COLORS: { fill: string; stroke: string }[] = [
+  { fill: '#d6e4ff', stroke: '#2f54eb' },
+  { fill: '#e6f7ff', stroke: '#1890ff' },
+  { fill: '#f0f5ff', stroke: '#adc6ff' },
+  { fill: '#f7f9fc', stroke: '#d6e4ff' },
+]
+
+export function getHierarchyNodeStyle(hierarchyLevel: number, nodeType: NodeType): Pick<NodeStyle, 'fill' | 'stroke'> {
+  const level = Math.min(hierarchyLevel, HIERARCHY_LEVEL_COLORS.length - 1)
+  if (level <= 0) return HIERARCHY_LEVEL_COLORS[0]
+  return HIERARCHY_LEVEL_COLORS[level]
+}
+
 const RELATION_TYPE_STYLES: Record<RelationType, Pick<EdgeStyle, 'stroke' | 'strokeDasharray' | 'arrowType'>> = {
   position: { stroke: '#1890FF', strokeDasharray: null, arrowType: 'solid-triangle' },
   action: { stroke: '#52c41a', strokeDasharray: null, arrowType: 'solid-triangle' },

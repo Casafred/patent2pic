@@ -62,6 +62,7 @@ function validateNodes(raw: unknown): ExtractNode[] {
       originalText: String(node.originalText),
       chineseText: String(node.chineseText),
       nodeType,
+      hierarchyLevel: typeof node.hierarchyLevel === 'number' ? node.hierarchyLevel : 0,
       sourceSentence: String(node.sourceSentence || ''),
     }
   })

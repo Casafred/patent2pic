@@ -27,6 +27,12 @@
         <div class="menu-item" @click="handleMenuAction('addEdge')">添加连接</div>
         <div class="menu-divider" />
         <div class="menu-item" @click="handleMenuAction('createGroup')">添加到限定框</div>
+        <template v-if="contextMenu.isGroup">
+          <div class="menu-divider" />
+          <div class="menu-item" @click="handleMenuAction('toggleGroupDetach')">
+            {{ contextMenu.isGroupDetached ? '锁定跟随成员节点' : '脱离自由移动' }}
+          </div>
+        </template>
         <div class="menu-divider" />
         <div class="menu-item" @click="handleMenuAction('bringToFront')">置于顶层</div>
         <div class="menu-item" @click="handleMenuAction('bringForward')">上浮一层</div>
@@ -83,6 +89,8 @@ const contextMenu = reactive({
   y: 0,
   type: 'blank' as 'node' | 'edge' | 'blank',
   cellId: '',
+  isGroup: false,
+  isGroupDetached: false,
 })
 
 onMounted(() => {
@@ -124,7 +132,12 @@ function bindExtraEvents(): void {
   engine.on('node:contextmenu', (args: unknown) => {
     const { node, e } = args as { node: { id: string }; e: { clientX: number; clientY: number; preventDefault?: () => void } }
     e.preventDefault?.()
-    showContextMenu(e.clientX, e.clientY, 'node', node.id)
+    const graph = engine.getGraph()
+    const cell = graph?.getCellById(node.id)
+    const data = cell?.getData() as Record<string, unknown> | undefined
+    const isGroup = !!(data?.isGroup)
+    const isGroupDetached = isGroup && !!(data?.detached)
+    showContextMenu(e.clientX, e.clientY, 'node', node.id, isGroup, isGroupDetached)
   })
 
   engine.on('edge:contextmenu', (args: unknown) => {
@@ -140,12 +153,14 @@ function bindExtraEvents(): void {
   })
 }
 
-function showContextMenu(x: number, y: number, type: 'node' | 'edge' | 'blank', cellId: string): void {
+function showContextMenu(x: number, y: number, type: 'node' | 'edge' | 'blank', cellId: string, isGroup: boolean = false, isGroupDetached: boolean = false): void {
   contextMenu.visible = true
   contextMenu.x = x
   contextMenu.y = y
   contextMenu.type = type
   contextMenu.cellId = cellId
+  contextMenu.isGroup = isGroup
+  contextMenu.isGroupDetached = isGroupDetached
 }
 
 function hideContextMenu(): void {
@@ -243,6 +258,9 @@ async function handleMenuAction(action: string): Promise<void> {
     case 'addEdge':
       break
     case 'createGroup':
+      break
+    case 'toggleGroupDetach':
+      engine.toggleGroupDetached(contextMenu.cellId)
       break
     case 'bringToFront':
       engine.bringToFront(contextMenu.cellId)

@@ -91,7 +91,3 @@ npm run tauri build
 ## 许可证
 
 MIT License
-
-## 作者
-
-本项目由 **Alfred Shi** 开发维护

@@ -1,7 +1,6 @@
 {
   "name": "patent2pic",
   "version": "0.1.0",
-  "author": "Alfred Shi",
   "private": true,
   "type": "module",
   "scripts": {

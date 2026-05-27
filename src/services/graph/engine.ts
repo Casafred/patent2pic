@@ -10,8 +10,8 @@ import type { NodeData, EdgeData } from '@/types/graph'
 import type { ExtractResult, ExtractGroup } from '@/types/ai'
 import { buildNode, updateNodeStyle } from './node-builder'
 import { buildEdge, updateEdgeStyle } from './edge-builder'
-import { applyLayout, type LayoutOptions } from './layout'
-import { getDefaultNodeStyle, getDefaultEdgeStyle } from './style-registry'
+import { applyDagreLayout, type DagreLayoutOptions } from './layout'
+import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle } from './style-registry'
 
 export class GraphEngine {
   private graph: Graph | null = null
@@ -147,20 +147,25 @@ export class GraphEngine {
     return this.graph
   }
 
-  batchBuild(result: ExtractResult, layoutOptions?: LayoutOptions, isChinese: boolean = false): void {
+  batchBuild(result: ExtractResult, layoutOptions?: DagreLayoutOptions, isChinese: boolean = false): void {
     if (!this.graph) return
 
     this.graph.startBatch('build')
 
     this.graph.clearCells()
 
-    const nodeDataList: NodeData[] = result.nodes.map(n => ({
-      id: n.id,
-      originalText: n.originalText,
-      chineseText: n.chineseText,
-      nodeType: n.nodeType,
-      style: getDefaultNodeStyle(n.nodeType),
-    }))
+    const nodeDataList: NodeData[] = result.nodes.map(n => {
+      const baseStyle = getDefaultNodeStyle(n.nodeType)
+      const hierarchyStyle = getHierarchyNodeStyle(n.hierarchyLevel ?? 0, n.nodeType)
+      return {
+        id: n.id,
+        originalText: n.originalText,
+        chineseText: n.chineseText,
+        nodeType: n.nodeType,
+        hierarchyLevel: n.hierarchyLevel ?? 0,
+        style: { ...baseStyle, ...hierarchyStyle },
+      }
+    })
 
     const edgeDataList: EdgeData[] = result.edges.map(e => ({
       id: e.id,
@@ -172,7 +177,7 @@ export class GraphEngine {
       style: getDefaultEdgeStyle(e.relationType),
     }))
 
-    const positions = applyLayout(nodeDataList, edgeDataList, layoutOptions)
+    const positions = applyDagreLayout(nodeDataList, edgeDataList, layoutOptions)
     for (const nodeData of nodeDataList) {
       const pos = positions.get(nodeData.id)
       if (pos) {
@@ -214,20 +219,7 @@ export class GraphEngine {
 
       if (memberNodes.length === 0) continue
 
-      let minX = Infinity
-      let minY = Infinity
-      let maxX = -Infinity
-      let maxY = -Infinity
-
-      for (const node of memberNodes) {
-        const n = node as { getPosition: () => { x: number; y: number }; getSize: () => { width: number; height: number } }
-        const pos = n.getPosition()
-        const size = n.getSize()
-        minX = Math.min(minX, pos.x)
-        minY = Math.min(minY, pos.y)
-        maxX = Math.max(maxX, pos.x + size.width)
-        maxY = Math.max(maxY, pos.y + size.height)
-      }
+      const bounds = this.getNodesBounds(memberNodes)
 
       const padding = 20
       const groupLabel = isChinese
@@ -236,15 +228,16 @@ export class GraphEngine {
 
       this.graph.addNode({
         id: group.id,
-        x: minX - padding,
-        y: minY - padding - 24,
-        width: maxX - minX + padding * 2,
-        height: maxY - minY + padding * 2 + 24,
+        x: bounds.minX - padding,
+        y: bounds.minY - padding - 24,
+        width: bounds.maxX - bounds.minX + padding * 2,
+        height: bounds.maxY - bounds.minY + padding * 2 + 24,
         shape: 'rect',
         zIndex: -1,
         attrs: {
           body: {
             fill: '#fafafa',
+            fillOpacity: 0.5,
             stroke: '#fa8c16',
             strokeWidth: 1.5,
             strokeDasharray: '6 3',
@@ -266,9 +259,127 @@ export class GraphEngine {
           isGroup: true,
           label: group.label,
           memberNodeIds: group.memberNodeIds,
+          detached: false,
         },
       })
     }
+
+    this.bindGroupTracking()
+  }
+
+  private getNodesBounds(nodes: unknown[]): { minX: number; minY: number; maxX: number; maxY: number } {
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+
+    for (const node of nodes) {
+      const n = node as { getPosition: () => { x: number; y: number }; getSize: () => { width: number; height: number } }
+      const pos = n.getPosition()
+      const size = n.getSize()
+      minX = Math.min(minX, pos.x)
+      minY = Math.min(minY, pos.y)
+      maxX = Math.max(maxX, pos.x + size.width)
+      maxY = Math.max(maxY, pos.y + size.height)
+    }
+
+    return { minX, minY, maxX, maxY }
+  }
+
+  private bindGroupTracking(): void {
+    if (!this.graph) return
+
+    let isUpdatingGroup = false
+
+    this.graph.on('node:moved', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined } }) => {
+      if (isUpdatingGroup) return
+      const data = node.getData()
+      if (data?.isGroup) return
+      isUpdatingGroup = true
+      this.updateGroupBoundsForMember(node.id)
+      isUpdatingGroup = false
+    })
+
+    this.graph.on('node:change:position', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined } }) => {
+      if (isUpdatingGroup) return
+      const data = node.getData()
+      if (data?.isGroup) return
+      isUpdatingGroup = true
+      this.updateGroupBoundsForMember(node.id)
+      isUpdatingGroup = false
+    })
+  }
+
+  updateGroupBoundsForMember(nodeId: string): void {
+    if (!this.graph) return
+
+    const groups = this.graph.getNodes().filter(n => {
+      const data = n.getData() as Record<string, unknown> | undefined
+      return data?.isGroup && !data?.detached
+    })
+
+    for (const groupNode of groups) {
+      const data = groupNode.getData() as Record<string, unknown>
+      const memberIds = (data?.memberNodeIds as string[]) || []
+      if (nodeId && !memberIds.includes(nodeId)) continue
+
+      const memberNodes = memberIds
+        .map(id => this.graph!.getCellById(id))
+        .filter(cell => cell && cell.isNode())
+
+      if (memberNodes.length === 0) continue
+
+      const bounds = this.getNodesBounds(memberNodes)
+      const padding = 20
+
+      const g = groupNode as unknown as {
+        setPosition: (x: number, y: number) => void
+        resize: (width: number, height: number) => void
+      }
+      g.setPosition(bounds.minX - padding, bounds.minY - padding - 24)
+      g.resize(
+        bounds.maxX - bounds.minX + padding * 2,
+        bounds.maxY - bounds.minY + padding * 2 + 24
+      )
+    }
+  }
+
+  toggleGroupDetached(groupId: string): boolean {
+    if (!this.graph) return false
+    const cell = this.graph.getCellById(groupId)
+    if (!cell || !cell.isNode()) return false
+
+    const data = (cell.getData() as Record<string, unknown>) || {}
+    if (!data.isGroup) return false
+
+    const newDetached = !(data.detached as boolean)
+    const n = cell as unknown as {
+      setData: (data: Record<string, unknown>) => void
+      attr: (path: string, value?: unknown) => unknown
+    }
+    n.setData({ ...data, detached: newDetached })
+
+    n.attr('body/strokeDasharray', newDetached ? '3 3' : '6 3')
+    n.attr('body/stroke', newDetached ? '#999' : '#fa8c16')
+    n.attr('body/fill', newDetached ? '#f5f5f5' : '#fafafa')
+
+    if (!newDetached) {
+      this.updateGroupBoundsForMember('')
+    }
+
+    return newDetached
+  }
+
+  isGroupDetached(groupId: string): boolean {
+    if (!this.graph) return false
+    const cell = this.graph.getCellById(groupId)
+    if (!cell || !cell.isNode()) return false
+    const data = (cell.getData() as Record<string, unknown>) || {}
+    return !!(data.detached as boolean)
+  }
+
+  rebindGroupTracking(): void {
+    this.bindGroupTracking()
   }
 
   addNode(data: NodeData): string {
@@ -291,6 +402,7 @@ export class GraphEngine {
       attrs: {
         body: {
           fill: '#fafafa',
+          fillOpacity: 0.5,
           stroke: '#fa8c16',
           strokeWidth: 1.5,
           strokeDasharray: '6 3',
@@ -312,6 +424,7 @@ export class GraphEngine {
         isGroup: true,
         label: { original: label, chinese: '' },
         memberNodeIds: [],
+        detached: false,
       },
     })
     return id
@@ -507,7 +620,7 @@ export class GraphEngine {
     this.graph.stopBatch('fontSize')
   }
 
-  applyLayout(options?: LayoutOptions): void {
+  applyLayout(options?: DagreLayoutOptions): void {
     if (!this.graph) return
 
     const nodes = this.graph.getNodes()
@@ -538,7 +651,7 @@ export class GraphEngine {
       }
     }).filter(e => e.source && e.target)
 
-    const positions = applyLayout(nodeDataList, edgeDataList, options)
+    const positions = applyDagreLayout(nodeDataList, edgeDataList, options)
 
     this.graph.startBatch('layout')
     for (const node of nodes) {

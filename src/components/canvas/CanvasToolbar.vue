@@ -197,6 +197,7 @@ function handleAddSave(data: { originalText: string; chineseText: string; nodeTy
       originalText: data.originalText,
       chineseText: data.chineseText,
       nodeType: data.nodeType || 'component',
+      hierarchyLevel: 0,
       style,
       x: 100,
       y: 100,

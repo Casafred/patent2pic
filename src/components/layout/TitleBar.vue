@@ -6,7 +6,6 @@
     </div>
     <div class="title-bar-center" data-tauri-drag-region>
       专利功能分解图工具
-      <span class="author-info">by Alfred Shi</span>
     </div>
     <div class="title-bar-right">
       <button class="title-btn" @click="showAIConfig = true" title="API 设置">
@@ -68,12 +67,6 @@ const showAIConfig = ref(false)
   text-align: center;
   font-size: var(--font-size-sm);
   color: var(--text-tertiary);
-}
-
-.author-info {
-  margin-left: 8px;
-  font-size: var(--font-size-xs);
-  color: var(--text-quaternary);
 }
 
 .title-bar-right {

@@ -35,6 +35,7 @@ export interface NodeData {
   originalText: string
   chineseText: string
   nodeType: NodeType
+  hierarchyLevel: number
   style: NodeStyle
   x?: number
   y?: number
@@ -56,6 +57,7 @@ export interface GroupData {
   id: string
   label: { original: string; chinese: string }
   memberNodeIds: string[]
+  detached: boolean
   style: {
     stroke: string
     strokeDasharray: string | null
