@@ -26,7 +26,7 @@ export class OpenAIProvider implements AIProviderAdapter {
         model: params.model,
         messages: params.messages,
         temperature: params.temperature ?? 0.1,
-        max_tokens: params.maxTokens ?? 4096,
+        max_tokens: params.maxTokens ?? 16384,
         stream: true,
       }),
       signal,

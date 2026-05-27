@@ -61,14 +61,6 @@ export function useAIExtract() {
         aiStore.extractStreamContent = fullContent
       }
 
-      const result = parseExtractResult(fullContent)
-      result.claimId = claimStore.activeClaimId || ''
-
-      graphStore.updateTabExtractResult(tab.id, result)
-      graphStore.updateTabName(tab.id, `权利要求 ${graphStore.tabs.length}`)
-
-      graphEngine.batchBuild(result, undefined, isChinese)
-
       aiStore.addExtractLog({
         provider: providerType,
         model,
@@ -77,39 +69,49 @@ export function useAIExtract() {
         claimPreview,
       })
 
+      const result = parseExtractResult(fullContent)
+      result.claimId = claimStore.activeClaimId || ''
+
+      graphStore.updateTabExtractResult(tab.id, result)
+      graphStore.updateTabName(tab.id, `权利要求 ${graphStore.tabs.length}`)
+
+      graphEngine.batchBuild(result, undefined, isChinese)
+
       return result
     } catch (err) {
-      if ((err as Error).name === 'AbortError') {
+      const rawResponse = fullContent || aiStore.extractStreamContent || ''
+      const isAbort = (err as Error).name === 'AbortError'
+
+      if (isAbort) {
         graphStore.removeTab(tab.id)
         error.value = '已终止分析'
         aiStore.extractError = '已终止分析'
-
-        if (fullContent) {
-          aiStore.addExtractLog({
-            provider: providerType,
-            model,
-            status: 'error',
-            rawResponse: fullContent,
-            errorMessage: '用户终止分析',
-            claimPreview,
-          })
-        }
-
-        return null
+      } else {
+        const message = (err as Error).message || '抽取失败'
+        aiStore.extractError = message
+        error.value = message
+        graphStore.removeTab(tab.id)
       }
-      const message = (err as Error).message || '抽取失败'
-      aiStore.extractError = message
-      error.value = message
-      graphStore.removeTab(tab.id)
 
-      aiStore.addExtractLog({
-        provider: providerType,
-        model,
-        status: 'error',
-        rawResponse: fullContent || '(无响应内容)',
-        errorMessage: message,
-        claimPreview,
-      })
+      if (rawResponse) {
+        aiStore.addExtractLog({
+          provider: providerType,
+          model,
+          status: 'error',
+          rawResponse,
+          errorMessage: isAbort ? '用户终止分析' : (err as Error).message,
+          claimPreview,
+        })
+      } else {
+        aiStore.addExtractLog({
+          provider: providerType,
+          model,
+          status: 'error',
+          rawResponse: '(未收到任何响应内容)',
+          errorMessage: isAbort ? '用户终止分析' : (err as Error).message,
+          claimPreview,
+        })
+      }
 
       return null
     } finally {
