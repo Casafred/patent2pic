@@ -70,7 +70,7 @@ export function useAutoSave() {
         } else if (activeTab?.extractResult) {
           const graph = graphEngine.getGraph()
           if (graph) {
-            graphEngine.batchBuild(activeTab.extractResult, undefined, activeTab.isChinese)
+            graphEngine.batchBuild(activeTab.extractResult, undefined, activeTab.isChinese).catch(console.error)
           }
         }
 

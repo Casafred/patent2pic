@@ -1,5 +1,6 @@
 import type { ChatParams, ChatChunk } from '@/types/ai'
 import type { AIProviderAdapter } from './types'
+import { timingStart, timingEnd, timingLap } from '@/utils/timing'
 
 export class OpenAIProvider implements AIProviderAdapter {
   readonly type = 'openai' as const
@@ -15,6 +16,11 @@ export class OpenAIProvider implements AIProviderAdapter {
   async *chat(params: ChatParams): AsyncGenerator<ChatChunk> {
     const { baseUrl, apiKey, signal } = this.extractMeta(params)
     const url = `${this.buildUrl(baseUrl)}/chat/completions`
+
+    const providerTimingKey = `    │ OpenAI API`
+    timingStart(providerTimingKey)
+
+    timingStart(`    │ HTTP 连接`)
 
     const response = await fetch(url, {
       method: 'POST',
@@ -33,16 +39,23 @@ export class OpenAIProvider implements AIProviderAdapter {
       signal,
     })
 
+    timingEnd(`    │ HTTP 连接`)
+
     if (!response.ok) {
       const errorText = await response.text()
+      timingEnd(providerTimingKey)
       throw new Error(`OpenAI API 请求失败 (${response.status}): ${errorText}`)
     }
 
     const reader = response.body?.getReader()
-    if (!reader) throw new Error('无法读取响应流')
+    if (!reader) {
+      timingEnd(providerTimingKey)
+      throw new Error('无法读取响应流')
+    }
 
     const decoder = new TextDecoder()
     let buffer = ''
+    let firstContentYielded = false
 
     while (true) {
       const { done, value } = await reader.read()
@@ -57,6 +70,7 @@ export class OpenAIProvider implements AIProviderAdapter {
         if (!trimmed || !trimmed.startsWith('data:')) continue
         const data = trimmed.slice(5).trim()
         if (data === '[DONE]') {
+          timingEnd(providerTimingKey)
           yield { content: '', done: true }
           return
         }
@@ -64,6 +78,10 @@ export class OpenAIProvider implements AIProviderAdapter {
           const parsed = JSON.parse(data)
           const content = parsed.choices?.[0]?.delta?.content || ''
           if (content) {
+            if (!firstContentYielded) {
+              firstContentYielded = true
+              timingLap(`  首段内容到达`, providerTimingKey)
+            }
             yield { content, done: false }
           }
         } catch {
@@ -71,6 +89,8 @@ export class OpenAIProvider implements AIProviderAdapter {
         }
       }
     }
+
+    timingEnd(providerTimingKey)
   }
 
   async testConnection(apiKey: string, baseUrl: string, model: string): Promise<{ success: boolean; message: string; latency?: number }> {

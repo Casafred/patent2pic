@@ -37,7 +37,7 @@ const hasSelection = computed(() =>
   editorStore.selectedNodeIds.length > 0 || editorStore.selectedEdgeIds.length > 0,
 )
 
-watch(() => graphStore.activeTabId, (newTabId, oldTabId) => {
+watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
   if (!newTabId || newTabId === oldTabId) return
 
   if (oldTabId) {
@@ -59,7 +59,7 @@ watch(() => graphStore.activeTabId, (newTabId, oldTabId) => {
   if (newTab.serializedGraph && Object.keys(newTab.serializedGraph).length > 0) {
     graphEngine.fromJSON(newTab.serializedGraph)
   } else if (newTab.extractResult) {
-    graphEngine.batchBuild(newTab.extractResult, undefined, newTab.isChinese)
+    await graphEngine.batchBuild(newTab.extractResult, undefined, newTab.isChinese)
   }
 })
 </script>
