@@ -13,7 +13,7 @@ export class DeepSeekProvider implements AIProviderAdapter {
   }
 
   async *chat(params: ChatParams): AsyncGenerator<ChatChunk> {
-    const { baseUrl, apiKey } = this.extractMeta(params)
+    const { baseUrl, apiKey, signal } = this.extractMeta(params)
     const url = `${this.buildUrl(baseUrl)}/chat/completions`
 
     const response = await fetch(url, {
@@ -29,6 +29,7 @@ export class DeepSeekProvider implements AIProviderAdapter {
         max_tokens: params.maxTokens ?? 4096,
         stream: true,
       }),
+      signal,
     })
 
     if (!response.ok) {
@@ -101,12 +102,13 @@ export class DeepSeekProvider implements AIProviderAdapter {
     }
   }
 
-  private extractMeta(params: ChatParams & { _meta?: { baseUrl?: string; apiKey?: string } }): { baseUrl: string; apiKey: string } {
+  private extractMeta(params: ChatParams & { _meta?: { baseUrl?: string; apiKey?: string; signal?: AbortSignal } }): { baseUrl: string; apiKey: string; signal?: AbortSignal } {
     const paramsAny = params as unknown as Record<string, unknown>
-    const meta = paramsAny._meta as { baseUrl?: string; apiKey?: string } | undefined
+    const meta = paramsAny._meta as { baseUrl?: string; apiKey?: string; signal?: AbortSignal } | undefined
     return {
       baseUrl: meta?.baseUrl || 'https://api.deepseek.com',
       apiKey: meta?.apiKey || '',
+      signal: meta?.signal,
     }
   }
 }

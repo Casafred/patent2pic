@@ -21,12 +21,15 @@ export function useAIExtract() {
   const graphStore = useGraphStore()
   const streamContent = ref('')
   const error = ref<string | null>(null)
+  let abortController: AbortController | null = null
 
   async function extract(claimText: string): Promise<ExtractResult | null> {
     aiStore.isExtracting = true
     aiStore.extractError = null
     streamContent.value = ''
     error.value = null
+
+    abortController = new AbortController()
 
     const isChinese = isChineseText(claimText)
 
@@ -46,6 +49,7 @@ export function useAIExtract() {
           temperature: 0.1,
           stream: true,
         },
+        abortController.signal,
       )) {
         if (chunk.done) break
         fullContent += chunk.content
@@ -63,6 +67,12 @@ export function useAIExtract() {
 
       return result
     } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        graphStore.removeTab(tab.id)
+        error.value = '已终止分析'
+        aiStore.extractError = '已终止分析'
+        return null
+      }
       const message = (err as Error).message || '抽取失败'
       aiStore.extractError = message
       error.value = message
@@ -70,6 +80,14 @@ export function useAIExtract() {
       return null
     } finally {
       aiStore.isExtracting = false
+      abortController = null
+    }
+  }
+
+  function abort(): void {
+    if (abortController) {
+      abortController.abort()
+      abortController = null
     }
   }
 
@@ -91,5 +109,6 @@ export function useAIExtract() {
     error,
     extract,
     extractActiveClaim,
+    abort,
   }
 }

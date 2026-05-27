@@ -20,15 +20,38 @@
 
 <script setup lang="ts">
 import { useGraphStore } from '@/stores/graph'
+import { ElMessageBox } from 'element-plus'
+import { useProjectFile } from '@/composables/useProjectFile'
 
 const graphStore = useGraphStore()
+const { saveProject } = useProjectFile()
 
 function handleTabClick(id: string): void {
   graphStore.setActiveTab(id)
 }
 
-function handleTabClose(id: string): void {
-  graphStore.removeTab(id)
+async function handleTabClose(id: string): Promise<void> {
+  const tab = graphStore.tabs.find((t: { id: string }) => t.id === id)
+  if (!tab) return
+
+  try {
+    await ElMessageBox.confirm(
+      '关闭标签页前是否保存当前项目？未保存的修改将会丢失。',
+      '保存提醒',
+      {
+        confirmButtonText: '保存并关闭',
+        cancelButtonText: '直接关闭',
+        distinguishCancelAndClose: true,
+        type: 'warning',
+      },
+    )
+    await saveProject()
+    graphStore.removeTab(id)
+  } catch (action: unknown) {
+    if (action === 'cancel') {
+      graphStore.removeTab(id)
+    }
+  }
 }
 </script>
 

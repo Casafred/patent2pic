@@ -787,9 +787,24 @@ export class GraphEngine {
   toSVG(_options?: { padding?: number }): string {
     if (!this.graph) return ''
 
+    const padding = _options?.padding ?? 40
+    const contentArea = this.graph.getContentArea()
+    const contentBBox = contentArea.x !== undefined ? contentArea : null
+
     let svgStr = ''
     this.graph.toSVG((svg: string) => {
-      svgStr = svg
+      if (contentBBox && (contentBBox as { x: number }).x !== undefined) {
+        const bbox = contentBBox as { x: number; y: number; width: number; height: number }
+        const svgWidth = bbox.width + padding * 2
+        const svgHeight = bbox.height + padding * 2
+        const viewBox = `${bbox.x - padding} ${bbox.y - padding} ${svgWidth} ${svgHeight}`
+        svgStr = svg.replace(
+          /<svg([^>]*)>/,
+          `<svg$1 viewBox="${viewBox}" width="${svgWidth}" height="${svgHeight}">`
+        )
+      } else {
+        svgStr = svg
+      }
     })
     return svgStr
   }

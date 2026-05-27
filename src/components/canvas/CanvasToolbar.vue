@@ -23,12 +23,6 @@
     <div class="toolbar-divider" />
 
     <div class="toolbar-group">
-      <el-tooltip content="放大" placement="bottom">
-        <el-button size="small" @click="engine.zoomIn()">+</el-button>
-      </el-tooltip>
-      <el-tooltip content="缩小" placement="bottom">
-        <el-button size="small" @click="engine.zoomOut()">−</el-button>
-      </el-tooltip>
       <el-tooltip content="适配画布" placement="bottom">
         <el-button size="small" @click="engine.fitView()">适配</el-button>
       </el-tooltip>
@@ -40,9 +34,6 @@
     <div class="toolbar-divider" />
 
     <div class="toolbar-group">
-      <el-tooltip content="自动布局" placement="bottom">
-        <el-button size="small" @click="engine.applyLayout()">自动布局</el-button>
-      </el-tooltip>
       <el-tooltip content="恢复到初始生成状态" placement="bottom">
         <el-button size="small" :disabled="!engine.hasInitialState()" @click="handleResetToInitial">重置</el-button>
       </el-tooltip>

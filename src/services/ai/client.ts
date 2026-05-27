@@ -21,11 +21,12 @@ export async function* streamChat(
   apiKey: string,
   baseUrl: string,
   params: ChatParams,
+  signal?: AbortSignal,
 ): AsyncGenerator<ChatChunk> {
   const provider = getProvider(providerType)
-  const enrichedParams: ChatParams & { _meta: { baseUrl: string; apiKey: string } } = {
+  const enrichedParams: ChatParams & { _meta: { baseUrl: string; apiKey: string; signal?: AbortSignal } } = {
     ...params,
-    _meta: { baseUrl, apiKey },
+    _meta: { baseUrl, apiKey, signal },
   }
   yield* provider.chat(enrichedParams)
 }

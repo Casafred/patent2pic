@@ -46,7 +46,10 @@
 
       <div v-if="aiStore.isExtracting" class="extract-progress">
         <el-progress :percentage="100" :indeterminate="true" :show-text="false" />
-        <p class="progress-text">AI 正在分析权利要求结构...</p>
+        <div class="progress-row">
+          <p class="progress-text">AI 正在分析权利要求结构...</p>
+          <el-button size="small" type="danger" @click="abort">终止</el-button>
+        </div>
       </div>
 
       <div v-if="extractError" class="extract-error">
@@ -80,7 +83,7 @@ import { parseClaims, getClaimPreview } from '@/services/claim/parser'
 
 const claimStore = useClaimStore()
 const aiStore = useAIStore()
-const { extractActiveClaim, error: extractError } = useAIExtract()
+const { extractActiveClaim, error: extractError, abort } = useAIExtract()
 
 const activeClaimIndex = computed(() => {
   const claim = claimStore.getActiveClaim()
@@ -215,6 +218,13 @@ async function handleGenerate(): Promise<void> {
 
 .extract-progress {
   margin-top: var(--spacing-sm);
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--spacing-xs);
 }
 
 .progress-text {
