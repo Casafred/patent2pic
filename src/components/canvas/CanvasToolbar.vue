@@ -140,7 +140,6 @@ function handleFontSizeChange(delta: number): void {
   graphStore.setGlobalEdgeFontSize(newEdgeSize)
   engine.setAllNodeFontSize(newNodeSize)
   engine.setAllEdgeFontSize(newEdgeSize)
-  engine.applyLayout()
 }
 
 function handleResetToInitial(): void {

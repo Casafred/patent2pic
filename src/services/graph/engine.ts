@@ -89,11 +89,15 @@ export class GraphEngine {
   private bindEdgeLabelConstraint(): void {
     if (!this.graph) return
 
-    this.graph.on('edge:label:drag:end', ({ edge }: { edge: { 
+    let isConstraining = false
+
+    const constrainLabelPosition = (edge: {
       getData: () => Record<string, unknown> | undefined
       getLabels: () => unknown[]
-      setLabels: (labels: unknown[]) => void
-    } }) => {
+      prop: (path: string, value: unknown) => void
+    }) => {
+      if (isConstraining) return
+
       const data = edge.getData()
       if (data?.labelDetached) return
 
@@ -102,19 +106,32 @@ export class GraphEngine {
 
       const label = labels[0] as Record<string, unknown>
       const position = label.position as { distance?: number; offset?: { x: number; y: number } } | undefined
-      
-      if (position && typeof position.distance === 'number') {
-        let distance = position.distance
-        distance = Math.max(0, Math.min(1, distance))
-        
-        edge.setLabels([{
-          ...label,
-          position: {
-            distance,
-            offset: { x: 0, y: 0 },
-          },
-        }])
+
+      if (!position) return
+
+      const hasOffset = position.offset && (position.offset.x !== 0 || position.offset.y !== 0)
+      const distanceOutOfRange = typeof position.distance === 'number' && (position.distance < 0 || position.distance > 1)
+      const noDistance = typeof position.distance !== 'number'
+
+      if (hasOffset || distanceOutOfRange || noDistance) {
+        isConstraining = true
+        const distance = typeof position.distance === 'number'
+          ? Math.max(0, Math.min(1, position.distance))
+          : 0.5
+        edge.prop('labels/0/position', {
+          distance,
+          offset: { x: 0, y: 0 },
+        })
+        isConstraining = false
       }
+    }
+
+    this.graph.on('edge:label:drag:end', ({ edge }: { edge: Record<string, unknown> }) => {
+      constrainLabelPosition(edge as unknown as Parameters<typeof constrainLabelPosition>[0])
+    })
+
+    this.graph.on('edge:change:labels', ({ edge }: { edge: Record<string, unknown> }) => {
+      constrainLabelPosition(edge as unknown as Parameters<typeof constrainLabelPosition>[0])
     })
   }
 
