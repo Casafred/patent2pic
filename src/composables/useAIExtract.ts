@@ -52,7 +52,7 @@ export function useAIExtract() {
 
     try {
       timingStart(`  │ 构建提示词`)
-      const messages = buildMessages(claimText)
+      const messages = buildMessages(claimText, providerType)
       timingEnd(`  │ 构建提示词`)
 
       const isDeepSeek = aiStore.activeProviderType === 'deepseek'
