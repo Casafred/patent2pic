@@ -2,7 +2,7 @@ import type { Claim, Sentence } from '@/types/claim'
 
 const CLAIM_NUMBER_REGEX = /(?:^|\n)\s*(\d+)\s*[.、．]\s*/g
 
-const SENTENCE_SPLIT_REGEX = /[。；;]/
+const SENTENCE_SPLIT_REGEX = /[。；;，,！!？?：:、]|\.(?=\s|$)/
 
 export function parseClaims(rawText: string): Claim[] {
   const trimmed = rawText.trim()
@@ -36,11 +36,29 @@ function splitByClaimNumbers(text: string): string[] {
 }
 
 function splitSentences(claimText: string, claimIndex: number): Sentence[] {
-  const parts = claimText.split(SENTENCE_SPLIT_REGEX).filter(s => s.trim().length > 0)
+  const parts: string[] = []
+  let remaining = claimText
+
+  while (remaining.length > 0) {
+    const match = remaining.match(SENTENCE_SPLIT_REGEX)
+    if (!match || match.index === undefined) {
+      if (remaining.trim().length > 0) {
+        parts.push(remaining.trim())
+      }
+      break
+    }
+
+    const splitIndex = match.index + match[0].length
+    const part = remaining.slice(0, splitIndex).trim()
+    if (part.length > 0) {
+      parts.push(part)
+    }
+    remaining = remaining.slice(splitIndex)
+  }
 
   return parts.map((text, index) => ({
     id: `claim-${claimIndex}-sent-${index + 1}`,
-    text: text.trim(),
+    text,
     nodeIds: [],
     edgeIds: [],
   }))

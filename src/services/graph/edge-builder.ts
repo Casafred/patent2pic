@@ -42,8 +42,8 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
         attrs: {
           bg: {
             ref: 'labelText',
-            refX: -8,
-            refY: -6,
+            refX: '-20%',
+            refY: '-20%',
             refWidth: '140%',
             refHeight: '140%',
             fill: style.labelBgColor || '#ffffff',
@@ -61,6 +61,10 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
             fontWeight: 'bold',
             textAnchor: 'middle',
             textVerticalAnchor: 'middle',
+            stroke: style.labelBgColor || '#ffffff',
+            strokeWidth: 8,
+            paintOrder: 'stroke fill',
+            strokeLinejoin: 'round',
           },
         },
         position: {
@@ -108,7 +112,10 @@ export function updateEdgeStyle(edge: unknown, style: Partial<EdgeData['style']>
       if (style.fontColor !== undefined) newLabelText.fill = style.fontColor
 
       const newBg: Record<string, unknown> = { ...existingBg }
-      if (style.labelBgColor !== undefined) newBg.fill = style.labelBgColor
+      if (style.labelBgColor !== undefined) {
+        newBg.fill = style.labelBgColor
+        newLabelText.stroke = style.labelBgColor
+      }
 
       const newLabel = {
         ...existingLabel,
