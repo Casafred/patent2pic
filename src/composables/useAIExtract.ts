@@ -6,7 +6,7 @@ import { streamChat } from '@/services/ai/client'
 import { buildMessages } from '@/services/ai/prompt'
 import { parseExtractResult } from '@/services/ai/extractor'
 import { graphEngine } from '@/services/graph/engine'
-import type { ExtractResult } from '@/types/ai'
+import type { ChatUsage, ExtractResult } from '@/types/ai'
 
 function isChineseText(text: string): boolean {
   const chineseChars = text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g)
@@ -20,6 +20,8 @@ export function useAIExtract() {
   const claimStore = useClaimStore()
   const graphStore = useGraphStore()
   const streamContent = ref('')
+  const reasoningContent = ref('')
+  const lastUsage = ref<ChatUsage | null>(null)
   const error = ref<string | null>(null)
   let abortController: AbortController | null = null
 
@@ -27,6 +29,8 @@ export function useAIExtract() {
     aiStore.isExtracting = true
     aiStore.extractError = null
     streamContent.value = ''
+    reasoningContent.value = ''
+    lastUsage.value = null
     error.value = null
 
     abortController = new AbortController()
@@ -39,10 +43,12 @@ export function useAIExtract() {
     const tab = graphStore.addTab(undefined, isChinese)
 
     let fullContent = ''
+    let fullReasoning = ''
     let streamError: string | null = null
 
     try {
       const messages = buildMessages(claimText)
+      const isDeepSeek = aiStore.activeProviderType === 'deepseek'
 
       for await (const chunk of streamChat(
         aiStore.activeProviderType,
@@ -51,22 +57,31 @@ export function useAIExtract() {
         {
           model: aiStore.activeModel,
           messages,
-          temperature: aiStore.activeProviderType === 'deepseek' ? undefined : 0.1,
+          temperature: isDeepSeek ? undefined : 0.1,
           stream: true,
-          responseFormat: aiStore.activeProviderType === 'deepseek' || aiStore.activeProviderType === 'openai'
+          responseFormat: isDeepSeek || aiStore.activeProviderType === 'openai'
             ? { type: 'json_object' }
             : undefined,
-          thinking: aiStore.activeProviderType === 'deepseek'
+          thinking: isDeepSeek
             ? { type: 'enabled' }
             : undefined,
-          reasoningEffort: aiStore.activeProviderType === 'deepseek'
+          reasoningEffort: isDeepSeek
             ? 'high'
             : undefined,
+          userId: isDeepSeek ? 'patent2pic-user' : undefined,
+          streamOptions: isDeepSeek ? { includeUsage: true } : undefined,
         },
         abortController.signal,
       )) {
         if (chunk.done) break
+        if (chunk.usage) {
+          lastUsage.value = chunk.usage
+        }
         fullContent += chunk.content
+        if (chunk.reasoningContent) {
+          fullReasoning += chunk.reasoningContent
+          reasoningContent.value = fullReasoning
+        }
         streamContent.value = fullContent
         aiStore.extractStreamContent = fullContent
       }
@@ -158,6 +173,8 @@ export function useAIExtract() {
 
   return {
     streamContent,
+    reasoningContent,
+    lastUsage,
     error,
     extract,
     extractActiveClaim,

@@ -1,4 +1,4 @@
-import type { ChatParams, ChatChunk } from '@/types/ai'
+import type { ChatParams, ChatChunk, ChatUsage } from '@/types/ai'
 import type { AIProviderAdapter } from './types'
 
 export class DeepSeekProvider implements AIProviderAdapter {
@@ -21,12 +21,16 @@ export class DeepSeekProvider implements AIProviderAdapter {
     const body: Record<string, unknown> = {
       model: params.model,
       messages: params.messages,
-      max_tokens: params.maxTokens ?? 16384,
+      max_tokens: params.maxTokens ?? (isThinking ? 32768 : 16384),
       stream: true,
+      stream_options: { include_usage: true },
     }
 
     if (!isThinking) {
       body.temperature = params.temperature ?? 0.1
+      if (params.topP !== undefined) {
+        body.top_p = params.topP
+      }
     }
 
     if (params.responseFormat) {
@@ -34,11 +38,19 @@ export class DeepSeekProvider implements AIProviderAdapter {
     }
 
     if (params.thinking) {
-      body.thinking = params.thinking
+      const thinking: Record<string, unknown> = { type: params.thinking.type }
+      if (params.thinking.budgetTokens !== undefined) {
+        thinking.budget_tokens = params.thinking.budgetTokens
+      }
+      body.thinking = thinking
     }
 
     if (params.reasoningEffort) {
       body.reasoning_effort = params.reasoningEffort
+    }
+
+    if (params.userId) {
+      body.user_id = params.userId
     }
 
     const response = await fetch(url, {
@@ -81,11 +93,24 @@ export class DeepSeekProvider implements AIProviderAdapter {
         try {
           const parsed = JSON.parse(data)
           const delta = parsed.choices?.[0]?.delta
-          if (!delta) continue
+          if (delta) {
+            const content = delta.content || ''
+            const reasoningContent = delta.reasoning_content || ''
+            if (content || reasoningContent) {
+              yield {
+                content,
+                ...(reasoningContent ? { reasoningContent } : {}),
+                done: false,
+              }
+            }
+          }
 
-          const content = delta.content || ''
-          if (content) {
-            yield { content, done: false }
+          if (parsed.usage) {
+            yield {
+              content: '',
+              done: false,
+              usage: this.parseUsage(parsed.usage),
+            }
           }
         } catch {
           continue
@@ -121,6 +146,17 @@ export class DeepSeekProvider implements AIProviderAdapter {
     } catch (err) {
       const latency = Math.round(performance.now() - start)
       return { success: false, message: `网络错误: ${(err as Error).message}`, latency }
+    }
+  }
+
+  private parseUsage(raw: Record<string, unknown>): ChatUsage {
+    return {
+      promptTokens: (raw.prompt_tokens as number) ?? 0,
+      completionTokens: (raw.completion_tokens as number) ?? 0,
+      totalTokens: (raw.total_tokens as number) ?? 0,
+      promptCacheHitTokens: raw.prompt_cache_hit_tokens as number | undefined,
+      promptCacheMissTokens: raw.prompt_cache_miss_tokens as number | undefined,
+      reasoningTokens: (raw.completion_tokens_details as Record<string, unknown>)?.reasoning_tokens as number | undefined,
     }
   }
 

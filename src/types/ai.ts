@@ -27,13 +27,27 @@ export interface ChatParams {
   maxTokens?: number
   stream?: boolean
   responseFormat?: { type: 'json_object' } | { type: 'text' }
-  thinking?: { type: 'enabled' | 'disabled' }
+  thinking?: { type: 'enabled' | 'disabled'; budgetTokens?: number }
   reasoningEffort?: 'high' | 'max'
+  topP?: number
+  userId?: string
+  streamOptions?: { includeUsage?: boolean }
 }
 
 export interface ChatChunk {
   content: string
+  reasoningContent?: string
   done: boolean
+  usage?: ChatUsage
+}
+
+export interface ChatUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  promptCacheHitTokens?: number
+  promptCacheMissTokens?: number
+  reasoningTokens?: number
 }
 
 export interface ExtractResult {
