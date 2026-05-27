@@ -176,7 +176,7 @@ export function useAIExtract() {
     timingStart(`  │ 图谱构建`)
     graphStore.updateTabExtractResult(tab.id, result)
     graphStore.updateTabName(tab.id, `权利要求 ${graphStore.tabs.length}`)
-    graphEngine.batchBuild(result, undefined, isChinese)
+    await graphEngine.batchBuild(result, undefined, isChinese)
     timingEnd(`  │ 图谱构建`)
 
     timingLap(`  节点数=${result.nodes.length} 边数=${result.edges.length} 组数=${result.groups.length}`, timingKey)
