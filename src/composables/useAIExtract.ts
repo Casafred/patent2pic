@@ -39,6 +39,7 @@ export function useAIExtract() {
     const tab = graphStore.addTab(undefined, isChinese)
 
     let fullContent = ''
+    let streamError: string | null = null
 
     try {
       const messages = buildMessages(claimText)
@@ -60,64 +61,70 @@ export function useAIExtract() {
         streamContent.value = fullContent
         aiStore.extractStreamContent = fullContent
       }
+    } catch (err) {
+      const isAbort = (err as Error).name === 'AbortError'
+      streamError = isAbort ? '用户终止分析' : ((err as Error).message || '流式请求失败')
 
       aiStore.addExtractLog({
         provider: providerType,
         model,
-        status: 'success',
-        rawResponse: fullContent,
+        status: 'error',
+        rawResponse: fullContent || '(未收到任何响应内容)',
+        errorMessage: streamError,
         claimPreview,
       })
 
-      const result = parseExtractResult(fullContent)
-      result.claimId = claimStore.activeClaimId || ''
-
-      graphStore.updateTabExtractResult(tab.id, result)
-      graphStore.updateTabName(tab.id, `权利要求 ${graphStore.tabs.length}`)
-
-      graphEngine.batchBuild(result, undefined, isChinese)
-
-      return result
-    } catch (err) {
-      const rawResponse = fullContent || aiStore.extractStreamContent || ''
-      const isAbort = (err as Error).name === 'AbortError'
-
-      if (isAbort) {
-        graphStore.removeTab(tab.id)
-        error.value = '已终止分析'
-        aiStore.extractError = '已终止分析'
-      } else {
-        const message = (err as Error).message || '抽取失败'
-        aiStore.extractError = message
-        error.value = message
-        graphStore.removeTab(tab.id)
-      }
-
-      if (rawResponse) {
-        aiStore.addExtractLog({
-          provider: providerType,
-          model,
-          status: 'error',
-          rawResponse,
-          errorMessage: isAbort ? '用户终止分析' : (err as Error).message,
-          claimPreview,
-        })
-      } else {
-        aiStore.addExtractLog({
-          provider: providerType,
-          model,
-          status: 'error',
-          rawResponse: '(未收到任何响应内容)',
-          errorMessage: isAbort ? '用户终止分析' : (err as Error).message,
-          claimPreview,
-        })
-      }
-
-      return null
-    } finally {
+      graphStore.removeTab(tab.id)
+      aiStore.extractError = streamError
+      error.value = streamError
       aiStore.isExtracting = false
       abortController = null
+      return null
     }
+
+    let parseError: string | null = null
+    let result: ExtractResult | null = null
+
+    try {
+      result = parseExtractResult(fullContent)
+      result.claimId = claimStore.activeClaimId || ''
+    } catch (err) {
+      parseError = (err as Error).message || '解析失败'
+    }
+
+    if (parseError || !result) {
+      aiStore.addExtractLog({
+        provider: providerType,
+        model,
+        status: 'error',
+        rawResponse: fullContent,
+        errorMessage: parseError || '解析结果为空',
+        claimPreview,
+      })
+
+      graphStore.removeTab(tab.id)
+      aiStore.extractError = parseError || '解析结果为空'
+      error.value = parseError || '解析结果为空'
+      aiStore.isExtracting = false
+      abortController = null
+      return null
+    }
+
+    aiStore.addExtractLog({
+      provider: providerType,
+      model,
+      status: 'success',
+      rawResponse: fullContent,
+      claimPreview,
+    })
+
+    graphStore.updateTabExtractResult(tab.id, result)
+    graphStore.updateTabName(tab.id, `权利要求 ${graphStore.tabs.length}`)
+    graphEngine.batchBuild(result, undefined, isChinese)
+
+    aiStore.isExtracting = false
+    abortController = null
+    return result
   }
 
   function abort(): void {
