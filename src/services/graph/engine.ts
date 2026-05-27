@@ -10,7 +10,7 @@ import type { NodeData, EdgeData } from '@/types/graph'
 import type { ExtractResult, ExtractGroup } from '@/types/ai'
 import { buildNode, updateNodeStyle } from './node-builder'
 import { buildEdge, updateEdgeStyle } from './edge-builder'
-import { applyDagreLayout, type DagreLayoutOptions } from './layout'
+import { applyLayout, type LayoutOptions } from './layout'
 import { getDefaultNodeStyle, getDefaultEdgeStyle } from './style-registry'
 
 export class GraphEngine {
@@ -147,7 +147,7 @@ export class GraphEngine {
     return this.graph
   }
 
-  batchBuild(result: ExtractResult, layoutOptions?: DagreLayoutOptions, isChinese: boolean = false): void {
+  batchBuild(result: ExtractResult, layoutOptions?: LayoutOptions, isChinese: boolean = false): void {
     if (!this.graph) return
 
     this.graph.startBatch('build')
@@ -172,7 +172,7 @@ export class GraphEngine {
       style: getDefaultEdgeStyle(e.relationType),
     }))
 
-    const positions = applyDagreLayout(nodeDataList, edgeDataList, layoutOptions)
+    const positions = applyLayout(nodeDataList, edgeDataList, layoutOptions)
     for (const nodeData of nodeDataList) {
       const pos = positions.get(nodeData.id)
       if (pos) {
@@ -507,7 +507,7 @@ export class GraphEngine {
     this.graph.stopBatch('fontSize')
   }
 
-  applyLayout(options?: DagreLayoutOptions): void {
+  applyLayout(options?: LayoutOptions): void {
     if (!this.graph) return
 
     const nodes = this.graph.getNodes()
@@ -538,7 +538,7 @@ export class GraphEngine {
       }
     }).filter(e => e.source && e.target)
 
-    const positions = applyDagreLayout(nodeDataList, edgeDataList, options)
+    const positions = applyLayout(nodeDataList, edgeDataList, options)
 
     this.graph.startBatch('layout')
     for (const node of nodes) {
