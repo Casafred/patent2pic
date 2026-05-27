@@ -743,6 +743,7 @@ export class GraphEngine {
 
     const padding = options?.padding ?? 40
     const backgroundColor = options?.backgroundColor ?? '#ffffff'
+    const scale = options?.scale ?? 3
 
     return new Promise<Blob | null>((resolve) => {
       this.graph!.toPNG((dataUrl: string) => {
@@ -763,35 +764,7 @@ export class GraphEngine {
         padding,
         backgroundColor,
         quality: 1,
-      })
-    })
-  }
-
-  async toHighQualityPNG(options?: { padding?: number; backgroundColor?: string; scale?: number }): Promise<Blob | null> {
-    if (!this.graph) return null
-
-    const padding = options?.padding ?? 40
-    const backgroundColor = options?.backgroundColor ?? '#ffffff'
-
-    return new Promise<Blob | null>((resolve) => {
-      this.graph!.toPNG((dataUrl: string) => {
-        try {
-          const byteString = atob(dataUrl.split(',')[1])
-          const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0]
-          const ab = new ArrayBuffer(byteString.length)
-          const ia = new Uint8Array(ab)
-          for (let i = 0; i < byteString.length; i++) {
-            ia[i] = byteString.charCodeAt(i)
-          }
-          resolve(new Blob([ab], { type: mimeString }))
-        } catch (err) {
-          console.error('高清 PNG 导出失败:', err)
-          resolve(null)
-        }
-      }, {
-        padding,
-        backgroundColor,
-        quality: 1,
+        ratio: String(scale),
       })
     })
   }
@@ -812,7 +785,13 @@ export class GraphEngine {
         const viewBox = `${bbox.x - padding} ${bbox.y - padding} ${svgWidth} ${svgHeight}`
         svgStr = svg.replace(
           /<svg([^>]*)>/,
-          `<svg$1 viewBox="${viewBox}" width="${svgWidth}" height="${svgHeight}">`
+          (_, attrs: string) => {
+            const cleaned = attrs
+              .replace(/\s*viewBox\s*=\s*["'][^"']*["']/g, '')
+              .replace(/\s*width\s*=\s*["'][^"']*["']/g, '')
+              .replace(/\s*height\s*=\s*["'][^"']*["']/g, '')
+            return `<svg${cleaned} viewBox="${viewBox}" width="${svgWidth}" height="${svgHeight}">`
+          }
         )
       } else {
         svgStr = svg
