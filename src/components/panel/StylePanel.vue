@@ -204,11 +204,12 @@ watch(() => editorStore.selectedEdgeIds, (ids) => {
 }, { deep: true })
 
 function applyNodeStyle(): void {
+  const styleToUpdate = {
+    ...nodeStyle,
+    fontWeight: (isBold.value ? 'bold' : 'normal') as 'bold' | 'normal',
+  }
   for (const id of editorStore.selectedNodeIds) {
-    graphEngine.updateNodeStyle(id, {
-      ...nodeStyle,
-      fontWeight: isBold.value ? 'bold' : 'normal',
-    })
+    graphEngine.updateNodeStyle(id, styleToUpdate)
   }
 }
 
