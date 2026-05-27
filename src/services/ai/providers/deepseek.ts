@@ -16,20 +16,38 @@ export class DeepSeekProvider implements AIProviderAdapter {
     const { baseUrl, apiKey, signal } = this.extractMeta(params)
     const url = `${this.buildUrl(baseUrl)}/chat/completions`
 
+    const isThinking = params.thinking?.type === 'enabled'
+
+    const body: Record<string, unknown> = {
+      model: params.model,
+      messages: params.messages,
+      max_tokens: params.maxTokens ?? 16384,
+      stream: true,
+    }
+
+    if (!isThinking) {
+      body.temperature = params.temperature ?? 0.1
+    }
+
+    if (params.responseFormat) {
+      body.response_format = params.responseFormat
+    }
+
+    if (params.thinking) {
+      body.thinking = params.thinking
+    }
+
+    if (params.reasoningEffort) {
+      body.reasoning_effort = params.reasoningEffort
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: params.model,
-        messages: params.messages,
-        temperature: params.temperature ?? 0.1,
-        max_tokens: params.maxTokens ?? 16384,
-        stream: true,
-        ...(params.responseFormat ? { response_format: params.responseFormat } : {}),
-      }),
+      body: JSON.stringify(body),
       signal,
     })
 
@@ -62,7 +80,10 @@ export class DeepSeekProvider implements AIProviderAdapter {
         }
         try {
           const parsed = JSON.parse(data)
-          const content = parsed.choices?.[0]?.delta?.content || ''
+          const delta = parsed.choices?.[0]?.delta
+          if (!delta) continue
+
+          const content = delta.content || ''
           if (content) {
             yield { content, done: false }
           }

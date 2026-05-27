@@ -51,10 +51,16 @@ export function useAIExtract() {
         {
           model: aiStore.activeModel,
           messages,
-          temperature: 0.1,
+          temperature: aiStore.activeProviderType === 'deepseek' ? undefined : 0.1,
           stream: true,
           responseFormat: aiStore.activeProviderType === 'deepseek' || aiStore.activeProviderType === 'openai'
             ? { type: 'json_object' }
+            : undefined,
+          thinking: aiStore.activeProviderType === 'deepseek'
+            ? { type: 'enabled' }
+            : undefined,
+          reasoningEffort: aiStore.activeProviderType === 'deepseek'
+            ? 'high'
             : undefined,
         },
         abortController.signal,

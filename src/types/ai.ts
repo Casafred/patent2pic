@@ -27,6 +27,8 @@ export interface ChatParams {
   maxTokens?: number
   stream?: boolean
   responseFormat?: { type: 'json_object' } | { type: 'text' }
+  thinking?: { type: 'enabled' | 'disabled' }
+  reasoningEffort?: 'high' | 'max'
 }
 
 export interface ChatChunk {
