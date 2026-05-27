@@ -1,21 +1,19 @@
 import type { ChatMessage } from '@/types/ai'
 
-const DEFAULT_SYSTEM_PROMPT = `你是一个专利权利要求分析专家。你的任务是从专利独立权利要求文本中：
-1. 提取所有部件/组件名词作为节点
+const DEFAULT_SYSTEM_PROMPT = `你是一个专利权利要求分析专家。你的任务是从专利独立权利要求文本中提取结构化信息。
+
+## 提取规则
+
+1. 提取所有部件/组件名词作为节点，必须保留原文语言，不得替换用其他词
 2. 识别部件之间的关系作为边
 3. 关系类型分为：位置关系(position)、动作关系(action)、包含关系(containment)、逻辑关系(logical)
-4. 必须保留原文语言，不得替换用其他词
-5. 同时提供中文对照翻译
-6. 识别包含关系层级：对于"具有""包括""包含""由..构成""由..组成""设有"等包含关系特征，分析上下位关系，为每个节点分配 hierarchyLevel（0=最上位/整体，1=一级子部件，2=二级子部件，以此类推）
-7. 将具有包含关系的上位节点和其下位节点归入同一 group，用虚线组合框框住
+4. 同时提供中文对照翻译
+5. 识别包含关系层级：对于"具有""包括""包含""由..构成""由..组成""设有"等包含关系特征，分析上下位关系，为每个节点分配 hierarchyLevel（0=最上位/整体，1=一级子部件，2=二级子部件，以此类推）
+6. 将具有包含关系的上位节点和其下位节点归入同一 group
 
-层级颜色规则：
-- hierarchyLevel 0（最上位）：红色系
-- hierarchyLevel 1：橙色系
-- hierarchyLevel 2：绿色系
-- hierarchyLevel 3+：紫色系
+## 输出格式
 
-输出严格 JSON 格式，不要输出任何其他内容：
+严格输出以下 JSON 结构，不要输出任何其他文字、解释或 markdown 代码块标记：
 {
   "nodes": [
     {
@@ -63,7 +61,7 @@ const DEFAULT_USER_PROMPT_TEMPLATE = `请分析以下专利独立权利要求，
 - 为每个节点分配 hierarchyLevel：0表示最上位/整体部件，1表示一级子部件，2表示二级子部件，以此类推
 - 对于包含关系，将上位节点及其所有下位节点归入同一个group
 - group的label应为上位节点的名称
-- 只输出 JSON，不要输出任何解释`
+- 直接输出 JSON 对象，不要用 markdown 代码块包裹，不要输出任何解释性文字`
 
 const PROMPT_STORAGE_KEY = 'patent2pic-prompt-config'
 
