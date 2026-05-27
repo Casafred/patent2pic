@@ -63,7 +63,6 @@ export async function applyElkLayout(
       'elk.direction': directionToElk(options?.rankdir ?? 'TB'),
       'elk.spacing.nodeNode': String(nodesep),
       'elk.layered.spacing.nodeNodeBetweenLayers': String(ranksep),
-      'elk.edgeRouting': 'ORTHOGONAL',
       'elk.padding': '[top=120,left=120,bottom=120,right=120]',
     },
     children: elkNodes,
