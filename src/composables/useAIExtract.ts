@@ -115,6 +115,8 @@ export function useAIExtract() {
       const isAbort = (err as Error).name === 'AbortError'
       streamError = isAbort ? '用户终止分析' : ((err as Error).message || '流式请求失败')
 
+      const elapsed = timingEnd(timingKey)
+
       aiStore.addExtractLog({
         provider: providerType,
         model,
@@ -122,6 +124,7 @@ export function useAIExtract() {
         rawResponse: fullContent || '(未收到任何响应内容)',
         errorMessage: streamError,
         claimPreview,
+        durationMs: elapsed,
       })
 
       graphStore.removeTab(tab.id)
@@ -129,7 +132,6 @@ export function useAIExtract() {
       error.value = streamError
       aiStore.isExtracting = false
       abortController = null
-      timingEnd(timingKey)
       return null
     }
 
@@ -147,6 +149,8 @@ export function useAIExtract() {
     }
 
     if (parseError || !result) {
+      const elapsed = timingEnd(timingKey)
+
       aiStore.addExtractLog({
         provider: providerType,
         model,
@@ -154,6 +158,7 @@ export function useAIExtract() {
         rawResponse: fullContent,
         errorMessage: parseError || '解析结果为空',
         claimPreview,
+        durationMs: elapsed,
       })
 
       graphStore.removeTab(tab.id)
@@ -161,7 +166,6 @@ export function useAIExtract() {
       error.value = parseError || '解析结果为空'
       aiStore.isExtracting = false
       abortController = null
-      timingEnd(timingKey)
       return null
     }
 
@@ -171,6 +175,7 @@ export function useAIExtract() {
       status: 'success',
       rawResponse: fullContent,
       claimPreview,
+      durationMs: timingEnd(timingKey),
     })
 
     timingStart(`  │ 图谱构建`)
@@ -183,7 +188,6 @@ export function useAIExtract() {
 
     aiStore.isExtracting = false
     abortController = null
-    timingEnd(timingKey)
     return result
   }
 

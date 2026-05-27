@@ -147,6 +147,7 @@
             <span :class="['log-status', log.status]">{{ log.status === 'success' ? '✓ 成功' : '✗ 失败' }}</span>
             <span class="log-provider">{{ getProviderLabel(log.provider) }}</span>
             <span class="log-model">{{ log.model }}</span>
+            <span v-if="log.durationMs > 0" class="log-duration">⏱ {{ formatDuration(log.durationMs) }}</span>
             <span class="log-time">{{ log.timestamp }}</span>
           </div>
           <div v-if="log.errorMessage" class="log-error-msg">错误: {{ log.errorMessage }}</div>
@@ -241,6 +242,18 @@ const selectedLog = ref<ExtractLog | null>(null)
 
 function getProviderLabel(type: AIProviderType): string {
   return providerLabelMap[type] || type
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`
+  }
+  if (ms < 60000) {
+    return `${(ms / 1000).toFixed(2)}s`
+  }
+  const minutes = Math.floor(ms / 60000)
+  const seconds = ((ms % 60000) / 1000).toFixed(1)
+  return `${minutes}m ${seconds}s`
 }
 
 async function handleTestConnection(): Promise<void> {
@@ -513,6 +526,15 @@ function handleClearLogs(): void {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   margin-left: auto;
+}
+
+.log-duration {
+  font-size: var(--font-size-xs);
+  color: var(--color-primary);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-variant-numeric: tabular-nums;
 }
 
 .log-error-msg {

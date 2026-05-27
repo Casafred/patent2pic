@@ -19,6 +19,7 @@ export interface ExtractLog {
   rawResponse: string
   errorMessage?: string
   claimPreview: string
+  durationMs: number
 }
 
 const STORAGE_KEY = 'patent2pic-ai-config'
@@ -153,6 +154,7 @@ export const useAIStore = defineStore('ai', () => {
       ...log,
       id: `log-${Date.now()}`,
       timestamp: new Date().toLocaleString('zh-CN'),
+      durationMs: log.durationMs ?? 0,
     }
     extractLogs.value.unshift(entry)
     if (extractLogs.value.length > MAX_LOGS) {
