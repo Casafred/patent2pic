@@ -127,6 +127,86 @@
 
     <PromptSettings v-if="activeSettingsTab === 'prompt'" />
 
+    <div v-if="activeSettingsTab === 'translation'" class="translation-config">
+      <div class="config-form">
+        <div class="form-group">
+          <label>启用权利要求翻译</label>
+          <el-switch
+            :model-value="aiStore.translationConfig.enabled"
+            @update:model-value="aiStore.updateTranslationConfig({ enabled: $event })"
+          />
+        </div>
+
+        <div class="form-group" v-if="aiStore.translationConfig.enabled">
+          <label>自动翻译</label>
+          <el-switch
+            :model-value="aiStore.translationConfig.autoTranslate"
+            @update:model-value="aiStore.updateTranslationConfig({ autoTranslate: $event })"
+          />
+          <span class="field-hint">在生成分解图时自动开始翻译</span>
+        </div>
+
+        <div class="form-group" v-if="aiStore.translationConfig.enabled">
+          <label>目标语言</label>
+          <el-select
+            :model-value="aiStore.translationConfig.targetLanguage"
+            @update:model-value="aiStore.updateTranslationConfig({ targetLanguage: $event })"
+            class="model-select"
+          >
+            <el-option
+              v-for="opt in targetLanguageOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group" v-if="aiStore.translationConfig.enabled">
+          <label>使用独立模型</label>
+          <el-switch
+            :model-value="aiStore.translationConfig.useSeparateModel"
+            @update:model-value="aiStore.updateTranslationConfig({ useSeparateModel: $event })"
+          />
+        </div>
+
+        <template v-if="aiStore.translationConfig.enabled && aiStore.translationConfig.useSeparateModel">
+          <div class="form-group">
+            <label>翻译服务商</label>
+            <div class="provider-tabs">
+              <button
+                v-for="p in providerTypes"
+                :key="p.type"
+                :class="['provider-tab', { active: aiStore.translationConfig.providerType === p.type }]"
+                @click="aiStore.updateTranslationConfig({ providerType: p.type })"
+              >
+                <span class="provider-name">{{ p.label }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>翻译模型</label>
+            <el-select
+              :model-value="aiStore.translationConfig.model"
+              @update:model-value="aiStore.updateTranslationConfig({ model: $event })"
+              class="model-select"
+              filterable
+              allow-create
+            >
+              <el-option
+                v-for="model in aiStore.translationModels"
+                :key="model"
+                :label="model"
+                :value="model"
+              />
+            </el-select>
+            <span class="field-hint">当前服务商默认模型: {{ aiStore.translationProvider?.defaultModel || '-' }}</span>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <div v-if="activeSettingsTab === 'logs'" class="logs-panel">
       <div class="logs-header">
         <span class="logs-count">共 {{ aiStore.extractLogs.length }} 条记录</span>
@@ -213,12 +293,22 @@ defineEmits<{ 'update:visible': [value: boolean] }>()
 
 const aiStore = useAIStore()
 
-const activeSettingsTab = ref<'api' | 'prompt' | 'logs'>('api')
+const activeSettingsTab = ref<'api' | 'prompt' | 'translation' | 'logs'>('api')
 
 const settingsTabs = [
   { key: 'api' as const, label: 'API 配置' },
   { key: 'prompt' as const, label: '提示词设置' },
+  { key: 'translation' as const, label: '翻译设置' },
   { key: 'logs' as const, label: '调用日志' },
+]
+
+const targetLanguageOptions = [
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'en', label: 'English' },
+  { value: 'ja', label: '日本語' },
+  { value: 'ko', label: '한국어' },
+  { value: 'de', label: 'Deutsch' },
+  { value: 'fr', label: 'Français' },
 ]
 
 const providerTypes: { type: AIProviderType; label: string }[] = [

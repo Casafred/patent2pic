@@ -2,6 +2,17 @@
   <div class="claim-reader" v-if="claimStore.isInputCollapsed">
     <div class="reader-header">
       <h4>权利要求对照阅读</h4>
+      <template v-if="translationEnabled">
+        <el-progress
+          v-if="translationStore.isTranslating"
+          :percentage="translationProgressPercent"
+          :stroke-width="8"
+          style="width: 120px"
+        />
+        <span class="reader-hint" v-else-if="claimTrans && claimTrans.overallStatus === 'done'">
+          翻译完成
+        </span>
+      </template>
       <span class="reader-hint" v-if="editorStore.selectedNodeIds.length > 0">
         已选中 {{ editorStore.selectedNodeIds.length }} 个节点
       </span>
@@ -12,19 +23,40 @@
       <div
         v-for="(segment, sIdx) in renderedSegments"
         :key="sIdx"
-        :class="['segment', { 'segment-highlighted': segment.hasHighlight }]"
+        :class="['segment', { 'segment-highlighted': segment.hasHighlight, 'segment-with-translation': translationEnabled }]"
         :style="segment.hasHighlight ? { backgroundColor: segment.highlightColors?.[0]?.bg, borderLeftColor: segment.highlightColors?.[0]?.border } : {}"
       >
-        <template v-if="segment.highlightColors && segment.highlightColors.length > 0">
-          <span
-            class="segment-badge"
-            :style="{ backgroundColor: segment.highlightColors[0].border, color: '#fff' }"
-          >{{ segment.highlightColors[0].nodeLabel }}</span>
-        </template>
-        <span
-          v-html="segment.highlightedHtml"
-          :class="['segment-text', { 'text-bold': segment.hasHighlight }]"
-        ></span>
+        <div class="segment-row">
+          <div class="segment-original">
+            <template v-if="segment.highlightColors && segment.highlightColors.length > 0">
+              <span
+                class="segment-badge"
+                :style="{ backgroundColor: segment.highlightColors[0].border, color: '#fff' }"
+              >{{ segment.highlightColors[0].nodeLabel }}</span>
+            </template>
+            <span
+              v-html="segment.highlightedHtml"
+              :class="['segment-text', { 'text-bold': segment.hasHighlight }]"
+            ></span>
+          </div>
+          <div class="segment-translation" v-if="translationEnabled">
+            <template v-if="segment.translation && segment.translation.status === 'done'">
+              <span v-html="segment.translationHighlightedHtml" class="translation-text"></span>
+            </template>
+            <template v-else-if="segment.translation && segment.translation.status === 'loading'">
+              <span class="translation-loading">⏳ 翻译中...</span>
+            </template>
+            <template v-else-if="segment.translation && segment.translation.status === 'error'">
+              <span class="translation-error">
+                ❌ {{ segment.translation.error || '翻译失败' }}
+                <el-button link type="primary" size="small" @click="handleRetry(segment.translation.sentenceId)">重试</el-button>
+              </span>
+            </template>
+            <template v-else>
+              <span class="translation-idle">—</span>
+            </template>
+          </div>
+        </div>
       </div>
 
       <div v-if="renderedSegments.length === 0" class="reader-empty">
@@ -50,7 +82,11 @@ import { computed, ref, watch, nextTick } from 'vue'
 import { useClaimStore } from '@/stores/claim'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
+import { useAIStore } from '@/stores/ai'
+import { useTranslationStore } from '@/stores/translation'
+import { useAITranslation } from '@/composables/useAITranslation'
 import type { ExtractNode } from '@/types/ai'
+import type { SentenceTranslation, ClaimTranslation } from '@/types/translation'
 
 interface HighlightColor {
   bg: string
@@ -69,6 +105,8 @@ interface RenderedSegment {
   highlightedHtml: string
   hasHighlight: boolean
   highlightColors: (HighlightColor & { nodeLabel: string })[] | null
+  translation: SentenceTranslation | null
+  translationHighlightedHtml: string
 }
 
 const HIGHLIGHT_PALETTE: HighlightColor[] = [
@@ -85,7 +123,23 @@ const HIGHLIGHT_PALETTE: HighlightColor[] = [
 const claimStore = useClaimStore()
 const editorStore = useEditorStore()
 const graphStore = useGraphStore()
+const aiStore = useAIStore()
+const translationStore = useTranslationStore()
+const { retryTranslation } = useAITranslation()
 const readerBodyRef = ref<HTMLElement | null>(null)
+
+const translationEnabled = computed(() => aiStore.translationConfig.enabled)
+
+const translationProgressPercent = computed(() => {
+  if (translationStore.progress.total === 0) return 0
+  return Math.round((translationStore.progress.completed / translationStore.progress.total) * 100)
+})
+
+const claimTrans = computed<ClaimTranslation | undefined>(() => {
+  const claim = claimStore.getActiveClaim()
+  if (!claim) return undefined
+  return translationStore.getClaimTranslation(claim.id)
+})
 
 const extractNodes = computed<ExtractNode[]>(() => {
   const tab = graphStore.activeTab
@@ -163,6 +217,13 @@ function highlightTextInSentence(sentenceText: string): { html: string; colors: 
   return { html, colors: highlights }
 }
 
+function handleRetry(sentenceId: string): void {
+  const claim = claimStore.getActiveClaim()
+  if (claim) {
+    retryTranslation(claim.id, sentenceId)
+  }
+}
+
 const renderedSegments = computed<RenderedSegment[]>(() => {
   const claim = claimStore.getActiveClaim()
   if (!claim || claim.sentences.length === 0) return []
@@ -171,12 +232,20 @@ const renderedSegments = computed<RenderedSegment[]>(() => {
 
   for (const sentence of claim.sentences) {
     const { html, colors } = highlightTextInSentence(sentence.text)
+    const translation = translationStore.getSentenceTranslation(claim.id, sentence.id) ?? null
+    let translationHighlightedHtml = ''
+    if (translation && translation.translatedText) {
+      const transHighlight = highlightTextInSentence(translation.translatedText)
+      translationHighlightedHtml = transHighlight.html
+    }
 
     segments.push({
       text: sentence.text,
       highlightedHtml: html,
       hasHighlight: colors.length > 0,
       highlightColors: colors.length > 0 ? colors : null,
+      translation,
+      translationHighlightedHtml,
     })
   }
 
@@ -208,6 +277,7 @@ watch(() => editorStore.selectedNodeIds, () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 10px 16px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color-light);
@@ -218,6 +288,7 @@ watch(() => editorStore.selectedNodeIds, () => {
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text-primary);
+  margin: 0;
 }
 
 .reader-hint {
@@ -247,6 +318,44 @@ watch(() => editorStore.selectedNodeIds, () => {
 .segment-highlighted {
   border-left-width: 3px;
   border-left-style: solid;
+}
+
+.segment-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.segment-with-translation .segment-row {
+  flex-direction: row;
+  gap: 12px;
+}
+
+.segment-original {
+  flex: 1;
+}
+
+.segment-translation {
+  flex: 1;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-color-light);
+  color: var(--text-tertiary);
+}
+
+.translation-text {
+  vertical-align: middle;
+}
+
+.translation-loading {
+  color: var(--color-primary);
+}
+
+.translation-error {
+  color: var(--color-danger);
+}
+
+.translation-idle {
+  color: var(--text-quaternary);
 }
 
 .segment-badge {

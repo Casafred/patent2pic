@@ -8,6 +8,7 @@ import { parseExtractResult } from '@/services/ai/extractor'
 import { graphEngine } from '@/services/graph/engine'
 import { timingStart, timingEnd, timingLap } from '@/utils/timing'
 import type { ChatUsage, ExtractResult } from '@/types/ai'
+import { useAITranslation } from '@/composables/useAITranslation'
 
 function isChineseText(text: string): boolean {
   const chineseChars = text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g)
@@ -20,6 +21,7 @@ export function useAIExtract() {
   const aiStore = useAIStore()
   const claimStore = useClaimStore()
   const graphStore = useGraphStore()
+  const { translateAllSentences } = useAITranslation()
   const streamContent = ref('')
   const reasoningContent = ref('')
   const lastUsage = ref<ChatUsage | null>(null)
@@ -208,6 +210,22 @@ export function useAIExtract() {
       error.value = '请先配置 API Key'
       return null
     }
+
+    const shouldTranslate = aiStore.translationConfig.enabled
+      && aiStore.translationConfig.autoTranslate
+      && claim.sentences.length > 0
+
+    if (shouldTranslate) {
+      const [extractResult] = await Promise.allSettled([
+        extract(claim.rawText),
+        translateAllSentences(claim),
+      ])
+      if (extractResult.status === 'fulfilled') {
+        return extractResult.value
+      }
+      return null
+    }
+
     return extract(claim.rawText)
   }
 

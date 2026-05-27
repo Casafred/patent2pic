@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { AIProviderType, ConnectionTestResult } from '@/types/ai'
+import type { TranslationTargetLanguage } from '@/types/translation'
 import { getDefaultBaseUrl, getDefaultModels } from '@/services/ai/client'
 
 interface ProviderConfig {
@@ -8,6 +9,44 @@ interface ProviderConfig {
   baseUrl: string
   models: string[]
   defaultModel: string
+}
+
+export interface TranslationConfig {
+  enabled: boolean
+  useSeparateModel: boolean
+  providerType: AIProviderType
+  model: string
+  targetLanguage: TranslationTargetLanguage
+  autoTranslate: boolean
+}
+
+const TRANSLATION_CONFIG_STORAGE_KEY = 'patent2pic-translation-config'
+
+function loadTranslationConfig(): TranslationConfig {
+  try {
+    const stored = localStorage.getItem(TRANSLATION_CONFIG_STORAGE_KEY)
+    if (stored) {
+      return JSON.parse(stored)
+    }
+  } catch {
+    // ignore
+  }
+  return {
+    enabled: false,
+    useSeparateModel: false,
+    providerType: 'zhipu',
+    model: '',
+    targetLanguage: 'zh-CN',
+    autoTranslate: true,
+  }
+}
+
+function saveTranslationConfig(config: TranslationConfig): void {
+  try {
+    localStorage.setItem(TRANSLATION_CONFIG_STORAGE_KEY, JSON.stringify(config))
+  } catch {
+    // ignore
+  }
 }
 
 export interface ExtractLog {
@@ -77,6 +116,19 @@ export const useAIStore = defineStore('ai', () => {
       }
     }
   }
+
+  const translationConfig = ref<TranslationConfig>(loadTranslationConfig())
+
+  const translationProvider = computed(() => providers.value[translationConfig.value.providerType])
+  const translationApiKey = computed(() => translationProvider.value?.apiKey || '')
+  const translationBaseUrl = computed(() => translationProvider.value?.baseUrl || '')
+  const translationModel = computed(() => {
+    if (translationConfig.value.useSeparateModel && translationConfig.value.model) {
+      return translationConfig.value.model
+    }
+    return translationProvider.value?.defaultModel || ''
+  })
+  const translationModels = computed(() => translationProvider.value?.models || [])
 
   const activeProvider = computed(() => providers.value[activeProviderType.value])
 
@@ -168,6 +220,11 @@ export const useAIStore = defineStore('ai', () => {
     saveLogsToStorage([])
   }
 
+  function updateTranslationConfig(partial: Partial<TranslationConfig>): void {
+    translationConfig.value = { ...translationConfig.value, ...partial }
+    saveTranslationConfig(translationConfig.value)
+  }
+
   return {
     activeProviderType,
     providers,
@@ -182,6 +239,12 @@ export const useAIStore = defineStore('ai', () => {
     isTesting,
     testResult,
     extractLogs,
+    translationConfig,
+    translationProvider,
+    translationApiKey,
+    translationBaseUrl,
+    translationModel,
+    translationModels,
     setActiveProvider,
     updateApiKey,
     updateBaseUrl,
@@ -191,5 +254,6 @@ export const useAIStore = defineStore('ai', () => {
     resetToDefault,
     addExtractLog,
     clearExtractLogs,
+    updateTranslationConfig,
   }
 })
