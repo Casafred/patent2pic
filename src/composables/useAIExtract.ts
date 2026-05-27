@@ -6,6 +6,7 @@ import { streamChat } from '@/services/ai/client'
 import { buildMessages } from '@/services/ai/prompt'
 import { parseExtractResult } from '@/services/ai/extractor'
 import { graphEngine } from '@/services/graph/engine'
+import { timingStart, timingEnd, timingLap } from '@/utils/timing'
 import type { ChatUsage, ExtractResult } from '@/types/ai'
 
 function isChineseText(text: string): boolean {
@@ -26,6 +27,9 @@ export function useAIExtract() {
   let abortController: AbortController | null = null
 
   async function extract(claimText: string): Promise<ExtractResult | null> {
+    const timingKey = `权利要求分析 [${claimText.slice(0, 30).replace(/\n/g, ' ')}...]`
+    timingStart(timingKey)
+
     aiStore.isExtracting = true
     aiStore.extractError = null
     streamContent.value = ''
@@ -47,8 +51,14 @@ export function useAIExtract() {
     let streamError: string | null = null
 
     try {
+      timingStart(`  │ 构建提示词`)
       const messages = buildMessages(claimText)
+      timingEnd(`  │ 构建提示词`)
+
       const isDeepSeek = aiStore.activeProviderType === 'deepseek'
+
+      timingStart(`  │ API 流式请求 (${providerType}/${model})`)
+      let firstChunkReceived = false
 
       for await (const chunk of streamChat(
         aiStore.activeProviderType,
@@ -73,6 +83,10 @@ export function useAIExtract() {
         },
         abortController.signal,
       )) {
+        if (!firstChunkReceived) {
+          firstChunkReceived = true
+          timingLap(`  首字节到达 (TTFB)`, `  │ API 流式请求 (${providerType}/${model})`)
+        }
         if (chunk.done) break
         if (chunk.usage) {
           lastUsage.value = chunk.usage
@@ -85,7 +99,19 @@ export function useAIExtract() {
         streamContent.value = fullContent
         aiStore.extractStreamContent = fullContent
       }
+
+      if (!firstChunkReceived) {
+        timingLap(`  未收到任何数据块`, `  │ API 流式请求 (${providerType}/${model})`)
+      }
+
+      if (lastUsage.value) {
+        timingLap(`  Token 用量: prompt=${lastUsage.value.promptTokens} completion=${lastUsage.value.completionTokens} total=${lastUsage.value.totalTokens}`,
+          `  │ API 流式请求 (${providerType}/${model})`)
+      }
+
+      timingEnd(`  │ API 流式请求 (${providerType}/${model})`)
     } catch (err) {
+      timingEnd(`  │ API 流式请求 (${providerType}/${model})`)
       const isAbort = (err as Error).name === 'AbortError'
       streamError = isAbort ? '用户终止分析' : ((err as Error).message || '流式请求失败')
 
@@ -103,6 +129,7 @@ export function useAIExtract() {
       error.value = streamError
       aiStore.isExtracting = false
       abortController = null
+      timingEnd(timingKey)
       return null
     }
 
@@ -110,10 +137,13 @@ export function useAIExtract() {
     let result: ExtractResult | null = null
 
     try {
+      timingStart(`  │ JSON 解析与验证`)
       result = parseExtractResult(fullContent)
       result.claimId = claimStore.activeClaimId || ''
+      timingEnd(`  │ JSON 解析与验证`)
     } catch (err) {
       parseError = (err as Error).message || '解析失败'
+      timingEnd(`  │ JSON 解析与验证`)
     }
 
     if (parseError || !result) {
@@ -131,6 +161,7 @@ export function useAIExtract() {
       error.value = parseError || '解析结果为空'
       aiStore.isExtracting = false
       abortController = null
+      timingEnd(timingKey)
       return null
     }
 
@@ -142,12 +173,17 @@ export function useAIExtract() {
       claimPreview,
     })
 
+    timingStart(`  │ 图谱构建`)
     graphStore.updateTabExtractResult(tab.id, result)
     graphStore.updateTabName(tab.id, `权利要求 ${graphStore.tabs.length}`)
     graphEngine.batchBuild(result, undefined, isChinese)
+    timingEnd(`  │ 图谱构建`)
+
+    timingLap(`  节点数=${result.nodes.length} 边数=${result.edges.length} 组数=${result.groups.length}`, timingKey)
 
     aiStore.isExtracting = false
     abortController = null
+    timingEnd(timingKey)
     return result
   }
 

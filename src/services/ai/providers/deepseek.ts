@@ -1,5 +1,6 @@
 import type { ChatParams, ChatChunk, ChatUsage } from '@/types/ai'
 import type { AIProviderAdapter } from './types'
+import { timingStart, timingEnd, timingLap } from '@/utils/timing'
 
 export class DeepSeekProvider implements AIProviderAdapter {
   readonly type = 'deepseek' as const
@@ -15,6 +16,9 @@ export class DeepSeekProvider implements AIProviderAdapter {
   async *chat(params: ChatParams): AsyncGenerator<ChatChunk> {
     const { baseUrl, apiKey, signal } = this.extractMeta(params)
     const url = `${this.buildUrl(baseUrl)}/chat/completions`
+
+    const providerTimingKey = `    │ DeepSeek API`
+    timingStart(providerTimingKey)
 
     const isThinking = params.thinking?.type === 'enabled'
 
@@ -53,6 +57,9 @@ export class DeepSeekProvider implements AIProviderAdapter {
       body.user_id = params.userId
     }
 
+    let httpTiming = `    │ HTTP 连接`
+    timingStart(httpTiming)
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -63,16 +70,23 @@ export class DeepSeekProvider implements AIProviderAdapter {
       signal,
     })
 
+    timingEnd(httpTiming)
+
     if (!response.ok) {
       const errorText = await response.text()
+      timingEnd(providerTimingKey)
       throw new Error(`DeepSeek API 请求失败 (${response.status}): ${errorText}`)
     }
 
     const reader = response.body?.getReader()
-    if (!reader) throw new Error('无法读取响应流')
+    if (!reader) {
+      timingEnd(providerTimingKey)
+      throw new Error('无法读取响应流')
+    }
 
     const decoder = new TextDecoder()
     let buffer = ''
+    let firstContentYielded = false
 
     while (true) {
       const { done, value } = await reader.read()
@@ -87,6 +101,7 @@ export class DeepSeekProvider implements AIProviderAdapter {
         if (!trimmed || !trimmed.startsWith('data:')) continue
         const data = trimmed.slice(5).trim()
         if (data === '[DONE]') {
+          timingEnd(providerTimingKey)
           yield { content: '', done: true }
           return
         }
@@ -96,6 +111,7 @@ export class DeepSeekProvider implements AIProviderAdapter {
           const delta = choice?.delta
 
           if (choice?.finish_reason === 'length') {
+            timingEnd(providerTimingKey)
             throw new Error('模型输出被截断 (finish_reason=length)，请尝试增大 max_tokens 或简化输入')
           }
 
@@ -103,6 +119,10 @@ export class DeepSeekProvider implements AIProviderAdapter {
             const content = delta.content || ''
             const reasoningContent = delta.reasoning_content || ''
             if (content || reasoningContent) {
+              if (!firstContentYielded) {
+                firstContentYielded = true
+                timingLap(`  首段内容到达`, providerTimingKey)
+              }
               yield {
                 content,
                 ...(reasoningContent ? { reasoningContent } : {}),
@@ -120,12 +140,15 @@ export class DeepSeekProvider implements AIProviderAdapter {
           }
         } catch (e) {
           if (e instanceof Error && e.message.includes('finish_reason=length')) {
+            timingEnd(providerTimingKey)
             throw e
           }
           continue
         }
       }
     }
+
+    timingEnd(providerTimingKey)
   }
 
   async testConnection(apiKey: string, baseUrl: string, model: string): Promise<{ success: boolean; message: string; latency?: number }> {

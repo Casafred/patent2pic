@@ -12,6 +12,7 @@ import { buildNode, updateNodeStyle } from './node-builder'
 import { buildEdge, updateEdgeStyle } from './edge-builder'
 import { applyDagreLayout, type DagreLayoutOptions } from './layout'
 import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle } from './style-registry'
+import { timingStart, timingEnd } from '@/utils/timing'
 
 export class GraphEngine {
   private graph: Graph | null = null
@@ -150,6 +151,9 @@ export class GraphEngine {
   batchBuild(result: ExtractResult, layoutOptions?: DagreLayoutOptions, isChinese: boolean = false): void {
     if (!this.graph) return
 
+    const timingKey = `    │  图谱 batchBuild`
+    timingStart(timingKey)
+
     this.graph.startBatch('build')
 
     this.graph.clearCells()
@@ -177,7 +181,10 @@ export class GraphEngine {
       style: getDefaultEdgeStyle(e.relationType),
     }))
 
+    timingStart(`    │    布局计算 (Dagre)`)
     const positions = applyDagreLayout(nodeDataList, edgeDataList, layoutOptions)
+    timingEnd(`    │    布局计算 (Dagre)`)
+
     for (const nodeData of nodeDataList) {
       const pos = positions.get(nodeData.id)
       if (pos) {
@@ -186,6 +193,7 @@ export class GraphEngine {
       }
     }
 
+    timingStart(`    │    添加节点和边`)
     for (const nodeData of nodeDataList) {
       const config = buildNode(nodeData, isChinese)
       this.graph.addNode(config)
@@ -195,9 +203,12 @@ export class GraphEngine {
       const config = buildEdge(edgeData, isChinese)
       this.graph.addEdge(config)
     }
+    timingEnd(`    │    添加节点和边`)
 
     if (result.groups && result.groups.length > 0) {
+      timingStart(`    │    渲染分组`)
       this.renderGroups(result.groups, isChinese)
+      timingEnd(`    │    渲染分组`)
     }
 
     this.graph.stopBatch('build')
@@ -205,6 +216,8 @@ export class GraphEngine {
     this.initialGraphJSON = this.graph.toJSON()
 
     setTimeout(() => this.fitView(), 100)
+
+    timingEnd(timingKey)
   }
 
   private renderGroups(groups: ExtractGroup[], isChinese: boolean = false): void {
