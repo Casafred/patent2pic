@@ -10,7 +10,20 @@ interface ProviderConfig {
   defaultModel: string
 }
 
+export interface ExtractLog {
+  id: string
+  timestamp: string
+  provider: AIProviderType
+  model: string
+  status: 'success' | 'error'
+  rawResponse: string
+  errorMessage?: string
+  claimPreview: string
+}
+
 const STORAGE_KEY = 'patent2pic-ai-config'
+const LOG_STORAGE_KEY = 'patent2pic-extract-logs'
+const MAX_LOGS = 50
 
 function loadFromStorage(): Record<string, ProviderConfig> | null {
   try {
@@ -23,6 +36,19 @@ function loadFromStorage(): Record<string, ProviderConfig> | null {
 
 function saveToStorage(config: Record<string, ProviderConfig>): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
+}
+
+function loadLogsFromStorage(): ExtractLog[] {
+  try {
+    const raw = localStorage.getItem(LOG_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function saveLogsToStorage(logs: ExtractLog[]): void {
+  localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(logs.slice(0, MAX_LOGS)))
 }
 
 function createDefaultConfig(type: AIProviderType): ProviderConfig {
@@ -65,6 +91,8 @@ export const useAIStore = defineStore('ai', () => {
   const isTesting = ref(false)
   const testResult = ref<ConnectionTestResult | null>(null)
 
+  const extractLogs = ref<ExtractLog[]>(loadLogsFromStorage())
+
   function setActiveProvider(type: AIProviderType): void {
     activeProviderType.value = type
     testResult.value = null
@@ -103,7 +131,7 @@ export const useAIStore = defineStore('ai', () => {
 
   function removeModel(type: AIProviderType, modelName: string): void {
     if (providers.value[type]) {
-      providers.value[type].models = providers.value[type].models.filter(m => m !== modelName)
+      providers.value[type].models = providers.value[type].models.filter((m: string) => m !== modelName)
       if (providers.value[type].defaultModel === modelName) {
         providers.value[type].defaultModel = providers.value[type].models[0] || ''
       }
@@ -120,6 +148,24 @@ export const useAIStore = defineStore('ai', () => {
     saveToStorage(providers.value)
   }
 
+  function addExtractLog(log: Omit<ExtractLog, 'id' | 'timestamp'>): void {
+    const entry: ExtractLog = {
+      ...log,
+      id: `log-${Date.now()}`,
+      timestamp: new Date().toLocaleString('zh-CN'),
+    }
+    extractLogs.value.unshift(entry)
+    if (extractLogs.value.length > MAX_LOGS) {
+      extractLogs.value = extractLogs.value.slice(0, MAX_LOGS)
+    }
+    saveLogsToStorage(extractLogs.value)
+  }
+
+  function clearExtractLogs(): void {
+    extractLogs.value = []
+    saveLogsToStorage([])
+  }
+
   return {
     activeProviderType,
     providers,
@@ -133,6 +179,7 @@ export const useAIStore = defineStore('ai', () => {
     extractStreamContent,
     isTesting,
     testResult,
+    extractLogs,
     setActiveProvider,
     updateApiKey,
     updateBaseUrl,
@@ -140,5 +187,7 @@ export const useAIStore = defineStore('ai', () => {
     addModel,
     removeModel,
     resetToDefault,
+    addExtractLog,
+    clearExtractLogs,
   }
 })

@@ -3,7 +3,7 @@
     :model-value="visible"
     @update:model-value="$emit('update:visible', $event)"
     title="设置"
-    width="560px"
+    width="640px"
     :close-on-click-modal="false"
     destroy-on-close
   >
@@ -127,6 +127,38 @@
 
     <PromptSettings v-if="activeSettingsTab === 'prompt'" />
 
+    <div v-if="activeSettingsTab === 'logs'" class="logs-panel">
+      <div class="logs-header">
+        <span class="logs-count">共 {{ aiStore.extractLogs.length }} 条记录</span>
+        <el-button size="small" type="danger" text @click="handleClearLogs">清空日志</el-button>
+      </div>
+
+      <div v-if="aiStore.extractLogs.length === 0" class="logs-empty">
+        暂无调用记录
+      </div>
+
+      <div v-else class="logs-list">
+        <div
+          v-for="log in aiStore.extractLogs"
+          :key="log.id"
+          :class="['log-item', { 'log-error': log.status === 'error' }]"
+        >
+          <div class="log-header">
+            <span :class="['log-status', log.status]">{{ log.status === 'success' ? '✓ 成功' : '✗ 失败' }}</span>
+            <span class="log-provider">{{ getProviderLabel(log.provider) }}</span>
+            <span class="log-model">{{ log.model }}</span>
+            <span class="log-time">{{ log.timestamp }}</span>
+          </div>
+          <div v-if="log.errorMessage" class="log-error-msg">错误: {{ log.errorMessage }}</div>
+          <div class="log-preview">权利要求: {{ log.claimPreview }}...</div>
+          <div class="log-actions">
+            <el-button size="small" text type="primary" @click="handleViewLog(log)">查看原始响应</el-button>
+            <el-button size="small" text @click="handleCopyLog(log)">复制</el-button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <el-dialog
       v-model="showAddModel"
       title="添加模型"
@@ -144,13 +176,33 @@
         <el-button type="primary" :disabled="!newModelName.trim()" @click="handleAddModel">添加</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="showLogDetail"
+      title="AI 原始响应"
+      width="700px"
+      append-to-body
+    >
+      <div class="log-detail-info">
+        <span>服务商: {{ selectedLog ? getProviderLabel(selectedLog.provider) : '' }}</span>
+        <span>模型: {{ selectedLog?.model }}</span>
+        <span>状态: {{ selectedLog?.status === 'success' ? '成功' : '失败' }}</span>
+        <span v-if="selectedLog?.errorMessage" class="log-error-msg">错误: {{ selectedLog.errorMessage }}</span>
+      </div>
+      <pre class="log-detail-content">{{ selectedLog?.rawResponse }}</pre>
+      <template #footer>
+        <el-button @click="handleCopyLog(selectedLog!)">复制内容</el-button>
+        <el-button type="primary" @click="showLogDetail = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { QuestionFilled } from '@element-plus/icons-vue'
-import { useAIStore } from '@/stores/ai'
+import { ElMessage } from 'element-plus'
+import { useAIStore, type ExtractLog } from '@/stores/ai'
 import { testConnection, getDefaultBaseUrl } from '@/services/ai/client'
 import type { AIProviderType } from '@/types/ai'
 import PromptSettings from './PromptSettings.vue'
@@ -160,11 +212,12 @@ defineEmits<{ 'update:visible': [value: boolean] }>()
 
 const aiStore = useAIStore()
 
-const activeSettingsTab = ref<'api' | 'prompt'>('api')
+const activeSettingsTab = ref<'api' | 'prompt' | 'logs'>('api')
 
 const settingsTabs = [
   { key: 'api' as const, label: 'API 配置' },
   { key: 'prompt' as const, label: '提示词设置' },
+  { key: 'logs' as const, label: '调用日志' },
 ]
 
 const providerTypes: { type: AIProviderType; label: string }[] = [
@@ -173,10 +226,22 @@ const providerTypes: { type: AIProviderType; label: string }[] = [
   { type: 'openai', label: 'OpenAI 兼容' },
 ]
 
+const providerLabelMap: Record<AIProviderType, string> = {
+  zhipu: '智谱',
+  deepseek: 'DeepSeek',
+  openai: 'OpenAI',
+}
+
 const defaultUrl = computed(() => getDefaultBaseUrl(aiStore.activeProviderType))
 
 const showAddModel = ref(false)
 const newModelName = ref('')
+const showLogDetail = ref(false)
+const selectedLog = ref<ExtractLog | null>(null)
+
+function getProviderLabel(type: AIProviderType): string {
+  return providerLabelMap[type] || type
+}
 
 async function handleTestConnection(): Promise<void> {
   aiStore.isTesting = true
@@ -212,6 +277,24 @@ function handleAddModel(): void {
 function handleReset(): void {
   aiStore.resetToDefault(aiStore.activeProviderType)
   aiStore.testResult = null
+}
+
+function handleViewLog(log: ExtractLog): void {
+  selectedLog.value = log
+  showLogDetail.value = true
+}
+
+async function handleCopyLog(log: ExtractLog): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(log.rawResponse)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+function handleClearLogs(): void {
+  aiStore.clearExtractLogs()
 }
 </script>
 
@@ -352,5 +435,128 @@ function handleReset(): void {
 
 .test-result.error {
   color: var(--color-danger);
+}
+
+.logs-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logs-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.logs-empty {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.log-item {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-primary);
+}
+
+.log-item.log-error {
+  border-left: 3px solid var(--color-danger);
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.log-status {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.log-status.success {
+  color: var(--color-success);
+}
+
+.log-status.error {
+  color: var(--color-danger);
+}
+
+.log-provider,
+.log-model {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.log-time {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+.log-error-msg {
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
+  margin-top: 4px;
+}
+
+.log-preview {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-top: 4px;
+}
+
+.log-detail-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-md);
+}
+
+.log-detail-content {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 0;
+  font-family: 'Consolas', 'Courier New', monospace;
 }
 </style>

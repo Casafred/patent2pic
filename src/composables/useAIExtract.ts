@@ -32,12 +32,16 @@ export function useAIExtract() {
     abortController = new AbortController()
 
     const isChinese = isChineseText(claimText)
+    const claimPreview = claimText.slice(0, 80).replace(/\n/g, ' ')
+    const providerType = aiStore.activeProviderType
+    const model = aiStore.activeModel
 
     const tab = graphStore.addTab(undefined, isChinese)
 
+    let fullContent = ''
+
     try {
       const messages = buildMessages(claimText)
-      let fullContent = ''
 
       for await (const chunk of streamChat(
         aiStore.activeProviderType,
@@ -65,18 +69,48 @@ export function useAIExtract() {
 
       graphEngine.batchBuild(result, undefined, isChinese)
 
+      aiStore.addExtractLog({
+        provider: providerType,
+        model,
+        status: 'success',
+        rawResponse: fullContent,
+        claimPreview,
+      })
+
       return result
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
         graphStore.removeTab(tab.id)
         error.value = '已终止分析'
         aiStore.extractError = '已终止分析'
+
+        if (fullContent) {
+          aiStore.addExtractLog({
+            provider: providerType,
+            model,
+            status: 'error',
+            rawResponse: fullContent,
+            errorMessage: '用户终止分析',
+            claimPreview,
+          })
+        }
+
         return null
       }
       const message = (err as Error).message || '抽取失败'
       aiStore.extractError = message
       error.value = message
       graphStore.removeTab(tab.id)
+
+      aiStore.addExtractLog({
+        provider: providerType,
+        model,
+        status: 'error',
+        rawResponse: fullContent || '(无响应内容)',
+        errorMessage: message,
+        claimPreview,
+      })
+
       return null
     } finally {
       aiStore.isExtracting = false
