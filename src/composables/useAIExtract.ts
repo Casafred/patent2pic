@@ -6,6 +6,7 @@ import { streamChat } from '@/services/ai/client'
 import { buildMessages } from '@/services/ai/prompt'
 import { parseExtractResult } from '@/services/ai/extractor'
 import { graphEngine } from '@/services/graph/engine'
+import { useAITranslation } from '@/composables/useAITranslation'
 import type { ExtractResult } from '@/types/ai'
 
 function isChineseText(text: string): boolean {
@@ -19,6 +20,7 @@ export function useAIExtract() {
   const aiStore = useAIStore()
   const claimStore = useClaimStore()
   const graphStore = useGraphStore()
+  const { translateAllSentences } = useAITranslation()
   const streamContent = ref('')
   const error = ref<string | null>(null)
 
@@ -83,6 +85,22 @@ export function useAIExtract() {
       error.value = '请先配置 API Key'
       return null
     }
+
+    const shouldTranslate = aiStore.translationConfig.enabled
+      && aiStore.translationConfig.autoTranslate
+      && claim.sentences.length > 0
+
+    if (shouldTranslate) {
+      const [extractResult] = await Promise.allSettled([
+        extract(claim.rawText),
+        translateAllSentences(claim),
+      ])
+      if (extractResult.status === 'fulfilled' && extractResult.value) {
+        return extractResult.value
+      }
+      return null
+    }
+
     return extract(claim.rawText)
   }
 

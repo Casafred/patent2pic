@@ -2,10 +2,26 @@
   <div class="claim-reader" v-if="claimStore.isInputCollapsed">
     <div class="reader-header">
       <h4>权利要求对照阅读</h4>
-      <span class="reader-hint" v-if="editorStore.selectedNodeIds.length > 0">
-        已选中 {{ editorStore.selectedNodeIds.length }} 个节点
-      </span>
-      <span class="reader-hint" v-else>点击画布节点查看对应文本</span>
+      <div class="reader-actions">
+        <span
+          v-if="translationStore.isTranslating"
+          class="translation-progress"
+        >
+          翻译中 {{ translationStore.progress.completed }}/{{ translationStore.progress.total }}
+        </span>
+        <button
+          v-if="!translationStore.isTranslating && translationEnabled && !hasAnyTranslation"
+          class="translate-btn"
+          @click="handleStartTranslation"
+          title="翻译权利要求"
+        >
+          🌐 翻译
+        </button>
+        <span class="reader-hint" v-if="editorStore.selectedNodeIds.length > 0">
+          已选中 {{ editorStore.selectedNodeIds.length }} 个节点
+        </span>
+        <span class="reader-hint" v-else-if="!translationStore.isTranslating">点击画布节点查看对应文本</span>
+      </div>
     </div>
 
     <div class="reader-body" ref="readerBodyRef">
@@ -15,16 +31,34 @@
         :class="['segment', { 'segment-highlighted': segment.hasHighlight }]"
         :style="segment.hasHighlight ? { backgroundColor: segment.highlightColors?.[0]?.bg, borderLeftColor: segment.highlightColors?.[0]?.border } : {}"
       >
-        <template v-if="segment.highlightColors && segment.highlightColors.length > 0">
+        <div class="segment-original">
+          <template v-if="segment.highlightColors && segment.highlightColors.length > 0">
+            <span
+              class="segment-badge"
+              :style="{ backgroundColor: segment.highlightColors[0].border, color: '#fff' }"
+            >{{ segment.highlightColors[0].nodeLabel }}</span>
+          </template>
           <span
-            class="segment-badge"
-            :style="{ backgroundColor: segment.highlightColors[0].border, color: '#fff' }"
-          >{{ segment.highlightColors[0].nodeLabel }}</span>
-        </template>
-        <span
-          v-html="segment.highlightedHtml"
-          :class="['segment-text', { 'text-bold': segment.hasHighlight }]"
-        ></span>
+            v-html="segment.highlightedHtml"
+            :class="['segment-text', { 'text-bold': segment.hasHighlight }]"
+          ></span>
+        </div>
+        <div class="segment-translation" v-if="translationEnabled">
+          <template v-if="segment.translation">
+            <template v-if="segment.translation.status === 'done'">
+              <span v-html="segment.translationHighlightedHtml" class="translation-text"></span>
+            </template>
+            <template v-else-if="segment.translation.status === 'loading'">
+              <span class="translation-loading">⏳ 翻译中...</span>
+            </template>
+            <template v-else-if="segment.translation.status === 'error'">
+              <span class="translation-error">
+                ❌ {{ segment.translation.error || '翻译失败' }}
+                <button class="retry-btn" @click="handleRetry(segment.translation.sentenceId)">重试</button>
+              </span>
+            </template>
+          </template>
+        </div>
       </div>
 
       <div v-if="renderedSegments.length === 0" class="reader-empty">
@@ -50,7 +84,11 @@ import { computed, ref, watch, nextTick } from 'vue'
 import { useClaimStore } from '@/stores/claim'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
+import { useAIStore } from '@/stores/ai'
+import { useTranslationStore } from '@/stores/translation'
+import { useAITranslation } from '@/composables/useAITranslation'
 import type { ExtractNode } from '@/types/ai'
+import type { SentenceTranslation } from '@/types/translation'
 
 interface HighlightColor {
   bg: string
@@ -62,6 +100,8 @@ interface NodeHighlightInfo {
   label: string
   nodeId: string
   nodeText: string
+  nodeOriginalText: string
+  nodeChineseText: string
 }
 
 interface RenderedSegment {
@@ -69,6 +109,8 @@ interface RenderedSegment {
   highlightedHtml: string
   hasHighlight: boolean
   highlightColors: (HighlightColor & { nodeLabel: string })[] | null
+  translation: SentenceTranslation | null
+  translationHighlightedHtml: string
 }
 
 const HIGHLIGHT_PALETTE: HighlightColor[] = [
@@ -85,7 +127,19 @@ const HIGHLIGHT_PALETTE: HighlightColor[] = [
 const claimStore = useClaimStore()
 const editorStore = useEditorStore()
 const graphStore = useGraphStore()
+const aiStore = useAIStore()
+const translationStore = useTranslationStore()
+const { translateAllSentences, retrySentence } = useAITranslation()
 const readerBodyRef = ref<HTMLElement | null>(null)
+
+const translationEnabled = computed(() => aiStore.translationConfig.enabled)
+
+const hasAnyTranslation = computed(() => {
+  const claim = claimStore.getActiveClaim()
+  if (!claim) return false
+  const claimTrans = translationStore.claimTranslations.get(claim.id)
+  return !!claimTrans && claimTrans.sentences.some((s: SentenceTranslation) => s.status === 'done')
+})
 
 const extractNodes = computed<ExtractNode[]>(() => {
   const tab = graphStore.activeTab
@@ -106,6 +160,8 @@ const nodeHighlightMap = computed<Map<string, NodeHighlightInfo>>(() => {
       label: node?.chineseText || node?.originalText || nodeId,
       nodeId,
       nodeText,
+      nodeOriginalText: node?.originalText || '',
+      nodeChineseText: node?.chineseText || '',
     })
   })
 
@@ -163,6 +219,52 @@ function highlightTextInSentence(sentenceText: string): { html: string; colors: 
   return { html, colors: highlights }
 }
 
+function highlightTranslationText(
+  translatedText: string,
+): { html: string; colors: (HighlightColor & { nodeLabel: string })[] } {
+  const highlights: (HighlightColor & { nodeLabel: string })[] = []
+  let html = escapeHtml(translatedText)
+
+  const isOriginalChinese = isChineseText(translatedText)
+
+  const nodeTexts: { text: string; info: NodeHighlightInfo }[] = []
+  for (const [_nodeId, info] of nodeHighlightMap.value) {
+    const textToHighlight = isOriginalChinese
+      ? info.nodeOriginalText
+      : info.nodeChineseText
+    if (textToHighlight && textToHighlight.length >= 2) {
+      nodeTexts.push({ text: textToHighlight, info })
+    }
+  }
+
+  nodeTexts.sort((a, b) => b.text.length - a.text.length)
+
+  for (const { text, info } of nodeTexts) {
+    const escapedText = escapeHtml(text)
+    const regex = new RegExp(escapedText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    let found = false
+    html = html.replace(regex, (match) => {
+      if (!found) {
+        found = true
+        if (!highlights.some(h => h.border === info.color.border)) {
+          highlights.push({ ...info.color, nodeLabel: info.label })
+        }
+        return `<mark class="text-highlight" style="background-color: ${info.color.bg}; color: ${info.color.border}; font-weight: 600; padding: 1px 3px; border-radius: 3px;">${match}</mark>`
+      }
+      return match
+    })
+  }
+
+  return { html, colors: highlights }
+}
+
+function isChineseText(text: string): boolean {
+  const chineseChars = text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g)
+  const totalChars = text.replace(/[\s\d\p{P}]/gu, '').length
+  if (totalChars === 0) return false
+  return (chineseChars?.length ?? 0) / totalChars > 0.3
+}
+
 const renderedSegments = computed<RenderedSegment[]>(() => {
   const claim = claimStore.getActiveClaim()
   if (!claim || claim.sentences.length === 0) return []
@@ -171,17 +273,35 @@ const renderedSegments = computed<RenderedSegment[]>(() => {
 
   for (const sentence of claim.sentences) {
     const { html, colors } = highlightTextInSentence(sentence.text)
+    const translation = translationStore.getSentenceTranslation(sentence.id)
+    let translationHighlightedHtml = ''
+    if (translation && translation.status === 'done' && translation.translatedText) {
+      const transResult = highlightTranslationText(translation.translatedText)
+      translationHighlightedHtml = transResult.html
+    }
 
     segments.push({
       text: sentence.text,
       highlightedHtml: html,
       hasHighlight: colors.length > 0,
       highlightColors: colors.length > 0 ? colors : null,
+      translation: translation ?? null,
+      translationHighlightedHtml,
     })
   }
 
   return segments
 })
+
+async function handleStartTranslation(): Promise<void> {
+  const claim = claimStore.getActiveClaim()
+  if (!claim) return
+  await translateAllSentences(claim)
+}
+
+async function handleRetry(sentenceId: string): Promise<void> {
+  await retrySentence(sentenceId)
+}
 
 watch(() => editorStore.selectedNodeIds, () => {
   nextTick(() => {
@@ -220,9 +340,36 @@ watch(() => editorStore.selectedNodeIds, () => {
   color: var(--text-primary);
 }
 
+.reader-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .reader-hint {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
+}
+
+.translation-progress {
+  font-size: var(--font-size-xs);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.translate-btn {
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+
+.translate-btn:hover {
+  background: var(--color-primary-bg);
 }
 
 .reader-body {
@@ -249,6 +396,10 @@ watch(() => editorStore.selectedNodeIds, () => {
   border-left-style: solid;
 }
 
+.segment-original {
+  line-height: 1.7;
+}
+
 .segment-badge {
   display: inline-block;
   font-size: 10px;
@@ -266,6 +417,51 @@ watch(() => editorStore.selectedNodeIds, () => {
 
 .text-bold {
   font-weight: 700;
+}
+
+.segment-translation {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border-color-light);
+  line-height: 1.7;
+}
+
+.segment-highlighted .segment-translation {
+  color: var(--text-primary);
+}
+
+.translation-text {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.segment-highlighted .translation-text {
+  color: var(--text-primary);
+}
+
+.translation-loading {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.translation-error {
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
+}
+
+.retry-btn {
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  padding: 0 4px;
+  text-decoration: underline;
+}
+
+.retry-btn:hover {
+  color: var(--color-primary);
 }
 
 .reader-empty {

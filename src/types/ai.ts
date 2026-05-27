@@ -1,3 +1,5 @@
+import type { TranslationTargetLanguage } from './translation'
+
 export type AIProviderType = 'openai' | 'zhipu' | 'deepseek'
 
 export interface AIProviderConfig {
@@ -69,4 +71,13 @@ export interface ConnectionTestResult {
   message: string
   latency?: number
   modelInfo?: string
+}
+
+export interface TranslationConfig {
+  enabled: boolean
+  useSeparateModel: boolean
+  providerType: AIProviderType
+  model: string
+  targetLanguage: TranslationTargetLanguage
+  autoTranslate: boolean
 }

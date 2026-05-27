@@ -127,6 +127,142 @@
 
     <PromptSettings v-if="activeSettingsTab === 'prompt'" />
 
+    <div v-if="activeSettingsTab === 'translation'" class="translation-config">
+      <div class="config-form">
+        <div class="form-group">
+          <label>
+            启用权利要求翻译
+            <el-tooltip content="开启后，生成分解图时将同步翻译权利要求句子" placement="top">
+              <el-icon :size="14" class="help-icon"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </label>
+          <el-switch
+            :model-value="aiStore.translationConfig.enabled"
+            @update:model-value="aiStore.updateTranslationConfig({ enabled: $event })"
+          />
+        </div>
+
+        <div class="form-group">
+          <label>
+            自动翻译
+            <el-tooltip content="开启后，生成分解图时自动并行翻译；关闭后需手动点击翻译按钮" placement="top">
+              <el-icon :size="14" class="help-icon"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </label>
+          <el-switch
+            :model-value="aiStore.translationConfig.autoTranslate"
+            :disabled="!aiStore.translationConfig.enabled"
+            @update:model-value="aiStore.updateTranslationConfig({ autoTranslate: $event })"
+          />
+        </div>
+
+        <div class="form-group">
+          <label>
+            使用独立翻译模型
+            <el-tooltip content="开启后可为翻译指定不同的模型（推荐使用轻量快速模型以降低成本）" placement="top">
+              <el-icon :size="14" class="help-icon"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </label>
+          <el-switch
+            :model-value="aiStore.translationConfig.useSeparateModel"
+            :disabled="!aiStore.translationConfig.enabled"
+            @update:model-value="aiStore.updateTranslationConfig({ useSeparateModel: $event })"
+          />
+        </div>
+
+        <template v-if="aiStore.translationConfig.useSeparateModel && aiStore.translationConfig.enabled">
+          <div class="form-group">
+            <label>翻译模型提供商</label>
+            <div class="provider-tabs">
+              <button
+                v-for="p in providerTypes"
+                :key="p.type"
+                :class="['provider-tab', { active: aiStore.translationConfig.providerType === p.type }]"
+                @click="aiStore.updateTranslationConfig({ providerType: p.type })"
+              >
+                <span class="provider-name">{{ p.label }}</span>
+              </button>
+            </div>
+            <span class="field-hint">复用该提供商的 API Key 和端点配置</span>
+          </div>
+
+          <div class="form-group">
+            <label>翻译模型</label>
+            <el-select
+              :model-value="aiStore.translationConfig.model"
+              @update:model-value="aiStore.updateTranslationConfig({ model: $event })"
+              size="default"
+              class="model-select-full"
+              filterable
+              allow-create
+            >
+              <el-option
+                v-for="model in translationModels"
+                :key="model"
+                :label="model"
+                :value="model"
+              />
+            </el-select>
+            <span class="field-hint">推荐轻量模型：glm-4-flash、deepseek-v4-flash</span>
+          </div>
+
+          <div class="form-group">
+            <label>翻译连通性测试</label>
+            <div class="test-row">
+              <el-button
+                size="default"
+                :loading="isTranslationTesting"
+                :disabled="!translationApiKey || !aiStore.translationConfig.model"
+                @click="handleTestTranslationConnection"
+              >
+                {{ isTranslationTesting ? '测试中...' : '测试翻译连接' }}
+              </el-button>
+              <span v-if="translationTestResult" :class="['test-result', translationTestResult.success ? 'success' : 'error']">
+                {{ translationTestResult.message }}
+              </span>
+            </div>
+          </div>
+        </template>
+
+        <div class="form-group">
+          <label>目标语言</label>
+          <el-select
+            :model-value="aiStore.translationConfig.targetLanguage"
+            @update:model-value="aiStore.updateTranslationConfig({ targetLanguage: $event })"
+            size="default"
+            class="model-select-full"
+            :disabled="!aiStore.translationConfig.enabled"
+          >
+            <el-option
+              v-for="lang in targetLanguages"
+              :key="lang.value"
+              :label="lang.label"
+              :value="lang.value"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <label>
+            翻译提示词
+            <el-tooltip content="自定义翻译提示词，{targetLanguage} 会被替换为目标语言名称" placement="top">
+              <el-icon :size="14" class="help-icon"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </label>
+          <el-input
+            v-model="translationPrompt"
+            type="textarea"
+            :rows="4"
+            placeholder="翻译提示词"
+            @change="handleTranslationPromptChange"
+          />
+          <el-button size="small" text type="warning" @click="resetTranslationPrompt" style="align-self: flex-start;">
+            恢复默认
+          </el-button>
+        </div>
+      </div>
+    </div>
+
     <el-dialog
       v-model="showAddModel"
       title="添加模型"
@@ -152,19 +288,28 @@ import { ref, computed } from 'vue'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { useAIStore } from '@/stores/ai'
 import { testConnection, getDefaultBaseUrl } from '@/services/ai/client'
-import type { AIProviderType } from '@/types/ai'
+import { getDefaultModels } from '@/services/ai/client'
+import type { AIProviderType, ConnectionTestResult } from '@/types/ai'
+import { TARGET_LANGUAGE_LABELS } from '@/types/translation'
+import type { TranslationTargetLanguage } from '@/types/translation'
 import PromptSettings from './PromptSettings.vue'
+import {
+  getTranslationSystemPrompt,
+  setTranslationSystemPrompt,
+  getDefaultTranslationSystemPrompt,
+} from '@/services/ai/translation'
 
 defineProps<{ visible: boolean }>()
 defineEmits<{ 'update:visible': [value: boolean] }>()
 
 const aiStore = useAIStore()
 
-const activeSettingsTab = ref<'api' | 'prompt'>('api')
+const activeSettingsTab = ref<'api' | 'prompt' | 'translation'>('api')
 
 const settingsTabs = [
   { key: 'api' as const, label: 'API 配置' },
   { key: 'prompt' as const, label: '提示词设置' },
+  { key: 'translation' as const, label: '翻译设置' },
 ]
 
 const providerTypes: { type: AIProviderType; label: string }[] = [
@@ -173,10 +318,32 @@ const providerTypes: { type: AIProviderType; label: string }[] = [
   { type: 'openai', label: 'OpenAI 兼容' },
 ]
 
+const targetLanguages = Object.entries(TARGET_LANGUAGE_LABELS).map(([value, label]) => ({
+  value: value as TranslationTargetLanguage,
+  label,
+}))
+
 const defaultUrl = computed(() => getDefaultBaseUrl(aiStore.activeProviderType))
+
+const translationModels = computed(() => {
+  const providerType = aiStore.translationConfig.providerType
+  const provider = aiStore.providers[providerType]
+  if (!provider) return getDefaultModels(providerType)
+  return provider.models
+})
+
+const translationApiKey = computed(() => {
+  const providerType = aiStore.translationConfig.providerType
+  return aiStore.providers[providerType]?.apiKey || ''
+})
 
 const showAddModel = ref(false)
 const newModelName = ref('')
+
+const isTranslationTesting = ref(false)
+const translationTestResult = ref<ConnectionTestResult | null>(null)
+
+const translationPrompt = ref(getTranslationSystemPrompt())
 
 async function handleTestConnection(): Promise<void> {
   aiStore.isTesting = true
@@ -199,6 +366,26 @@ async function handleTestConnection(): Promise<void> {
   }
 }
 
+async function handleTestTranslationConnection(): Promise<void> {
+  isTranslationTesting.value = true
+  translationTestResult.value = null
+  try {
+    const providerType = aiStore.translationConfig.providerType
+    const apiKey = aiStore.providers[providerType]?.apiKey || ''
+    const baseUrl = aiStore.providers[providerType]?.baseUrl || ''
+    const model = aiStore.translationConfig.model
+    const result = await testConnection(providerType, apiKey, baseUrl, model)
+    translationTestResult.value = result
+  } catch (err) {
+    translationTestResult.value = {
+      success: false,
+      message: `测试失败: ${(err as Error).message}`,
+    }
+  } finally {
+    isTranslationTesting.value = false
+  }
+}
+
 function handleAddModel(): void {
   const name = newModelName.value.trim()
   if (name) {
@@ -212,6 +399,15 @@ function handleAddModel(): void {
 function handleReset(): void {
   aiStore.resetToDefault(aiStore.activeProviderType)
   aiStore.testResult = null
+}
+
+function handleTranslationPromptChange(): void {
+  setTranslationSystemPrompt(translationPrompt.value)
+}
+
+function resetTranslationPrompt(): void {
+  translationPrompt.value = getDefaultTranslationSystemPrompt()
+  setTranslationSystemPrompt(translationPrompt.value)
 }
 </script>
 
@@ -252,6 +448,12 @@ function handleReset(): void {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg);
+}
+
+.translation-config {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
 }
 
 .provider-tabs {
@@ -323,6 +525,10 @@ function handleReset(): void {
 
 .model-select {
   flex: 1;
+}
+
+.model-select-full {
+  width: 100%;
 }
 
 .model-tags {
