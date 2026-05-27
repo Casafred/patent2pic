@@ -54,6 +54,7 @@ export function buildNode(data: NodeData, isChinese: boolean = false): Record<st
       originalText: data.originalText,
       chineseText: data.chineseText,
       nodeType: data.nodeType,
+      style: data.style,
     },
   }
 }
@@ -63,6 +64,8 @@ export function updateNodeStyle(node: unknown, style: Partial<NodeData['style']>
     attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => unknown
     getSize: () => { width: number; height: number }
     resize: (width: number, height: number) => void
+    getData: () => Record<string, unknown> | undefined
+    setData: (data: Record<string, unknown>) => void
   }
 
   const bodyAttrs: Record<string, unknown> = {}
@@ -93,4 +96,8 @@ export function updateNodeStyle(node: unknown, style: Partial<NodeData['style']>
     const size = n.getSize()
     n.resize(style.width || size.width, style.height || size.height)
   }
+
+  const currentData = n.getData() || {}
+  const currentStyle = (currentData.style as Record<string, unknown>) || {}
+  n.setData({ ...currentData, style: { ...currentStyle, ...style } })
 }

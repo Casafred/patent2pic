@@ -218,12 +218,28 @@ function handleAddSave(data: { originalText: string; chineseText: string; nodeTy
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
   gap: var(--spacing-xs);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.canvas-toolbar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.canvas-toolbar::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 2px;
+}
+
+.canvas-toolbar::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .toolbar-group {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-shrink: 0;
 }
 
 .toolbar-divider {
@@ -231,10 +247,12 @@ function handleAddSave(data: { originalText: string; chineseText: string; nodeTy
   height: 20px;
   background: var(--border-color);
   margin: 0 var(--spacing-xs);
+  flex-shrink: 0;
 }
 
 .toolbar-spacer {
   flex: 1;
+  min-width: 20px;
 }
 
 .font-size-control {
