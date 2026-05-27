@@ -42,10 +42,10 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
         attrs: {
           bg: {
             ref: 'labelText',
-            refX: '-20%',
-            refY: '-20%',
-            refWidth: '140%',
-            refHeight: '140%',
+            refX: '-25%',
+            refY: '-30%',
+            refWidth: '150%',
+            refHeight: '160%',
             fill: style.labelBgColor || '#ffffff',
             fillOpacity: 1,
             stroke: '#d9d9d9',
@@ -79,6 +79,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
       relationType: data.relationType,
       labelDetached: false,
     },
+    zIndex: 10,
   }
 
   return edgeConfig

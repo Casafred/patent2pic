@@ -48,6 +48,7 @@ export class GraphEngine {
                 targetMarker: { name: 'block', width: 12, height: 8 },
               },
             },
+            zIndex: 10,
           })
         },
         validateConnection({ targetMagnet }) {

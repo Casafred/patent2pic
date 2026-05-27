@@ -12,18 +12,19 @@
       <div
         v-for="(segment, sIdx) in renderedSegments"
         :key="sIdx"
-        :class="['segment', { 'segment-highlighted': segment.highlightColor }]"
-        :style="segment.highlightColor ? { backgroundColor: segment.highlightColor.bg, borderLeftColor: segment.highlightColor.border } : {}"
+        :class="['segment', { 'segment-highlighted': segment.hasHighlight }]"
+        :style="segment.hasHighlight ? { backgroundColor: segment.highlightColors?.[0]?.bg, borderLeftColor: segment.highlightColors?.[0]?.border } : {}"
       >
+        <template v-if="segment.highlightColors && segment.highlightColors.length > 0">
+          <span
+            class="segment-badge"
+            :style="{ backgroundColor: segment.highlightColors[0].border, color: '#fff' }"
+          >{{ segment.highlightColors[0].nodeLabel }}</span>
+        </template>
         <span
-          v-if="segment.highlightColor"
-          class="segment-badge"
-          :style="{ backgroundColor: segment.highlightColor.border, color: '#fff' }"
-        >{{ segment.nodeLabel }}</span>
-        <span
-          :class="['segment-text', { 'text-bold': !!segment.highlightColor }]"
-          :style="segment.highlightColor ? { color: segment.highlightColor.border } : {}"
-        >{{ segment.text }}</span>
+          v-html="segment.highlightedHtml"
+          :class="['segment-text', { 'text-bold': segment.hasHighlight }]"
+        ></span>
       </div>
 
       <div v-if="renderedSegments.length === 0" class="reader-empty">
@@ -56,11 +57,18 @@ interface HighlightColor {
   border: string
 }
 
+interface NodeHighlightInfo {
+  color: HighlightColor
+  label: string
+  nodeId: string
+  nodeText: string
+}
+
 interface RenderedSegment {
   text: string
-  highlightColor: HighlightColor | null
-  nodeLabel: string
-  nodeId: string
+  highlightedHtml: string
+  hasHighlight: boolean
+  highlightColors: (HighlightColor & { nodeLabel: string })[] | null
 }
 
 const HIGHLIGHT_PALETTE: HighlightColor[] = [
@@ -85,16 +93,19 @@ const extractNodes = computed<ExtractNode[]>(() => {
   return tab.extractResult.nodes
 })
 
-const nodeColorMap = computed<Map<string, { color: HighlightColor; label: string }>>(() => {
-  const map = new Map<string, { color: HighlightColor; label: string }>()
+const nodeHighlightMap = computed<Map<string, NodeHighlightInfo>>(() => {
+  const map = new Map<string, NodeHighlightInfo>()
   const selectedIds = editorStore.selectedNodeIds
 
   selectedIds.forEach((nodeId: string, idx: number) => {
     const node = extractNodes.value.find((n: ExtractNode) => n.id === nodeId)
     const colorIdx = idx % HIGHLIGHT_PALETTE.length
+    const nodeText = node?.originalText || node?.chineseText || ''
     map.set(nodeId, {
       color: HIGHLIGHT_PALETTE[colorIdx],
       label: node?.chineseText || node?.originalText || nodeId,
+      nodeId,
+      nodeText,
     })
   })
 
@@ -113,19 +124,43 @@ const legendItems = computed(() => {
   })
 })
 
-function findMatchingNodeId(sentenceText: string): string | null {
-  for (const [nodeId] of nodeColorMap.value) {
-    const node = extractNodes.value.find((n: ExtractNode) => n.id === nodeId)
-    if (!node) continue
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
 
-    const src = node.sourceSentence.trim()
-    const sent = sentenceText.trim()
+function highlightTextInSentence(sentenceText: string): { html: string; colors: (HighlightColor & { nodeLabel: string })[] } {
+  const highlights: (HighlightColor & { nodeLabel: string })[] = []
+  let html = escapeHtml(sentenceText)
 
-    if (src === sent) return nodeId
-    if (sent.includes(src) && src.length >= 4) return nodeId
-    if (src.includes(sent) && sent.length >= 4) return nodeId
+  const nodeTexts: { text: string; info: NodeHighlightInfo }[] = []
+  for (const [_nodeId, info] of nodeHighlightMap.value) {
+    if (info.nodeText && info.nodeText.length >= 2) {
+      nodeTexts.push({ text: info.nodeText, info })
+    }
   }
-  return null
+
+  nodeTexts.sort((a, b) => b.text.length - a.text.length)
+
+  for (const { text, info } of nodeTexts) {
+    const escapedText = escapeHtml(text)
+    const regex = new RegExp(escapedText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    let found = false
+    html = html.replace(regex, (match) => {
+      if (!found) {
+        found = true
+        if (!highlights.some(h => h.border === info.color.border)) {
+          highlights.push({ ...info.color, nodeLabel: info.label })
+        }
+        return `<mark class="text-highlight" style="background-color: ${info.color.bg}; color: ${info.color.border}; font-weight: 600; padding: 1px 3px; border-radius: 3px;">${match}</mark>`
+      }
+      return match
+    })
+  }
+
+  return { html, colors: highlights }
 }
 
 const renderedSegments = computed<RenderedSegment[]>(() => {
@@ -135,17 +170,13 @@ const renderedSegments = computed<RenderedSegment[]>(() => {
   const segments: RenderedSegment[] = []
 
   for (const sentence of claim.sentences) {
-    const matchingNodeId = findMatchingNodeId(sentence.text)
-    const info = matchingNodeId ? nodeColorMap.value.get(matchingNodeId) : null
-
-    const label = info?.label || ''
-    const displayLabel = label.length > 12 ? label.slice(0, 12) + '…' : label
+    const { html, colors } = highlightTextInSentence(sentence.text)
 
     segments.push({
       text: sentence.text,
-      highlightColor: info ? info.color : null,
-      nodeLabel: displayLabel,
-      nodeId: matchingNodeId || '',
+      highlightedHtml: html,
+      hasHighlight: colors.length > 0,
+      highlightColors: colors.length > 0 ? colors : null,
     })
   }
 
