@@ -13,7 +13,7 @@ const HIERARCHY_LEVEL_COLORS: { fill: string; stroke: string }[] = [
   { fill: '#f3e5f5', stroke: '#9c27b0' },
 ]
 
-export function getHierarchyNodeStyle(hierarchyLevel: number, nodeType: NodeType): Pick<NodeStyle, 'fill' | 'stroke'> {
+export function getHierarchyNodeStyle(hierarchyLevel: number, _nodeType: NodeType): Pick<NodeStyle, 'fill' | 'stroke'> {
   const level = Math.min(hierarchyLevel, HIERARCHY_LEVEL_COLORS.length - 1)
   if (level <= 0) return HIERARCHY_LEVEL_COLORS[0]
   return HIERARCHY_LEVEL_COLORS[level]

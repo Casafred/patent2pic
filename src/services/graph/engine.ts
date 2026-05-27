@@ -634,6 +634,7 @@ export class GraphEngine {
         originalText: (data?.originalText as string) || '',
         chineseText: (data?.chineseText as string) || '',
         nodeType: (data?.nodeType as NodeData['nodeType']) || 'component',
+        hierarchyLevel: (data?.hierarchyLevel as number) ?? 0,
         style: { width: size.width, height: size.height } as NodeData['style'],
       }
     })
