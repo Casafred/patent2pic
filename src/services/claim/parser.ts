@@ -2,7 +2,7 @@ import type { Claim, Sentence } from '@/types/claim'
 
 const CLAIM_NUMBER_REGEX = /(?:^|\n)\s*(\d+)\s*[.、．]\s*/g
 
-const SENTENCE_SPLIT_REGEX = /[。；;，,！!？?：:、]/
+const SENTENCE_SPLIT_REGEX = /[。；;，,！!？?：:、]|\.(?=\s|$)/
 
 export function parseClaims(rawText: string): Claim[] {
   const trimmed = rawText.trim()
