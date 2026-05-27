@@ -53,6 +53,9 @@ export function useAIExtract() {
           messages,
           temperature: 0.1,
           stream: true,
+          responseFormat: aiStore.activeProviderType === 'deepseek' || aiStore.activeProviderType === 'openai'
+            ? { type: 'json_object' }
+            : undefined,
         },
         abortController.signal,
       )) {

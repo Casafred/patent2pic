@@ -26,6 +26,7 @@ export interface ChatParams {
   temperature?: number
   maxTokens?: number
   stream?: boolean
+  responseFormat?: { type: 'json_object' } | { type: 'text' }
 }
 
 export interface ChatChunk {
