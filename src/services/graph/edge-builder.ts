@@ -61,6 +61,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
             fontWeight: 'bold',
             textAnchor: 'middle',
             textVerticalAnchor: 'middle',
+            lineHeight: style.fontSize * 1.6,
             stroke: style.labelBgColor || '#ffffff',
             strokeWidth: 8,
             paintOrder: 'stroke fill',

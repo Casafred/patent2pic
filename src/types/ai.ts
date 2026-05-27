@@ -45,6 +45,7 @@ export interface ExtractNode {
   originalText: string
   chineseText: string
   nodeType: 'component' | 'subsystem' | 'feature'
+  hierarchyLevel: number
   sourceSentence: string
 }
 

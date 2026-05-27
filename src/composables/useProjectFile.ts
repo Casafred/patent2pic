@@ -138,6 +138,7 @@ export function useProjectFile() {
           if (graph) {
             graph.clearCells()
             graphEngine.fromJSON(graphJSON)
+            graphEngine.rebindGroupTracking()
             setTimeout(() => graphEngine.fitView(), 100)
           }
         }
@@ -146,6 +147,7 @@ export function useProjectFile() {
         if (graph) {
           graph.clearCells()
           graphEngine.fromJSON(data.graphJSON)
+          graphEngine.rebindGroupTracking()
           setTimeout(() => graphEngine.fitView(), 100)
         }
       } else if (data.graph) {
@@ -153,6 +155,7 @@ export function useProjectFile() {
         if (graph) {
           graph.clearCells()
           graphEngine.fromJSON(data.graph)
+          graphEngine.rebindGroupTracking()
           setTimeout(() => graphEngine.fitView(), 100)
         }
       }
