@@ -7,10 +7,10 @@ const NODE_TYPE_STYLES: Record<NodeType, Pick<NodeStyle, 'fill' | 'stroke'>> = {
 }
 
 const HIERARCHY_LEVEL_COLORS: { fill: string; stroke: string }[] = [
-  { fill: '#d6e4ff', stroke: '#2f54eb' },
-  { fill: '#e6f7ff', stroke: '#1890ff' },
-  { fill: '#f0f5ff', stroke: '#adc6ff' },
-  { fill: '#f7f9fc', stroke: '#d6e4ff' },
+  { fill: '#ffe4e4', stroke: '#e63946' },
+  { fill: '#fff3e0', stroke: '#ff9800' },
+  { fill: '#e8f5e9', stroke: '#4caf50' },
+  { fill: '#f3e5f5', stroke: '#9c27b0' },
 ]
 
 export function getHierarchyNodeStyle(hierarchyLevel: number, nodeType: NodeType): Pick<NodeStyle, 'fill' | 'stroke'> {
