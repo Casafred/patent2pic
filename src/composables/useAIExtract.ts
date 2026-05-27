@@ -144,7 +144,7 @@ export function useAIExtract() {
 
     graphStore.updateTabExtractResult(tab.id, result)
     graphStore.updateTabName(tab.id, `权利要求 ${graphStore.tabs.length}`)
-    graphEngine.batchBuild(result, undefined, isChinese)
+    await graphEngine.batchBuild(result, undefined, isChinese)
 
     aiStore.isExtracting = false
     abortController = null

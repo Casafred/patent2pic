@@ -278,7 +278,7 @@ async function handleMenuAction(action: string): Promise<void> {
       engine.fitView()
       break
     case 'autoLayout':
-      engine.applyLayout()
+      await engine.applyLayout()
       break
     case 'selectAll':
       engine.selectAll()

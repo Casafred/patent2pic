@@ -10,7 +10,7 @@ import type { NodeData, EdgeData } from '@/types/graph'
 import type { ExtractResult, ExtractGroup } from '@/types/ai'
 import { buildNode, updateNodeStyle } from './node-builder'
 import { buildEdge, updateEdgeStyle } from './edge-builder'
-import { applyDagreLayout, type DagreLayoutOptions } from './layout'
+import { applyElkLayout, type ElkLayoutOptions } from './layout'
 import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle } from './style-registry'
 
 export class GraphEngine {
@@ -147,7 +147,7 @@ export class GraphEngine {
     return this.graph
   }
 
-  batchBuild(result: ExtractResult, layoutOptions?: DagreLayoutOptions, isChinese: boolean = false): void {
+  async batchBuild(result: ExtractResult, layoutOptions?: ElkLayoutOptions, isChinese: boolean = false): Promise<void> {
     if (!this.graph) return
 
     this.graph.startBatch('build')
@@ -177,7 +177,7 @@ export class GraphEngine {
       style: getDefaultEdgeStyle(e.relationType),
     }))
 
-    const positions = applyDagreLayout(nodeDataList, edgeDataList, layoutOptions)
+    const positions = await applyElkLayout(nodeDataList, edgeDataList, layoutOptions)
     for (const nodeData of nodeDataList) {
       const pos = positions.get(nodeData.id)
       if (pos) {
@@ -620,7 +620,7 @@ export class GraphEngine {
     this.graph.stopBatch('fontSize')
   }
 
-  applyLayout(options?: DagreLayoutOptions): void {
+  async applyLayout(options?: ElkLayoutOptions): Promise<void> {
     if (!this.graph) return
 
     const nodes = this.graph.getNodes()
@@ -652,7 +652,7 @@ export class GraphEngine {
       }
     }).filter(e => e.source && e.target)
 
-    const positions = applyDagreLayout(nodeDataList, edgeDataList, options)
+    const positions = await applyElkLayout(nodeDataList, edgeDataList, options)
 
     this.graph.startBatch('layout')
     for (const node of nodes) {
