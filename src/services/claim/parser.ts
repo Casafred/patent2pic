@@ -2,7 +2,7 @@ import type { Claim, Sentence } from '@/types/claim'
 
 const CLAIM_NUMBER_REGEX = /(?:^|\n)\s*(\d+)\s*[.、．]\s*/g
 
-const SENTENCE_SPLIT_REGEX = /[。；;，,！!？?：:、]|\.(?=\s|$)/
+const SENTENCE_SPLIT_CHARS = new Set('。；;，,！!？?：:、'.split(''))
 
 export function parseClaims(rawText: string): Claim[] {
   const trimmed = rawText.trim()
@@ -35,25 +35,51 @@ function splitByClaimNumbers(text: string): string[] {
   return segments.filter(s => s.length > 0)
 }
 
+function isSplitAtPosition(text: string, index: number): boolean {
+  const ch = text[index]
+  if (!SENTENCE_SPLIT_CHARS.has(ch)) {
+    if (ch === '.' && (index + 1 === text.length || /\s/.test(text[index + 1]))) {
+      return true
+    }
+    return false
+  }
+  let depth = 0
+  for (let i = 0; i < index; i++) {
+    const c = text[i]
+    if (c === '(' || c === '（' || c === '[' || c === '【') depth++
+    else if (c === ')' || c === '）' || c === ']' || c === '】') depth--
+  }
+  return depth === 0
+}
+
+function findNextSplit(text: string): number {
+  for (let i = 0; i < text.length; i++) {
+    if (isSplitAtPosition(text, i)) {
+      return i
+    }
+  }
+  return -1
+}
+
 function splitSentences(claimText: string, claimIndex: number): Sentence[] {
   const parts: string[] = []
   let remaining = claimText
 
   while (remaining.length > 0) {
-    const match = remaining.match(SENTENCE_SPLIT_REGEX)
-    if (!match || match.index === undefined) {
+    const splitPos = findNextSplit(remaining)
+    if (splitPos === -1) {
       if (remaining.trim().length > 0) {
         parts.push(remaining.trim())
       }
       break
     }
 
-    const splitIndex = match.index + match[0].length
-    const part = remaining.slice(0, splitIndex).trim()
+    const splitEnd = splitPos + 1
+    const part = remaining.slice(0, splitEnd).trim()
     if (part.length > 0) {
       parts.push(part)
     }
-    remaining = remaining.slice(splitIndex)
+    remaining = remaining.slice(splitEnd)
   }
 
   return parts.map((text, index) => ({
