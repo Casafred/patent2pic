@@ -1,6 +1,6 @@
 {
   "productName": "Patent2Pic",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.patent2pic",
   "build": {
     "beforeDevCommand": "npm run dev",
