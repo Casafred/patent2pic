@@ -2,10 +2,12 @@ import { ref } from 'vue'
 import { useAIStore } from '@/stores/ai'
 import { useClaimStore } from '@/stores/claim'
 import { useGraphStore } from '@/stores/graph'
+import { useTranslationStore } from '@/stores/translation'
 import { streamChat } from '@/services/ai/client'
 import { buildMessages } from '@/services/ai/prompt'
 import { parseExtractResult } from '@/services/ai/extractor'
 import { graphEngine } from '@/services/graph/engine'
+import { alignTranslationToSentences } from '@/services/claim/translation-aligner'
 import { timingStart, timingEnd, timingLap } from '@/utils/timing'
 import type { ChatUsage, ExtractResult } from '@/types/ai'
 import { useAITranslation } from '@/composables/useAITranslation'
@@ -21,6 +23,7 @@ export function useAIExtract() {
   const aiStore = useAIStore()
   const claimStore = useClaimStore()
   const graphStore = useGraphStore()
+  const translationStore = useTranslationStore()
   const { translateAllSentences } = useAITranslation()
   const streamContent = ref('')
   const reasoningContent = ref('')
@@ -211,22 +214,27 @@ export function useAIExtract() {
       return null
     }
 
-    const shouldTranslate = aiStore.translationConfig.enabled
-      && aiStore.translationConfig.autoTranslate
-      && claim.sentences.length > 0
+    const extractResult = await extract(claim.rawText)
+    if (!extractResult) return null
 
-    if (shouldTranslate) {
-      const [extractResult] = await Promise.allSettled([
-        extract(claim.rawText),
-        translateAllSentences(claim),
-      ])
-      if (extractResult.status === 'fulfilled') {
-        return extractResult.value
+    if (extractResult.translatedClaim && claim.sentences.length > 0) {
+      const sentenceTranslations = alignTranslationToSentences(
+        claim.rawText,
+        extractResult.translatedClaim,
+        claim.sentences,
+      )
+      translationStore.initClaimTranslation(claim.id, sentenceTranslations)
+      const claimTrans = translationStore.getClaimTranslation(claim.id)
+      if (claimTrans) {
+        claimTrans.overallStatus = 'done'
       }
-      return null
+    } else if (aiStore.translationConfig.enabled
+      && aiStore.translationConfig.autoTranslate
+      && claim.sentences.length > 0) {
+      await translateAllSentences(claim)
     }
 
-    return extract(claim.rawText)
+    return extractResult
   }
 
   return {

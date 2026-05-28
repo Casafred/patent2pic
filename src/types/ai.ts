@@ -55,6 +55,7 @@ export interface ExtractResult {
   nodes: ExtractNode[]
   edges: ExtractEdge[]
   groups: ExtractGroup[]
+  translatedClaim: string
 }
 
 export interface ExtractNode {
