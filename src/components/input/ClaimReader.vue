@@ -245,7 +245,7 @@ function highlightTextInSentence(sentenceText: string, mode: 'original' | 'trans
   const nodeTexts: { text: string; info: NodeHighlightInfo }[] = []
   for (const [_nodeId, info] of nodeHighlightMap.value) {
     const text = mode === 'translation' ? (info.chineseText || info.originalText) : (info.originalText || info.chineseText)
-    if (text && text.length >= 2) {
+    if (text && (text.length >= 2 || /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text))) {
       nodeTexts.push({ text, info })
     }
   }

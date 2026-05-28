@@ -2,6 +2,9 @@
   <div class="style-panel">
     <div class="panel-header">
       <h3>样式编辑</h3>
+      <el-button size="small" text class="close-btn" @click="handleClose">
+        <el-icon><Close /></el-icon>
+      </el-button>
     </div>
 
     <div v-if="hasSelection" class="panel-body">
@@ -123,12 +126,18 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
+import { Close } from '@element-plus/icons-vue'
 import { useEditorStore } from '@/stores/editor'
 import { graphEngine } from '@/services/graph/engine'
 import { getDefaultNodeStyle, getDefaultEdgeStyle, lineStyleToDasharray, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, LINE_STYLE_OPTIONS, ARROW_TYPE_OPTIONS } from '@/services/graph/style-registry'
 import type { NodeStyle, EdgeStyle } from '@/types/graph'
 
 const editorStore = useEditorStore()
+
+function handleClose(): void {
+  editorStore.clearSelection()
+  editorStore.activePanel = null
+}
 
 const hasSelection = computed(() => editorStore.selectedNodeIds.length > 0 || editorStore.selectedEdgeIds.length > 0)
 const isNodeSelected = computed(() => editorStore.selectedNodeIds.length > 0)
@@ -241,6 +250,17 @@ function applyEdgeLineStyle(): void {
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: var(--spacing-md);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.close-btn {
+  color: var(--text-tertiary) !important;
+  padding: 4px !important;
 }
 
 .panel-body {
