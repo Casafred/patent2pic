@@ -53,6 +53,14 @@
     <div class="toolbar-divider" />
 
     <div class="toolbar-group">
+      <el-tooltip content="显示/隐藏组合框" placement="bottom">
+        <el-checkbox v-model="groupsVisible" size="small" @change="handleToggleGroups">组合框</el-checkbox>
+      </el-tooltip>
+    </div>
+
+    <div class="toolbar-divider" />
+
+    <div class="toolbar-group">
       <el-tooltip content="统一调节字号" placement="bottom">
         <div class="font-size-control">
           <span class="font-size-label">字号</span>
@@ -121,6 +129,7 @@ const addDialogMode = ref<'node' | 'group'>('node')
 const addOriginalText = ref('')
 const addChineseText = ref('')
 const addNodeType = ref<NodeType>('component')
+const groupsVisible = ref(true)
 
 function handleFontSizeChange(delta: number): void {
   const newNodeSize = Math.max(10, Math.min(28, graphStore.globalNodeFontSize + delta))
@@ -168,6 +177,10 @@ function handleAddGroup(): void {
   addOriginalText.value = ''
   addChineseText.value = ''
   addDialogVisible.value = true
+}
+
+function handleToggleGroups(visible: boolean): void {
+  engine.toggleGroupsVisible(visible)
 }
 
 function handleAddSave(data: { originalText: string; chineseText: string; nodeType?: NodeType }): void {

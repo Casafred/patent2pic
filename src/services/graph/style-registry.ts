@@ -48,7 +48,7 @@ export function getDefaultEdgeStyle(relationType: RelationType): EdgeStyle {
   const styleMap = RELATION_TYPE_STYLES[relationType]
   return {
     stroke: styleMap.stroke,
-    strokeWidth: 1.5,
+    strokeWidth: 2.5,
     strokeDasharray: styleMap.strokeDasharray,
     arrowType: styleMap.arrowType,
     fontSize: 15,

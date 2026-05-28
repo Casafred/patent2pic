@@ -45,7 +45,7 @@ export class GraphEngine {
             attrs: {
               line: {
                 stroke: '#a2b1c3',
-                strokeWidth: 1.5,
+                strokeWidth: 2.5,
                 targetMarker: { name: 'block', width: 12, height: 8 },
               },
             },
@@ -390,6 +390,30 @@ export class GraphEngine {
     if (!cell || !cell.isNode()) return false
     const data = (cell.getData() as Record<string, unknown>) || {}
     return !!(data.detached as boolean)
+  }
+
+  toggleGroupsVisible(visible: boolean): void {
+    if (!this.graph) return
+    const nodes = this.graph.getNodes()
+    for (const node of nodes) {
+      const data = (node.getData() as Record<string, unknown>) || {}
+      if (data.isGroup) {
+        const n = node as unknown as { attr: (path: string, value?: unknown) => unknown }
+        if (visible) {
+          n.attr('body/stroke', data.detached ? '#999' : '#fa8c16')
+          n.attr('body/fill', data.detached ? '#f5f5f5' : '#fafafa')
+          n.attr('body/fillOpacity', 0.5)
+          n.attr('label/fill', data.detached ? '#999' : '#fa8c16')
+          n.attr('body/strokeWidth', 1.5)
+        } else {
+          n.attr('body/stroke', 'transparent')
+          n.attr('body/fill', 'transparent')
+          n.attr('body/fillOpacity', 0)
+          n.attr('label/fill', 'transparent')
+          n.attr('body/strokeWidth', 0)
+        }
+      }
+    }
   }
 
   rebindGroupTracking(): void {
