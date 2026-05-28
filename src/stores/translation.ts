@@ -66,33 +66,8 @@ export const useTranslationStore = defineStore('translation', () => {
     return claimTranslations.value.get(claimId)
   }
 
-  function updateTranslatedText(claimId: string, sentenceId: string, newText: string): void {
-    const claimTrans = claimTranslations.value.get(claimId)
-    if (!claimTrans) return
-    const sentence = claimTrans.sentences.find((s: SentenceTranslation) => s.sentenceId === sentenceId)
-    if (sentence) {
-      sentence.translatedText = newText
-    }
-  }
-
   function clearAllTranslations(): void {
     claimTranslations.value.clear()
-  }
-
-  function toJSON(): Record<string, { claimId: string; sentences: SentenceTranslation[]; overallStatus: TranslationStatus }> {
-    const result: Record<string, { claimId: string; sentences: SentenceTranslation[]; overallStatus: TranslationStatus }> = {}
-    claimTranslations.value.forEach((val, key) => {
-      result[key] = val
-    })
-    return result
-  }
-
-  function fromJSON(data: Record<string, { claimId: string; sentences: SentenceTranslation[]; overallStatus: TranslationStatus }>): void {
-    const map = new Map<string, ClaimTranslation>()
-    for (const [key, val] of Object.entries(data)) {
-      map.set(key, val)
-    }
-    claimTranslations.value = map
   }
 
   return {
@@ -101,11 +76,8 @@ export const useTranslationStore = defineStore('translation', () => {
     progress,
     getSentenceTranslation,
     setSentenceTranslation,
-    updateTranslatedText,
     initClaimTranslation,
     getClaimTranslation,
     clearAllTranslations,
-    toJSON,
-    fromJSON,
   }
 })

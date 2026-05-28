@@ -69,15 +69,7 @@ export function useExportExcel() {
   }
 
   function downloadViaBrowser(buffer: ArrayBuffer | Uint8Array | number[], filename: string): void {
-    let arrayBuffer: ArrayBuffer
-    if (buffer instanceof Array) {
-      arrayBuffer = new Uint8Array(buffer).buffer as ArrayBuffer
-    } else if (buffer instanceof Uint8Array) {
-      arrayBuffer = buffer.buffer as ArrayBuffer
-    } else {
-      arrayBuffer = buffer
-    }
-    const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
