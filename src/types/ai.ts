@@ -56,6 +56,12 @@ export interface ExtractResult {
   edges: ExtractEdge[]
   groups: ExtractGroup[]
   translatedClaim: string
+  sentencePairs: SentencePair[]
+}
+
+export interface SentencePair {
+  original: string
+  translation: string
 }
 
 export interface ExtractNode {

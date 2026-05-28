@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { Claim } from '@/types/claim'
+import type { Claim, Sentence } from '@/types/claim'
 
 export const useClaimStore = defineStore('claim', () => {
   const rawText = ref('')
@@ -39,6 +39,13 @@ export const useClaimStore = defineStore('claim', () => {
     isInputCollapsed.value = false
   }
 
+  function updateClaimSentences(claimId: string, sentences: Sentence[]): void {
+    const claim = claims.value.find(c => c.id === claimId)
+    if (claim) {
+      claim.sentences = sentences
+    }
+  }
+
   return {
     rawText,
     claims,
@@ -51,5 +58,6 @@ export const useClaimStore = defineStore('claim', () => {
     getActiveClaim,
     collapseInput,
     expandInput,
+    updateClaimSentences,
   }
 })

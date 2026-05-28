@@ -9,7 +9,8 @@ import { parseExtractResult } from '@/services/ai/extractor'
 import { graphEngine } from '@/services/graph/engine'
 import { alignTranslationToSentences } from '@/services/claim/translation-aligner'
 import { timingStart, timingEnd, timingLap } from '@/utils/timing'
-import type { ChatUsage, ExtractResult } from '@/types/ai'
+import type { ChatUsage, ExtractResult, SentencePair } from '@/types/ai'
+import type { Sentence } from '@/types/claim'
 import { useAITranslation } from '@/composables/useAITranslation'
 
 function isChineseText(text: string): boolean {
@@ -217,7 +218,9 @@ export function useAIExtract() {
     const extractResult = await extract(claim.rawText)
     if (!extractResult) return null
 
-    if (extractResult.translatedClaim && claim.sentences.length > 0) {
+    if (extractResult.sentencePairs && extractResult.sentencePairs.length > 0) {
+      applySentencePairs(claim.id, claim.index, extractResult.sentencePairs)
+    } else if (extractResult.translatedClaim && claim.sentences.length > 0) {
       const sentenceTranslations = alignTranslationToSentences(
         claim.rawText,
         extractResult.translatedClaim,
@@ -251,6 +254,40 @@ export function useAIExtract() {
     }
 
     return extractResult
+  }
+
+  function applySentencePairs(claimId: string, claimIndex: number, pairs: SentencePair[]): void {
+    const newSentences: Sentence[] = pairs.map((pair, idx) => ({
+      id: `claim-${claimIndex}-sent-${idx + 1}`,
+      text: pair.original,
+      nodeIds: [],
+      edgeIds: [],
+    }))
+
+    claimStore.updateClaimSentences(claimId, newSentences)
+
+    const sentenceIds = newSentences.map(s => s.id)
+    const originalTexts: Record<string, string> = {}
+    newSentences.forEach(s => {
+      originalTexts[s.id] = s.text
+    })
+    translationStore.initClaimTranslation(claimId, sentenceIds, originalTexts)
+
+    pairs.forEach((pair, idx) => {
+      const sentenceId = newSentences[idx].id
+      translationStore.setSentenceTranslation(claimId, {
+        sentenceId,
+        originalText: pair.original,
+        translatedText: pair.translation,
+        status: 'done',
+        error: null,
+      })
+    })
+
+    const claimTrans = translationStore.getClaimTranslation(claimId)
+    if (claimTrans) {
+      claimTrans.overallStatus = 'done'
+    }
   }
 
   return {

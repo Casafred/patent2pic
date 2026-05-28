@@ -1,8 +1,8 @@
-
 import { graphEngine } from '@/services/graph/engine'
 import { useGraphStore } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
 import { useTranslationStore } from '@/stores/translation'
+import { parseClaims } from '@/services/claim/parser'
 
 function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -27,6 +27,8 @@ export function useProjectFile() {
     const projectData = {
       version: '1.0.0',
       claimText: claim?.rawText || claimStore.rawText,
+      claims: claimStore.claims,
+      activeClaimId: claimStore.activeClaimId,
       isInputCollapsed: claimStore.isInputCollapsed,
       translations: translationStore.toJSON(),
       graphJSON: graphEngine.toJSON(),
@@ -128,6 +130,15 @@ export function useProjectFile() {
 
       if (data.claimText) {
         claimStore.setText(data.claimText)
+        if (data.claims && Array.isArray(data.claims) && data.claims.length > 0) {
+          claimStore.setClaims(data.claims)
+        } else {
+          const parsed = parseClaims(data.claimText)
+          claimStore.setClaims(parsed)
+        }
+        if (data.activeClaimId) {
+          claimStore.setActiveClaim(data.activeClaimId)
+        }
       }
 
       if (typeof data.isInputCollapsed === 'boolean') {

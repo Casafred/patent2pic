@@ -1,4 +1,4 @@
-import type { ExtractResult, ExtractNode, ExtractEdge, ExtractGroup } from '@/types/ai'
+import type { ExtractResult, ExtractNode, ExtractEdge, ExtractGroup, SentencePair } from '@/types/ai'
 
 export function parseExtractResult(raw: string): ExtractResult {
   const jsonStr = extractJSON(raw)
@@ -95,6 +95,7 @@ function validateExtractResult(data: unknown): ExtractResult {
     edges,
     groups,
     translatedClaim: String(result.translatedClaim || ''),
+    sentencePairs: validateSentencePairs(result.sentencePairs),
   }
 }
 
@@ -184,4 +185,19 @@ function validateGroups(raw: unknown, nodes: ExtractNode[]): ExtractGroup[] {
       memberNodeIds,
     }
   })
+}
+
+function validateSentencePairs(raw: unknown): SentencePair[] {
+  if (!raw || !Array.isArray(raw)) return []
+
+  return raw
+    .filter((item: unknown): item is Record<string, unknown> => {
+      if (!item || typeof item !== 'object') return false
+      const pair = item as Record<string, unknown>
+      return typeof pair.original === 'string' && typeof pair.translation === 'string'
+    })
+    .map((pair: Record<string, unknown>) => ({
+      original: String(pair.original),
+      translation: String(pair.translation),
+    }))
 }
