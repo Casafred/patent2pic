@@ -15,6 +15,14 @@
 
 ### PDF 生成命令
 
+**前置条件**：系统需安装中文字体（如 `fonts-noto-cjk`），否则 PDF 中中文将无法正常显示。
+
+```bash
+# 安装中文字体（Ubuntu/Debian）
+apt-get install -y fonts-noto-cjk fonts-noto-cjk-extra
+fc-cache -f -v
+```
+
 ```bash
 cd /workspace/docs
 wkhtmltopdf \
