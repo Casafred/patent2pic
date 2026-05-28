@@ -10,7 +10,9 @@ const HIERARCHY_LEVEL_COLORS: { fill: string; stroke: string }[] = [
   { fill: '#ffe4e4', stroke: '#e63946' },
   { fill: '#fff3e0', stroke: '#ff9800' },
   { fill: '#e8f5e9', stroke: '#4caf50' },
-  { fill: '#f3e5f5', stroke: '#9c27b0' },
+  { fill: '#ede7f6', stroke: '#7e57c2' },
+  { fill: '#e0f2f1', stroke: '#00897b' },
+  { fill: '#fce4ec', stroke: '#c62828' },
 ]
 
 export function getHierarchyNodeStyle(hierarchyLevel: number, _nodeType: NodeType): Pick<NodeStyle, 'fill' | 'stroke'> {
@@ -48,7 +50,7 @@ export function getDefaultEdgeStyle(relationType: RelationType): EdgeStyle {
   const styleMap = RELATION_TYPE_STYLES[relationType]
   return {
     stroke: styleMap.stroke,
-    strokeWidth: 2.5,
+    strokeWidth: 3,
     strokeDasharray: styleMap.strokeDasharray,
     arrowType: styleMap.arrowType,
     fontSize: 15,

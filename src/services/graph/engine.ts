@@ -17,6 +17,7 @@ import { timingStart, timingEnd } from '@/utils/timing'
 export class GraphEngine {
   private graph: Graph | null = null
   private initialGraphJSON: Record<string, unknown> | null = null
+  private labelLayerObserver: MutationObserver | null = null
 
   init(container: HTMLElement): void {
     this.graph = new Graph({
@@ -45,7 +46,7 @@ export class GraphEngine {
             attrs: {
               line: {
                 stroke: '#a2b1c3',
-                strokeWidth: 2.5,
+                strokeWidth: 3,
                 targetMarker: { name: 'block', width: 12, height: 8 },
               },
             },
@@ -86,6 +87,7 @@ export class GraphEngine {
     }))
 
     this.bindEdgeLabelConstraint()
+    this.setupLabelLayer()
   }
 
   private bindEdgeLabelConstraint(): void {
@@ -138,6 +140,10 @@ export class GraphEngine {
   }
 
   destroy(): void {
+    if (this.labelLayerObserver) {
+      this.labelLayerObserver.disconnect()
+      this.labelLayerObserver = null
+    }
     if (this.graph) {
       this.graph.dispose()
       this.graph = null
@@ -418,6 +424,68 @@ export class GraphEngine {
 
   rebindGroupTracking(): void {
     this.bindGroupTracking()
+  }
+
+  private setupLabelLayer(): void {
+    if (!this.graph) return
+    const container = this.graph.container
+    const svg = container?.querySelector('svg')
+    if (!svg) return
+
+    const viewport = svg.querySelector(':scope > g') as SVGGElement | null
+    if (!viewport) return
+
+    let labelsLayer = viewport.querySelector('.x6-labels-layer') as SVGGElement | null
+    if (!labelsLayer) {
+      labelsLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+      labelsLayer.setAttribute('class', 'x6-labels-layer')
+      viewport.appendChild(labelsLayer)
+    }
+
+    this.refreshLabelLayer()
+
+    if (this.labelLayerObserver) {
+      this.labelLayerObserver.disconnect()
+    }
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    this.labelLayerObserver = new MutationObserver(() => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => this.refreshLabelLayer(), 30)
+    })
+
+    this.labelLayerObserver.observe(viewport, { childList: true, subtree: true })
+  }
+
+  refreshLabelLayer(): void {
+    if (!this.graph) return
+    const container = this.graph.container
+    const svg = container?.querySelector('svg')
+    if (!svg) return
+
+    const viewport = svg.querySelector(':scope > g') as SVGGElement | null
+    if (!viewport) return
+
+    let labelsLayer = viewport.querySelector('.x6-labels-layer') as SVGGElement | null
+    if (!labelsLayer) {
+      labelsLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+      labelsLayer.setAttribute('class', 'x6-labels-layer')
+      viewport.appendChild(labelsLayer)
+    }
+
+    const allLabels = viewport.querySelectorAll('.x6-edge-label')
+    let moved = false
+    allLabels.forEach(label => {
+      if ((label.parentElement as Element) !== labelsLayer) {
+        labelsLayer!.appendChild(label)
+        moved = true
+      }
+    })
+
+    if (moved) {
+      const parent = labelsLayer.parentNode
+      if (parent) parent.appendChild(labelsLayer)
+    }
   }
 
   addNode(data: NodeData): string {

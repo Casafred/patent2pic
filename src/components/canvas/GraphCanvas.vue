@@ -46,8 +46,6 @@
         <div class="menu-item" @click="handleMenuAction('toggleLabelDetach')">
           {{ engine.isEdgeLabelDetached(contextMenu.cellId) ? '锁定到线条' : '脱离线条自由移动' }}
         </div>
-        <div class="menu-divider" />
-        <div class="menu-item" @click="handleMenuAction('bringToFront')">标签置顶</div>
       </template>
       <template v-if="contextMenu.type === 'blank'">
         <div class="menu-item" @click="handleMenuAction('fitView')">适配画布</div>

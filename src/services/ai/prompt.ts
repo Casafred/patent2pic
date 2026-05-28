@@ -28,7 +28,9 @@ sentencePairs 断句规则（极其重要）：
 - hierarchyLevel 0（最上位）：红色系
 - hierarchyLevel 1：橙色系
 - hierarchyLevel 2：绿色系
-- hierarchyLevel 3+：紫色系
+- hierarchyLevel 3：紫色系
+- hierarchyLevel 4：青色系
+- hierarchyLevel 5+：深红色系
 
 输出严格 JSON 格式，不要输出任何其他内容：
 {
