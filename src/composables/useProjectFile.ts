@@ -2,6 +2,7 @@
 import { graphEngine } from '@/services/graph/engine'
 import { useGraphStore } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
+import { useTranslationStore } from '@/stores/translation'
 
 function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -10,6 +11,7 @@ function isTauri(): boolean {
 export function useProjectFile() {
   const graphStore = useGraphStore()
   const claimStore = useClaimStore()
+  const translationStore = useTranslationStore()
 
   async function saveProject(): Promise<void> {
     const graph = graphEngine.getGraph()
@@ -25,6 +27,8 @@ export function useProjectFile() {
     const projectData = {
       version: '1.0.0',
       claimText: claim?.rawText || claimStore.rawText,
+      isInputCollapsed: claimStore.isInputCollapsed,
+      translations: translationStore.toJSON(),
       graphJSON: graphEngine.toJSON(),
       tabs: graphStore.tabs,
       activeTabId: graphStore.activeTabId,
@@ -124,6 +128,18 @@ export function useProjectFile() {
 
       if (data.claimText) {
         claimStore.setText(data.claimText)
+      }
+
+      if (typeof data.isInputCollapsed === 'boolean') {
+        if (data.isInputCollapsed) {
+          claimStore.collapseInput()
+        } else {
+          claimStore.expandInput()
+        }
+      }
+
+      if (data.translations && typeof data.translations === 'object') {
+        translationStore.fromJSON(data.translations)
       }
 
       if (data.tabs && Array.isArray(data.tabs) && data.tabs.length > 0) {

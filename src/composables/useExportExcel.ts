@@ -56,8 +56,7 @@ export function useExportExcel() {
           filters: [{ name: 'Excel 文件', extensions: ['xlsx'] }],
         })
         if (path) {
-          const encoder = new TextEncoder()
-          await writeFile(path as string, encoder.encode(String.fromCharCode(...new Uint8Array(buffer))))
+          await writeFile(path as string, new Uint8Array(buffer as ArrayBuffer))
         }
       } catch (err) {
         console.error('Tauri 导出失败，回退到浏览器:', err)
