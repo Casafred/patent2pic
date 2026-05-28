@@ -97,7 +97,8 @@ interface NodeHighlightInfo {
   color: HighlightColor
   label: string
   nodeId: string
-  nodeText: string
+  originalText: string
+  chineseText: string
 }
 
 interface RenderedSegment {
@@ -154,12 +155,12 @@ const nodeHighlightMap = computed<Map<string, NodeHighlightInfo>>(() => {
   selectedIds.forEach((nodeId: string, idx: number) => {
     const node = extractNodes.value.find((n: ExtractNode) => n.id === nodeId)
     const colorIdx = idx % HIGHLIGHT_PALETTE.length
-    const nodeText = node?.originalText || node?.chineseText || ''
     map.set(nodeId, {
       color: HIGHLIGHT_PALETTE[colorIdx],
       label: node?.chineseText || node?.originalText || nodeId,
       nodeId,
-      nodeText,
+      originalText: node?.originalText || '',
+      chineseText: node?.chineseText || '',
     })
   })
 
@@ -185,14 +186,15 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
 }
 
-function highlightTextInSentence(sentenceText: string): { html: string; colors: (HighlightColor & { nodeLabel: string })[] } {
+function highlightTextInSentence(sentenceText: string, mode: 'original' | 'translation' = 'original'): { html: string; colors: (HighlightColor & { nodeLabel: string })[] } {
   const highlights: (HighlightColor & { nodeLabel: string })[] = []
   let html = escapeHtml(sentenceText)
 
   const nodeTexts: { text: string; info: NodeHighlightInfo }[] = []
   for (const [_nodeId, info] of nodeHighlightMap.value) {
-    if (info.nodeText && info.nodeText.length >= 2) {
-      nodeTexts.push({ text: info.nodeText, info })
+    const text = mode === 'translation' ? (info.chineseText || info.originalText) : (info.originalText || info.chineseText)
+    if (text && text.length >= 2) {
+      nodeTexts.push({ text, info })
     }
   }
 
@@ -235,7 +237,7 @@ const renderedSegments = computed<RenderedSegment[]>(() => {
     const translation = translationStore.getSentenceTranslation(claim.id, sentence.id) ?? null
     let translationHighlightedHtml = ''
     if (translation && translation.translatedText) {
-      const transHighlight = highlightTextInSentence(translation.translatedText)
+      const transHighlight = highlightTextInSentence(translation.translatedText, 'translation')
       translationHighlightedHtml = transHighlight.html
     }
 

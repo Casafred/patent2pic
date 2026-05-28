@@ -8,7 +8,7 @@ import { Export } from '@antv/x6-plugin-export'
 import { Transform } from '@antv/x6-plugin-transform'
 import type { NodeData, EdgeData } from '@/types/graph'
 import type { ExtractResult, ExtractGroup } from '@/types/ai'
-import { buildNode, updateNodeStyle } from './node-builder'
+import { buildNode, updateNodeStyle, calculateNodeSize } from './node-builder'
 import { buildEdge, updateEdgeStyle } from './edge-builder'
 import { applyElkLayout, type ElkLayoutOptions } from './layout'
 import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle } from './style-registry'
@@ -161,13 +161,15 @@ export class GraphEngine {
     const nodeDataList: NodeData[] = result.nodes.map(n => {
       const baseStyle = getDefaultNodeStyle(n.nodeType)
       const hierarchyStyle = getHierarchyNodeStyle(n.hierarchyLevel ?? 0, n.nodeType)
+      const mergedStyle = { ...baseStyle, ...hierarchyStyle }
+      const size = calculateNodeSize(n.originalText, n.chineseText, isChinese, mergedStyle.fontSize, mergedStyle.fontFamily, mergedStyle.fontWeight, mergedStyle.width, mergedStyle.height)
       return {
         id: n.id,
         originalText: n.originalText,
         chineseText: n.chineseText,
         nodeType: n.nodeType,
         hierarchyLevel: n.hierarchyLevel ?? 0,
-        style: { ...baseStyle, ...hierarchyStyle },
+        style: { ...mergedStyle, width: size.width, height: size.height },
       }
     })
 

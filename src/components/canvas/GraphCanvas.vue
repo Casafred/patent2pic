@@ -64,6 +64,7 @@ import { useKeyboard } from '@/composables/useKeyboard'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
 import { getDefaultNodeStyle, getDefaultEdgeStyle } from '@/services/graph/style-registry'
+import { calculateNodeSize } from '@/services/graph/node-builder'
 import CellEditDialog from '../common/CellEditDialog.vue'
 import GraphLegend from './GraphLegend.vue'
 import type { NodeType, RelationType } from '@/types/graph'
@@ -291,6 +292,7 @@ function getLabelText(data: { originalText: string; chineseText: string }): stri
   if (isChinese) {
     return data.chineseText || data.originalText
   }
+  if (!data.chineseText) return data.originalText
   return `${data.originalText}\n${data.chineseText}`
 }
 
@@ -308,6 +310,20 @@ function handleEditSave(data: { originalText: string; chineseText: string; nodeT
     node.attr('label/text', labelText)
     const prevData = (cell.getData() as Record<string, unknown>) || {}
     node.setData({ ...prevData, originalText: data.originalText, chineseText: data.chineseText, nodeType: data.nodeType })
+
+    const isChinese = graphStore.activeTab?.isChinese ?? false
+    const prevStyle = (prevData.style as Record<string, unknown>) || {}
+    const fontSize = (prevStyle.fontSize as number) || 15
+    const fontFamily = (prevStyle.fontFamily as string) || '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+    const fontWeight = (prevStyle.fontWeight as string) || 'bold'
+    const prevWidth = (prevStyle.width as number) || 160
+    const prevHeight = (prevStyle.height as number) || 60
+    const newSize = calculateNodeSize(data.originalText, data.chineseText, isChinese, fontSize, fontFamily, fontWeight, prevWidth, prevHeight)
+
+    engine.updateNodeStyle(editCellId.value, {
+      width: newSize.width,
+      height: newSize.height,
+    })
 
     if (data.nodeType) {
       const style = getDefaultNodeStyle(data.nodeType)
