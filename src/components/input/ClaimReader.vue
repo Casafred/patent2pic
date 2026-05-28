@@ -172,7 +172,11 @@ const editingSentenceId = ref<string | null>(null)
 const editingText = ref('')
 const exporting = ref(false)
 
-const translationEnabled = computed(() => aiStore.translationConfig.enabled)
+const translationEnabled = computed(() => {
+  if (aiStore.translationConfig.enabled) return true
+  if (claimTrans.value && claimTrans.value.overallStatus === 'done') return true
+  return false
+})
 
 const hasGraphData = computed(() => {
   const tab = graphStore.activeTab
