@@ -2,6 +2,7 @@ import { graphEngine } from '@/services/graph/engine'
 import { useGraphStore, type TabData } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
 import { useEditorStore } from '@/stores/editor'
+import { useTranslationStore } from '@/stores/translation'
 
 const AUTOSAVE_KEY = 'patent2pic-autosave'
 const AUTOSAVE_INTERVAL = 30_000
@@ -10,6 +11,7 @@ export function useAutoSave() {
   const graphStore = useGraphStore()
   const claimStore = useClaimStore()
   const editorStore = useEditorStore()
+  const translationStore = useTranslationStore()
 
   let intervalId: ReturnType<typeof setInterval> | null = null
 
@@ -27,10 +29,8 @@ export function useAutoSave() {
       const data = {
         version: '1.0.0',
         claimText: claim?.rawText || claimStore.rawText,
-<<<<<<< HEAD
         isInputCollapsed: claimStore.isInputCollapsed,
-=======
->>>>>>> trae/solo-agent-NW5oNn
+        translations: translationStore.toJSON(),
         tabs: graphStore.tabs.map((tab: TabData) => ({
           ...tab,
           serializedGraph: tab.id === graphStore.activeTabId && graph
@@ -59,7 +59,6 @@ export function useAutoSave() {
         claimStore.setText(data.claimText)
       }
 
-<<<<<<< HEAD
       if (typeof data.isInputCollapsed === 'boolean') {
         if (data.isInputCollapsed) {
           claimStore.collapseInput()
@@ -68,8 +67,10 @@ export function useAutoSave() {
         }
       }
 
-=======
->>>>>>> trae/solo-agent-NW5oNn
+      if (data.translations && typeof data.translations === 'object') {
+        translationStore.fromJSON(data.translations)
+      }
+
       if (data.tabs && Array.isArray(data.tabs) && data.tabs.length > 0) {
         graphStore.setTabs(data.tabs)
         graphStore.setActiveTabId(data.activeTabId || data.tabs[0].id)

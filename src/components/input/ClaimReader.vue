@@ -1,26 +1,32 @@
 <template>
-<<<<<<< HEAD
-  <div class="claim-reader" v-if="hasGraphData">
-=======
   <div class="claim-reader" v-if="claimStore.isInputCollapsed">
->>>>>>> trae/solo-agent-NW5oNn
     <div class="reader-header">
       <h4>权利要求对照阅读</h4>
-      <template v-if="translationEnabled">
-        <el-progress
-          v-if="translationStore.isTranslating"
-          :percentage="translationProgressPercent"
-          :stroke-width="8"
-          style="width: 120px"
-        />
-        <span class="reader-hint" v-else-if="claimTrans && claimTrans.overallStatus === 'done'">
-          翻译完成
+      <div class="reader-header-right">
+        <template v-if="translationEnabled">
+          <el-progress
+            v-if="translationStore.isTranslating"
+            :percentage="translationProgressPercent"
+            :stroke-width="8"
+            style="width: 120px"
+          />
+          <span class="reader-hint" v-else-if="claimTrans && claimTrans.overallStatus === 'done'">
+            翻译完成
+          </span>
+        </template>
+        <el-button
+          v-if="translationEnabled && claimTrans && claimTrans.overallStatus === 'done'"
+          size="small"
+          @click="handleExportExcel"
+          :loading="exporting"
+        >
+          导出Excel
+        </el-button>
+        <span class="reader-hint" v-if="editorStore.selectedNodeIds.length > 0">
+          已选中 {{ editorStore.selectedNodeIds.length }} 个节点
         </span>
-      </template>
-      <span class="reader-hint" v-if="editorStore.selectedNodeIds.length > 0">
-        已选中 {{ editorStore.selectedNodeIds.length }} 个节点
-      </span>
-      <span class="reader-hint" v-else>点击画布节点查看对应文本</span>
+        <span class="reader-hint" v-else>点击画布节点查看对应文本</span>
+      </div>
     </div>
 
     <div class="reader-body" ref="readerBodyRef">
@@ -45,7 +51,34 @@
           </div>
           <div class="segment-translation" v-if="translationEnabled">
             <template v-if="segment.translation && segment.translation.status === 'done'">
-              <span v-html="segment.translationHighlightedHtml" class="translation-text"></span>
+              <template v-if="editingSentenceId === segment.translation.sentenceId">
+                <div class="translation-edit-area">
+                  <el-input
+                    v-model="editingText"
+                    type="textarea"
+                    :autosize="{ minRows: 1, maxRows: 4 }"
+                    size="small"
+                    resize="none"
+                    @keydown.enter.ctrl="saveEdit(segment.translation.sentenceId)"
+                    @keydown.escape="cancelEdit"
+                  />
+                  <div class="translation-edit-actions">
+                    <el-button link type="primary" size="small" @click="saveEdit(segment.translation.sentenceId)">保存</el-button>
+                    <el-button link size="small" @click="cancelEdit">取消</el-button>
+                  </div>
+                </div>
+              </template>
+              <template v-else>
+                <span v-html="segment.translationHighlightedHtml" class="translation-text"></span>
+                <el-button
+                  link
+                  size="small"
+                  class="edit-btn"
+                  @click="startEdit(segment.translation.sentenceId, segment.translation.translatedText)"
+                >
+                  <el-icon size="12"><Edit /></el-icon>
+                </el-button>
+              </template>
             </template>
             <template v-else-if="segment.translation && segment.translation.status === 'loading'">
               <span class="translation-loading">⏳ 翻译中...</span>
@@ -83,12 +116,14 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
+import { Edit } from '@element-plus/icons-vue'
 import { useClaimStore } from '@/stores/claim'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
 import { useAIStore } from '@/stores/ai'
 import { useTranslationStore } from '@/stores/translation'
 import { useAITranslation } from '@/composables/useAITranslation'
+import { useExportExcel } from '@/composables/useExportExcel'
 import type { ExtractNode } from '@/types/ai'
 import type { SentenceTranslation, ClaimTranslation } from '@/types/translation'
 
@@ -131,18 +166,14 @@ const graphStore = useGraphStore()
 const aiStore = useAIStore()
 const translationStore = useTranslationStore()
 const { retryTranslation } = useAITranslation()
+const { exportToExcel } = useExportExcel()
 const readerBodyRef = ref<HTMLElement | null>(null)
+const editingSentenceId = ref<string | null>(null)
+const editingText = ref('')
+const exporting = ref(false)
 
 const translationEnabled = computed(() => aiStore.translationConfig.enabled)
 
-<<<<<<< HEAD
-const hasGraphData = computed(() => {
-  const tab = graphStore.activeTab
-  return !!(tab?.extractResult || tab?.serializedGraph)
-})
-
-=======
->>>>>>> trae/solo-agent-NW5oNn
 const translationProgressPercent = computed(() => {
   if (translationStore.progress.total === 0) return 0
   return Math.round((translationStore.progress.completed / translationStore.progress.total) * 100)
@@ -198,52 +229,13 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
 }
 
-<<<<<<< HEAD
-function buildBracketFlexiblePattern(text: string): string {
-  const escaped = escapeHtml(text)
-  let pattern = ''
-  for (const ch of escaped) {
-    switch (ch) {
-      case '（': case '(': pattern += '[（(]'; break
-      case '）': case ')': pattern += '[）)]'; break
-      case '【': pattern += '[【\\[]'; break
-      case '】': pattern += '[】\\]]'; break
-      case '[': pattern += '[【\\[]'; break
-      case ']': pattern += '[】\\]]'; break
-      case '.': pattern += '\\.'; break
-      case '*': pattern += '\\*'; break
-      case '+': pattern += '\\+'; break
-      case '?': pattern += '\\?'; break
-      case '^': pattern += '\\^'; break
-      case '$': pattern += '\\$'; break
-      case '{': pattern += '\\{'; break
-      case '}': pattern += '\\}'; break
-      case '|': pattern += '\\|'; break
-      case '\\': pattern += '\\\\'; break
-      default: pattern += ch; break
-    }
-  }
-  return pattern
-}
-
-=======
->>>>>>> trae/solo-agent-NW5oNn
 function highlightTextInSentence(sentenceText: string, mode: 'original' | 'translation' = 'original'): { html: string; colors: (HighlightColor & { nodeLabel: string })[] } {
   const highlights: (HighlightColor & { nodeLabel: string })[] = []
   let html = escapeHtml(sentenceText)
 
   const nodeTexts: { text: string; info: NodeHighlightInfo }[] = []
   for (const [_nodeId, info] of nodeHighlightMap.value) {
-<<<<<<< HEAD
-    let text: string
-    if (mode === 'translation') {
-      text = info.chineseText || info.originalText
-    } else {
-      text = info.originalText || info.chineseText
-    }
-=======
     const text = mode === 'translation' ? (info.chineseText || info.originalText) : (info.originalText || info.chineseText)
->>>>>>> trae/solo-agent-NW5oNn
     if (text && text.length >= 2) {
       nodeTexts.push({ text, info })
     }
@@ -252,13 +244,8 @@ function highlightTextInSentence(sentenceText: string, mode: 'original' | 'trans
   nodeTexts.sort((a, b) => b.text.length - a.text.length)
 
   for (const { text, info } of nodeTexts) {
-<<<<<<< HEAD
-    const pattern = buildBracketFlexiblePattern(text)
-    const regex = new RegExp(pattern, 'gi')
-=======
     const escapedText = escapeHtml(text)
     const regex = new RegExp(escapedText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
->>>>>>> trae/solo-agent-NW5oNn
     let found = false
     html = html.replace(regex, (match) => {
       if (!found) {
@@ -279,6 +266,34 @@ function handleRetry(sentenceId: string): void {
   const claim = claimStore.getActiveClaim()
   if (claim) {
     retryTranslation(claim.id, sentenceId)
+  }
+}
+
+function startEdit(sentenceId: string, currentText: string): void {
+  editingSentenceId.value = sentenceId
+  editingText.value = currentText
+}
+
+function saveEdit(sentenceId: string): void {
+  const claim = claimStore.getActiveClaim()
+  if (claim && editingText.value.trim()) {
+    translationStore.updateTranslatedText(claim.id, sentenceId, editingText.value.trim())
+  }
+  editingSentenceId.value = null
+  editingText.value = ''
+}
+
+function cancelEdit(): void {
+  editingSentenceId.value = null
+  editingText.value = ''
+}
+
+async function handleExportExcel(): Promise<void> {
+  exporting.value = true
+  try {
+    await exportToExcel()
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -327,11 +342,7 @@ watch(() => editorStore.selectedNodeIds, () => {
   display: flex;
   flex-direction: column;
   flex: 1;
-<<<<<<< HEAD
-  min-height: 200px;
-=======
   min-height: 0;
->>>>>>> trae/solo-agent-NW5oNn
   border-top: 1px solid var(--border-color);
 }
 
@@ -351,6 +362,16 @@ watch(() => editorStore.selectedNodeIds, () => {
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.reader-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  overflow: hidden;
 }
 
 .reader-hint {
@@ -402,10 +423,39 @@ watch(() => editorStore.selectedNodeIds, () => {
   padding-left: 12px;
   border-left: 1px solid var(--border-color-light);
   color: var(--text-tertiary);
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .translation-text {
   vertical-align: middle;
+  flex: 1;
+}
+
+.edit-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+  color: var(--text-quaternary) !important;
+  padding: 2px !important;
+}
+
+.segment:hover .edit-btn {
+  opacity: 1;
+}
+
+.translation-edit-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.translation-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .translation-loading {
