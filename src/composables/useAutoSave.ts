@@ -27,6 +27,7 @@ export function useAutoSave() {
       const data = {
         version: '1.0.0',
         claimText: claim?.rawText || claimStore.rawText,
+        isInputCollapsed: claimStore.isInputCollapsed,
         tabs: graphStore.tabs.map((tab: TabData) => ({
           ...tab,
           serializedGraph: tab.id === graphStore.activeTabId && graph
@@ -53,6 +54,14 @@ export function useAutoSave() {
 
       if (data.claimText) {
         claimStore.setText(data.claimText)
+      }
+
+      if (typeof data.isInputCollapsed === 'boolean') {
+        if (data.isInputCollapsed) {
+          claimStore.collapseInput()
+        } else {
+          claimStore.expandInput()
+        }
       }
 
       if (data.tabs && Array.isArray(data.tabs) && data.tabs.length > 0) {

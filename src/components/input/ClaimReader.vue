@@ -1,5 +1,5 @@
 <template>
-  <div class="claim-reader" v-if="claimStore.isInputCollapsed">
+  <div class="claim-reader" v-if="hasGraphData">
     <div class="reader-header">
       <h4>权利要求对照阅读</h4>
       <template v-if="translationEnabled">
@@ -131,6 +131,11 @@ const readerBodyRef = ref<HTMLElement | null>(null)
 
 const translationEnabled = computed(() => aiStore.translationConfig.enabled)
 
+const hasGraphData = computed(() => {
+  const tab = graphStore.activeTab
+  return !!(tab?.extractResult || tab?.serializedGraph)
+})
+
 const translationProgressPercent = computed(() => {
   if (translationStore.progress.total === 0) return 0
   return Math.round((translationStore.progress.completed / translationStore.progress.total) * 100)
@@ -186,13 +191,45 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
 }
 
+function buildBracketFlexiblePattern(text: string): string {
+  const escaped = escapeHtml(text)
+  let pattern = ''
+  for (const ch of escaped) {
+    switch (ch) {
+      case '（': case '(': pattern += '[（(]'; break
+      case '）': case ')': pattern += '[）)]'; break
+      case '【': pattern += '[【\\[]'; break
+      case '】': pattern += '[】\\]]'; break
+      case '[': pattern += '[【\\[]'; break
+      case ']': pattern += '[】\\]]'; break
+      case '.': pattern += '\\.'; break
+      case '*': pattern += '\\*'; break
+      case '+': pattern += '\\+'; break
+      case '?': pattern += '\\?'; break
+      case '^': pattern += '\\^'; break
+      case '$': pattern += '\\$'; break
+      case '{': pattern += '\\{'; break
+      case '}': pattern += '\\}'; break
+      case '|': pattern += '\\|'; break
+      case '\\': pattern += '\\\\'; break
+      default: pattern += ch; break
+    }
+  }
+  return pattern
+}
+
 function highlightTextInSentence(sentenceText: string, mode: 'original' | 'translation' = 'original'): { html: string; colors: (HighlightColor & { nodeLabel: string })[] } {
   const highlights: (HighlightColor & { nodeLabel: string })[] = []
   let html = escapeHtml(sentenceText)
 
   const nodeTexts: { text: string; info: NodeHighlightInfo }[] = []
   for (const [_nodeId, info] of nodeHighlightMap.value) {
-    const text = mode === 'translation' ? (info.chineseText || info.originalText) : (info.originalText || info.chineseText)
+    let text: string
+    if (mode === 'translation') {
+      text = info.chineseText || info.originalText
+    } else {
+      text = info.originalText || info.chineseText
+    }
     if (text && text.length >= 2) {
       nodeTexts.push({ text, info })
     }
@@ -201,8 +238,8 @@ function highlightTextInSentence(sentenceText: string, mode: 'original' | 'trans
   nodeTexts.sort((a, b) => b.text.length - a.text.length)
 
   for (const { text, info } of nodeTexts) {
-    const escapedText = escapeHtml(text)
-    const regex = new RegExp(escapedText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    const pattern = buildBracketFlexiblePattern(text)
+    const regex = new RegExp(pattern, 'gi')
     let found = false
     html = html.replace(regex, (match) => {
       if (!found) {
@@ -271,7 +308,7 @@ watch(() => editorStore.selectedNodeIds, () => {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: 0;
+  min-height: 200px;
   border-top: 1px solid var(--border-color);
 }
 

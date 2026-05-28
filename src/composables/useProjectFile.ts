@@ -25,6 +25,7 @@ export function useProjectFile() {
     const projectData = {
       version: '1.0.0',
       claimText: claim?.rawText || claimStore.rawText,
+      isInputCollapsed: claimStore.isInputCollapsed,
       graphJSON: graphEngine.toJSON(),
       tabs: graphStore.tabs,
       activeTabId: graphStore.activeTabId,
@@ -124,6 +125,14 @@ export function useProjectFile() {
 
       if (data.claimText) {
         claimStore.setText(data.claimText)
+      }
+
+      if (typeof data.isInputCollapsed === 'boolean') {
+        if (data.isInputCollapsed) {
+          claimStore.collapseInput()
+        } else {
+          claimStore.expandInput()
+        }
       }
 
       if (data.tabs && Array.isArray(data.tabs) && data.tabs.length > 0) {

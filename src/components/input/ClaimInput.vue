@@ -3,15 +3,24 @@
     <template v-if="!claimStore.isInputCollapsed">
       <div class="section-header">
         <h3>权利要求输入</h3>
-        <el-button
-          size="small"
-          type="primary"
-          :disabled="!claimStore.rawText.trim() || aiStore.isExtracting || !aiStore.activeApiKey"
-          @click="handleGenerate"
-        >
-          <el-icon v-if="aiStore.isExtracting" class="is-loading"><Loading /></el-icon>
-          {{ aiStore.isExtracting ? '抽取中...' : '生成分解图' }}
-        </el-button>
+        <div class="section-header-actions">
+          <el-button
+            v-if="hasGraphData"
+            size="small"
+            @click="claimStore.collapseInput()"
+          >
+            收起
+          </el-button>
+          <el-button
+            size="small"
+            type="primary"
+            :disabled="!claimStore.rawText.trim() || aiStore.isExtracting || !aiStore.activeApiKey"
+            @click="handleGenerate"
+          >
+            <el-icon v-if="aiStore.isExtracting" class="is-loading"><Loading /></el-icon>
+            {{ aiStore.isExtracting ? '抽取中...' : '生成分解图' }}
+          </el-button>
+        </div>
       </div>
 
       <el-input
@@ -78,11 +87,13 @@ import { computed } from 'vue'
 import { Loading, ArrowDown } from '@element-plus/icons-vue'
 import { useClaimStore } from '@/stores/claim'
 import { useAIStore } from '@/stores/ai'
+import { useGraphStore } from '@/stores/graph'
 import { useAIExtract } from '@/composables/useAIExtract'
 import { parseClaims, getClaimPreview } from '@/services/claim/parser'
 
 const claimStore = useClaimStore()
 const aiStore = useAIStore()
+const graphStore = useGraphStore()
 const { extractActiveClaim, error: extractError, abort } = useAIExtract()
 
 const activeClaimIndex = computed(() => {
@@ -95,6 +106,11 @@ const collapsedPreview = computed(() => {
   if (!claim) return ''
   const preview = getClaimPreview(claim)
   return preview.length > 40 ? preview.slice(0, 40) + '...' : preview
+})
+
+const hasGraphData = computed(() => {
+  const tab = graphStore.activeTab
+  return !!(tab?.extractResult || tab?.serializedGraph)
 })
 
 function handleTextInput(): void {
@@ -129,6 +145,12 @@ async function handleGenerate(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .section-header h3 {
