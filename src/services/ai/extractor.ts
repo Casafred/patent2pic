@@ -94,6 +94,7 @@ function validateExtractResult(data: unknown): ExtractResult {
     nodes,
     edges,
     groups,
+    translatedClaim: String(result.translatedClaim || ''),
   }
 }
 
