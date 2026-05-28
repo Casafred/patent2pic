@@ -223,7 +223,23 @@ export function useAIExtract() {
         extractResult.translatedClaim,
         claim.sentences,
       )
-      translationStore.initClaimTranslation(claim.id, sentenceTranslations)
+      const sentenceIds = sentenceTranslations.map(st => st.sentenceId)
+      const originalTexts: Record<string, string> = {}
+      sentenceTranslations.forEach(st => {
+        originalTexts[st.sentenceId] = st.originalText
+      })
+      translationStore.initClaimTranslation(claim.id, sentenceIds, originalTexts)
+      sentenceTranslations.forEach(st => {
+        if (st.translatedText) {
+          translationStore.setSentenceTranslation(claim.id, {
+            sentenceId: st.sentenceId,
+            originalText: st.originalText,
+            translatedText: st.translatedText,
+            status: 'done',
+            error: null,
+          })
+        }
+      })
       const claimTrans = translationStore.getClaimTranslation(claim.id)
       if (claimTrans) {
         claimTrans.overallStatus = 'done'

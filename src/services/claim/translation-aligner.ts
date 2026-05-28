@@ -136,7 +136,7 @@ function alignDirect(
 
 function alignWithMerge(
   sentences: Sentence[],
-  originalParts: SplitResult[],
+  _originalParts: SplitResult[],
   translatedParts: SplitResult[],
   _originalStrong: SplitResult[],
   _translatedStrong: SplitResult[],
