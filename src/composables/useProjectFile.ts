@@ -25,7 +25,10 @@ export function useProjectFile() {
     const projectData = {
       version: '1.0.0',
       claimText: claim?.rawText || claimStore.rawText,
+<<<<<<< HEAD
       isInputCollapsed: claimStore.isInputCollapsed,
+=======
+>>>>>>> trae/solo-agent-NW5oNn
       graphJSON: graphEngine.toJSON(),
       tabs: graphStore.tabs,
       activeTabId: graphStore.activeTabId,
@@ -127,6 +130,7 @@ export function useProjectFile() {
         claimStore.setText(data.claimText)
       }
 
+<<<<<<< HEAD
       if (typeof data.isInputCollapsed === 'boolean') {
         if (data.isInputCollapsed) {
           claimStore.collapseInput()
@@ -135,6 +139,8 @@ export function useProjectFile() {
         }
       }
 
+=======
+>>>>>>> trae/solo-agent-NW5oNn
       if (data.tabs && Array.isArray(data.tabs) && data.tabs.length > 0) {
         graphStore.setTabs(data.tabs)
         graphStore.setActiveTabId(data.activeTabId || data.tabs[0].id)

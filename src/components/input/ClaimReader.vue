@@ -1,5 +1,9 @@
 <template>
+<<<<<<< HEAD
   <div class="claim-reader" v-if="hasGraphData">
+=======
+  <div class="claim-reader" v-if="claimStore.isInputCollapsed">
+>>>>>>> trae/solo-agent-NW5oNn
     <div class="reader-header">
       <h4>权利要求对照阅读</h4>
       <template v-if="translationEnabled">
@@ -131,11 +135,14 @@ const readerBodyRef = ref<HTMLElement | null>(null)
 
 const translationEnabled = computed(() => aiStore.translationConfig.enabled)
 
+<<<<<<< HEAD
 const hasGraphData = computed(() => {
   const tab = graphStore.activeTab
   return !!(tab?.extractResult || tab?.serializedGraph)
 })
 
+=======
+>>>>>>> trae/solo-agent-NW5oNn
 const translationProgressPercent = computed(() => {
   if (translationStore.progress.total === 0) return 0
   return Math.round((translationStore.progress.completed / translationStore.progress.total) * 100)
@@ -191,6 +198,7 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
 }
 
+<<<<<<< HEAD
 function buildBracketFlexiblePattern(text: string): string {
   const escaped = escapeHtml(text)
   let pattern = ''
@@ -218,18 +226,24 @@ function buildBracketFlexiblePattern(text: string): string {
   return pattern
 }
 
+=======
+>>>>>>> trae/solo-agent-NW5oNn
 function highlightTextInSentence(sentenceText: string, mode: 'original' | 'translation' = 'original'): { html: string; colors: (HighlightColor & { nodeLabel: string })[] } {
   const highlights: (HighlightColor & { nodeLabel: string })[] = []
   let html = escapeHtml(sentenceText)
 
   const nodeTexts: { text: string; info: NodeHighlightInfo }[] = []
   for (const [_nodeId, info] of nodeHighlightMap.value) {
+<<<<<<< HEAD
     let text: string
     if (mode === 'translation') {
       text = info.chineseText || info.originalText
     } else {
       text = info.originalText || info.chineseText
     }
+=======
+    const text = mode === 'translation' ? (info.chineseText || info.originalText) : (info.originalText || info.chineseText)
+>>>>>>> trae/solo-agent-NW5oNn
     if (text && text.length >= 2) {
       nodeTexts.push({ text, info })
     }
@@ -238,8 +252,13 @@ function highlightTextInSentence(sentenceText: string, mode: 'original' | 'trans
   nodeTexts.sort((a, b) => b.text.length - a.text.length)
 
   for (const { text, info } of nodeTexts) {
+<<<<<<< HEAD
     const pattern = buildBracketFlexiblePattern(text)
     const regex = new RegExp(pattern, 'gi')
+=======
+    const escapedText = escapeHtml(text)
+    const regex = new RegExp(escapedText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+>>>>>>> trae/solo-agent-NW5oNn
     let found = false
     html = html.replace(regex, (match) => {
       if (!found) {
@@ -308,7 +327,11 @@ watch(() => editorStore.selectedNodeIds, () => {
   display: flex;
   flex-direction: column;
   flex: 1;
+<<<<<<< HEAD
   min-height: 200px;
+=======
+  min-height: 0;
+>>>>>>> trae/solo-agent-NW5oNn
   border-top: 1px solid var(--border-color);
 }
 

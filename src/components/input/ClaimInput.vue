@@ -3,6 +3,7 @@
     <template v-if="!claimStore.isInputCollapsed">
       <div class="section-header">
         <h3>权利要求输入</h3>
+<<<<<<< HEAD
         <div class="section-header-actions">
           <el-button
             v-if="hasGraphData"
@@ -21,6 +22,17 @@
             {{ aiStore.isExtracting ? '抽取中...' : '生成分解图' }}
           </el-button>
         </div>
+=======
+        <el-button
+          size="small"
+          type="primary"
+          :disabled="!claimStore.rawText.trim() || aiStore.isExtracting || !aiStore.activeApiKey"
+          @click="handleGenerate"
+        >
+          <el-icon v-if="aiStore.isExtracting" class="is-loading"><Loading /></el-icon>
+          {{ aiStore.isExtracting ? '抽取中...' : '生成分解图' }}
+        </el-button>
+>>>>>>> trae/solo-agent-NW5oNn
       </div>
 
       <el-input
@@ -87,13 +99,19 @@ import { computed } from 'vue'
 import { Loading, ArrowDown } from '@element-plus/icons-vue'
 import { useClaimStore } from '@/stores/claim'
 import { useAIStore } from '@/stores/ai'
+<<<<<<< HEAD
 import { useGraphStore } from '@/stores/graph'
+=======
+>>>>>>> trae/solo-agent-NW5oNn
 import { useAIExtract } from '@/composables/useAIExtract'
 import { parseClaims, getClaimPreview } from '@/services/claim/parser'
 
 const claimStore = useClaimStore()
 const aiStore = useAIStore()
+<<<<<<< HEAD
 const graphStore = useGraphStore()
+=======
+>>>>>>> trae/solo-agent-NW5oNn
 const { extractActiveClaim, error: extractError, abort } = useAIExtract()
 
 const activeClaimIndex = computed(() => {
@@ -108,11 +126,14 @@ const collapsedPreview = computed(() => {
   return preview.length > 40 ? preview.slice(0, 40) + '...' : preview
 })
 
+<<<<<<< HEAD
 const hasGraphData = computed(() => {
   const tab = graphStore.activeTab
   return !!(tab?.extractResult || tab?.serializedGraph)
 })
 
+=======
+>>>>>>> trae/solo-agent-NW5oNn
 function handleTextInput(): void {
   const claims = parseClaims(claimStore.rawText)
   claimStore.setClaims(claims)
@@ -147,12 +168,15 @@ async function handleGenerate(): Promise<void> {
   justify-content: space-between;
 }
 
+<<<<<<< HEAD
 .section-header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
+=======
+>>>>>>> trae/solo-agent-NW5oNn
 .section-header h3 {
   font-size: var(--font-size-base);
   font-weight: 600;
