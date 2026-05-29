@@ -260,6 +260,7 @@ export class GraphEngine {
             strokeDasharray: '6 3',
             rx: 8,
             ry: 8,
+            pointerEvents: 'stroke',
           },
           label: {
             text: groupLabel,
@@ -270,6 +271,7 @@ export class GraphEngine {
             textVerticalAnchor: 'top',
             refX: 12,
             refY: 8,
+            pointerEvents: 'none',
           },
         },
         data: {
@@ -406,14 +408,18 @@ export class GraphEngine {
           n.attr('body/stroke', data.detached ? '#999' : '#fa8c16')
           n.attr('body/fill', data.detached ? '#f5f5f5' : '#fafafa')
           n.attr('body/fillOpacity', 0.5)
-          n.attr('label/fill', data.detached ? '#999' : '#fa8c16')
           n.attr('body/strokeWidth', 1.5)
+          n.attr('body/pointerEvents', 'stroke')
+          n.attr('label/fill', data.detached ? '#999' : '#fa8c16')
+          n.attr('label/pointerEvents', 'none')
         } else {
           n.attr('body/stroke', 'transparent')
           n.attr('body/fill', 'transparent')
           n.attr('body/fillOpacity', 0)
-          n.attr('label/fill', 'transparent')
           n.attr('body/strokeWidth', 0)
+          n.attr('body/pointerEvents', 'none')
+          n.attr('label/fill', 'transparent')
+          n.attr('label/pointerEvents', 'none')
         }
       }
     }
@@ -449,6 +455,7 @@ export class GraphEngine {
           strokeDasharray: '6 3',
           rx: 8,
           ry: 8,
+          pointerEvents: 'stroke',
         },
         label: {
           text: label,
@@ -459,6 +466,7 @@ export class GraphEngine {
           textVerticalAnchor: 'top',
           refX: 12,
           refY: 8,
+          pointerEvents: 'none',
         },
       },
       data: {
