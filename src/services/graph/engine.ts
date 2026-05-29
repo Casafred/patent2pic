@@ -75,7 +75,19 @@ export class GraphEngine {
       },
     })
 
-    this.graph.use(new Selection({ enabled: true, rubberband: true, showNodeSelectionBox: true, modifiers: [] }))
+    this.graph.use(new Selection({
+      enabled: true,
+      rubberband: true,
+      showNodeSelectionBox: true,
+      modifiers: [],
+      filter(this: Graph, cell) {
+        if (cell.isNode()) {
+          const data = cell.getData()
+          if (data?.hidden) return false
+        }
+        return true
+      },
+    }))
     this.graph.use(new Snapline({ enabled: true }))
     this.graph.use(new History({ enabled: true }))
     this.graph.use(new Clipboard({ enabled: true }))
@@ -95,20 +107,15 @@ export class GraphEngine {
   private bindEdgeLabelConstraint(): void {
     if (!this.graph) return
 
-    let isDragging = false
-
-    this.graph.on('edge:label:drag:start', () => {
-      isDragging = true
-    })
-
-    this.graph.on('edge:label:drag:end', ({ edge }: { edge: Record<string, unknown> }) => {
-      isDragging = false
-      this.constrainLabelPosition(edge as unknown as Parameters<typeof this.constrainLabelPosition>[0])
-    })
-
     this.graph.on('edge:change:labels', ({ edge }: { edge: Record<string, unknown> }) => {
-      if (isDragging) return
-      this.constrainLabelPosition(edge as unknown as Parameters<typeof this.constrainLabelPosition>[0])
+      const e = edge as {
+        getData: () => Record<string, unknown> | undefined
+        getLabels: () => unknown[]
+        prop: (path: string, value: unknown) => void
+      }
+      const data = e.getData()
+      if (data?.labelDragging) return
+      this.constrainLabelPosition(e)
     })
   }
 
