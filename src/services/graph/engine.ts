@@ -402,6 +402,7 @@ export class GraphEngine {
     const data = (cell.getData() as Record<string, unknown>) || {}
     if (!data.isGroup) return false
 
+    this.graph.startBatch('groupDetach')
     const newDetached = !(data.detached as boolean)
     const n = cell as unknown as {
       setData: (data: Record<string, unknown>) => void
@@ -416,6 +417,7 @@ export class GraphEngine {
     if (!newDetached) {
       this.updateGroupBoundsForMember('')
     }
+    this.graph.stopBatch('groupDetach')
 
     return newDetached
   }
@@ -430,6 +432,7 @@ export class GraphEngine {
 
   toggleGroupsVisible(visible: boolean): void {
     if (!this.graph) return
+    this.graph.startBatch('groupsVisible')
     const nodes = this.graph.getNodes()
     for (const node of nodes) {
       const data = (node.getData() as Record<string, unknown>) || {}
@@ -457,6 +460,7 @@ export class GraphEngine {
         }
       }
     }
+    this.graph.stopBatch('groupsVisible')
   }
 
   rebindGroupTracking(): void {
@@ -543,7 +547,9 @@ export class GraphEngine {
     if (!this.graph) return
     const cell = this.graph.getCellById(id)
     if (cell && cell.isNode()) {
+      this.graph.startBatch('nodeStyle')
       updateNodeStyle(cell, style)
+      this.graph.stopBatch('nodeStyle')
     }
   }
 
@@ -562,7 +568,9 @@ export class GraphEngine {
     if (!this.graph) return
     const cell = this.graph.getCellById(id)
     if (cell && cell.isEdge()) {
+      this.graph.startBatch('edgeStyle')
       updateEdgeStyle(cell, style)
+      this.graph.stopBatch('edgeStyle')
     }
   }
 
@@ -578,6 +586,7 @@ export class GraphEngine {
       setLabels: (labels: unknown[]) => void
     }
 
+    this.graph.startBatch('labelDetach')
     const data = edge.getData() || {}
     const isDetached = !(data.labelDetached as boolean)
     
@@ -602,6 +611,7 @@ export class GraphEngine {
         },
       }])
     }
+    this.graph.stopBatch('labelDetach')
 
     return isDetached
   }
@@ -622,8 +632,10 @@ export class GraphEngine {
     if (!this.graph) return
     const cell = this.graph.getCellById(id)
     if (cell) {
+      this.graph.startBatch('zIndex')
       const z = cell.getZIndex() ?? 0
       cell.setZIndex(z + 1)
+      this.graph.stopBatch('zIndex')
     }
   }
 
@@ -631,8 +643,10 @@ export class GraphEngine {
     if (!this.graph) return
     const cell = this.graph.getCellById(id)
     if (cell) {
+      this.graph.startBatch('zIndex')
       const z = cell.getZIndex() ?? 0
       cell.setZIndex(z - 1)
+      this.graph.stopBatch('zIndex')
     }
   }
 
@@ -646,7 +660,9 @@ export class GraphEngine {
     }
     const cell = this.graph.getCellById(id)
     if (cell) {
+      this.graph.startBatch('zIndex')
       cell.setZIndex(maxZ + 1)
+      this.graph.stopBatch('zIndex')
     }
   }
 
@@ -660,7 +676,9 @@ export class GraphEngine {
     }
     const cell = this.graph.getCellById(id)
     if (cell) {
+      this.graph.startBatch('zIndex')
       cell.setZIndex(minZ - 1)
+      this.graph.stopBatch('zIndex')
     }
   }
 

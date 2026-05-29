@@ -314,6 +314,7 @@ function handleEditSave(data: { originalText: string; chineseText: string; nodeT
   const cell = graph.getCellById(editCellId.value)
   if (!cell) return
 
+  graph.startBatch('editSave')
   const labelText = getLabelText(data)
 
   if (cell.isNode()) {
@@ -376,6 +377,7 @@ function handleEditSave(data: { originalText: string; chineseText: string; nodeT
       })
     }
   }
+  graph.stopBatch('editSave')
 }
 </script>
 
