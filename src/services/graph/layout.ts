@@ -41,8 +41,10 @@ export async function applyElkLayout(
   const maxNodeWidth = Math.max(...nodes.map(n => n.style.width), 120)
   const maxNodeHeight = Math.max(...nodes.map(n => n.style.height), 40)
 
-  const nodesep = options?.nodesep ?? Math.max(350, maxNodeWidth * 2.5)
-  const ranksep = options?.ranksep ?? Math.max(280, maxNodeHeight * 4.5)
+  const direction = options?.rankdir ?? 'LR'
+
+  const nodesep = options?.nodesep ?? Math.max(60, maxNodeWidth * 0.5)
+  const ranksep = options?.ranksep ?? Math.max(80, maxNodeWidth * 0.8)
 
   const elkNodes: ElkNode[] = nodes.map(n => ({
     id: n.id,
@@ -60,10 +62,24 @@ export async function applyElkLayout(
     id: 'root',
     layoutOptions: {
       'elk.algorithm': 'layered',
-      'elk.direction': directionToElk(options?.rankdir ?? 'TB'),
+      'elk.direction': directionToElk(direction),
       'elk.spacing.nodeNode': String(nodesep),
       'elk.layered.spacing.nodeNodeBetweenLayers': String(ranksep),
-      'elk.padding': '[top=120,left=120,bottom=120,right=120]',
+      'elk.padding': '[top=80,left=80,bottom=80,right=80]',
+
+      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+      'elk.layered.crossingMinimization.sweepStrategy': 'CAREFUL',
+
+      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+      'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+
+      'elk.edgeRouting.orthogonalEdges': 'true',
+      'elk.spacing.edgeNode': String(Math.max(30, maxNodeHeight * 0.6)),
+      'elk.spacing.edgeEdge': String(Math.max(20, maxNodeHeight * 0.4)),
+
+      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+
+      'elk.layered.cycleBreaking.strategy': 'GREEDY',
     },
     children: elkNodes,
     edges: elkEdges,

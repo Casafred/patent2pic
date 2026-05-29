@@ -74,6 +74,16 @@
         </div>
 
         <div class="legend-section">
+          <div class="section-title">层级颜色</div>
+          <div class="legend-items">
+            <div v-for="item in hierarchyLevels" :key="item.label" class="legend-item">
+              <span class="node-sample" :style="{ background: item.fill, borderColor: item.stroke }"></span>
+              <span class="legend-label">{{ item.label }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend-section">
           <div class="section-title">限定框</div>
           <div class="legend-items">
             <div class="legend-item">
@@ -110,6 +120,15 @@ const lineStyles = [
   { label: '虚线', dasharray: '6 3' },
   { label: '点线', dasharray: '2 3' },
   { label: '点划线', dasharray: '6 3 2 3' },
+]
+
+const hierarchyLevels = [
+  { label: '第一级', fill: '#ffe4e4', stroke: '#e63946' },
+  { label: '第二级', fill: '#fff3e0', stroke: '#ff9800' },
+  { label: '第三级', fill: '#e8f5e9', stroke: '#4caf50' },
+  { label: '第四级', fill: '#ede7f6', stroke: '#7e57c2' },
+  { label: '第五级', fill: '#e0f2f1', stroke: '#00897b' },
+  { label: '第六级', fill: '#fce4ec', stroke: '#c62828' },
 ]
 </script>
 
