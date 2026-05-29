@@ -22,8 +22,8 @@
         >
           导出Excel
         </el-button>
-        <span class="reader-hint" v-if="editorStore.selectedNodeIds.length > 0">
-          已选中 {{ editorStore.selectedNodeIds.length }} 个节点
+        <span class="reader-hint" v-if="editorStore.highlightedNodeIds.length > 0">
+          已选中 {{ editorStore.highlightedNodeIds.length }} 个节点
         </span>
         <span class="reader-hint" v-else>点击画布节点查看对应文本</span>
       </div>
@@ -202,7 +202,7 @@ const extractNodes = computed<ExtractNode[]>(() => {
 
 const nodeHighlightMap = computed<Map<string, NodeHighlightInfo>>(() => {
   const map = new Map<string, NodeHighlightInfo>()
-  const selectedIds = editorStore.selectedNodeIds
+  const selectedIds = editorStore.highlightedNodeIds
 
   selectedIds.forEach((nodeId: string, idx: number) => {
     const node = extractNodes.value.find((n: ExtractNode) => n.id === nodeId)
@@ -220,7 +220,7 @@ const nodeHighlightMap = computed<Map<string, NodeHighlightInfo>>(() => {
 })
 
 const legendItems = computed(() => {
-  return editorStore.selectedNodeIds.map((nodeId: string, idx: number) => {
+  return editorStore.highlightedNodeIds.map((nodeId: string, idx: number) => {
     const node = extractNodes.value.find((n: ExtractNode) => n.id === nodeId)
     const colorIdx = idx % HIGHLIGHT_PALETTE.length
     return {
@@ -334,7 +334,7 @@ const renderedSegments = computed<RenderedSegment[]>(() => {
   return segments
 })
 
-watch(() => editorStore.selectedNodeIds, () => {
+watch(() => editorStore.highlightedNodeIds, () => {
   nextTick(() => {
     if (readerBodyRef.value) {
       const first = readerBodyRef.value.querySelector('.segment-highlighted')

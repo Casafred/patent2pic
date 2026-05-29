@@ -4,6 +4,7 @@ import { ref } from 'vue'
 export const useEditorStore = defineStore('editor', () => {
   const selectedNodeIds = ref<string[]>([])
   const selectedEdgeIds = ref<string[]>([])
+  const highlightedNodeIds = ref<string[]>([])
   const activePanel = ref<'style' | 'ai' | null>(null)
   const zoom = ref(1)
   const isDirty = ref(false)
@@ -11,6 +12,10 @@ export const useEditorStore = defineStore('editor', () => {
   function selectNodes(ids: string[]): void {
     selectedNodeIds.value = ids
     selectedEdgeIds.value = []
+  }
+
+  function highlightNodes(ids: string[]): void {
+    highlightedNodeIds.value = ids
   }
 
   function toggleNodeInSelection(id: string): void {
@@ -31,6 +36,7 @@ export const useEditorStore = defineStore('editor', () => {
   function clearSelection(): void {
     selectedNodeIds.value = []
     selectedEdgeIds.value = []
+    highlightedNodeIds.value = []
   }
 
   function togglePanel(panel: 'style' | 'ai' | null): void {
@@ -52,10 +58,12 @@ export const useEditorStore = defineStore('editor', () => {
   return {
     selectedNodeIds,
     selectedEdgeIds,
+    highlightedNodeIds,
     activePanel,
     zoom,
     isDirty,
     selectNodes,
+    highlightNodes,
     toggleNodeInSelection,
     selectEdges,
     clearSelection,

@@ -15,10 +15,25 @@ export function useGraph() {
   }
 
   function bindEvents(): void {
-    graphEngine.on('node:click', () => {
+    graphEngine.on('node:click', (args: unknown) => {
+      const { node, e } = args as { node: { id: string }; e: { ctrlKey: boolean; metaKey: boolean } }
+      if (e.ctrlKey || e.metaKey) {
+        const current = editorStore.highlightedNodeIds
+        const idx = current.indexOf(node.id)
+        if (idx >= 0) {
+          const newIds = [...current]
+          newIds.splice(idx, 1)
+          editorStore.highlightNodes(newIds)
+        } else {
+          editorStore.highlightNodes([...current, node.id])
+        }
+      } else {
+        editorStore.highlightNodes([node.id])
+      }
     })
 
     graphEngine.on('edge:click', () => {
+      editorStore.highlightNodes([])
     })
 
     graphEngine.on('blank:click', () => {
