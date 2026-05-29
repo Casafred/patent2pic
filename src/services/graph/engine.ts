@@ -100,52 +100,6 @@ export class GraphEngine {
         allowReverse: false,
       },
     }))
-
-    this.bindEdgeLabelConstraint()
-  }
-
-  private bindEdgeLabelConstraint(): void {
-    if (!this.graph) return
-
-    this.graph.on('edge:change:labels', ({ edge }: { edge: Record<string, unknown> }) => {
-      const e = edge as {
-        getData: () => Record<string, unknown> | undefined
-        getLabels: () => unknown[]
-        prop: (path: string, value: unknown) => void
-      }
-      const data = e.getData()
-      if (data?.labelDragging) return
-      this.constrainLabelPosition(e)
-    })
-  }
-
-  private constrainLabelPosition(edge: {
-    getData: () => Record<string, unknown> | undefined
-    getLabels: () => unknown[]
-    prop: (path: string, value: unknown) => void
-  }): void {
-    const data = edge.getData()
-    if (data?.labelDetached) return
-
-    const labels = edge.getLabels()
-    if (labels.length === 0) return
-
-    const label = labels[0] as Record<string, unknown>
-    const position = label.position as { distance?: number; offset?: { x: number; y: number } } | undefined
-
-    if (!position) return
-
-    const hasOffset = position.offset && (position.offset.x !== 0 || position.offset.y !== 0)
-
-    if (hasOffset) {
-      const distance = typeof position.distance === 'number'
-        ? Math.max(0, Math.min(1, position.distance))
-        : 0.5
-      edge.prop('labels/0/position', {
-        distance,
-        offset: { x: 0, y: 0 },
-      })
-    }
   }
 
   destroy(): void {
@@ -211,8 +165,30 @@ export class GraphEngine {
       this.graph.addNode(config)
     }
 
+    const edgeDistanceMap = new Map<string, number>()
     for (const edgeData of edgeDataList) {
+      const key = `${edgeData.source}->${edgeData.target}`
+      const count = edgeDistanceMap.get(key) || 0
+      edgeDistanceMap.set(key, count + 1)
+    }
+
+    const edgeIndexMap = new Map<string, number>()
+    for (const edgeData of edgeDataList) {
+      const key = `${edgeData.source}->${edgeData.target}`
+      const totalCount = edgeDistanceMap.get(key) || 1
+      const currentIndex = edgeIndexMap.get(key) || 0
+      edgeIndexMap.set(key, currentIndex + 1)
+
       const config = buildEdge(edgeData, isChinese)
+      if (totalCount > 1) {
+        const step = 1 / (totalCount + 1)
+        const distance = step * (currentIndex + 1)
+        const labels = config.labels as Record<string, unknown>[]
+        if (labels && labels.length > 0) {
+          const label = labels[0] as Record<string, unknown>
+          label.position = { distance }
+        }
+      }
       this.graph.addEdge(config)
     }
     timingEnd(`    │    添加节点和边`)

@@ -36,44 +36,6 @@ class EdgeViewWithGap extends EdgeView {
     return ret
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  startLabelDragging(e: unknown, x: number, y: number): void {
-    super.startLabelDragging(e as never, x, y)
-    const edge = this.cell as Edge
-    const data = edge.getData() || {}
-    edge.setData({ ...data, labelDragging: true })
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  stopLabelDragging(e: unknown, x: number, y: number): void {
-    const edge = this.cell as Edge
-    const data = edge.getData() || {}
-    edge.setData({ ...data, labelDragging: false })
-
-    super.stopLabelDragging(e as never, x, y)
-
-    if (!data.labelDetached) {
-      const labels = edge.getLabels() as EdgeLabel[]
-      if (labels.length > 0) {
-        const label = labels[0]
-        const position = label.position as LabelPositionObject | undefined
-        if (position && position.offset && position.offset !== 0) {
-          const offsetX = typeof position.offset === 'object' ? position.offset.x ?? 0 : 0
-          const offsetY = typeof position.offset === 'object' ? position.offset.y ?? 0 : 0
-          if (offsetX !== 0 || offsetY !== 0) {
-            const distance = typeof position.distance === 'number'
-              ? Math.max(0, Math.min(1, position.distance))
-              : 0.5
-            edge.prop('labels/0/position', {
-              distance,
-              offset: { x: 0, y: 0 },
-            })
-          }
-        }
-      }
-    }
-  }
-
   private updateLineWithGap(): void {
     const edge = this.cell as Edge
     const labels = edge.labels as EdgeLabel[]
