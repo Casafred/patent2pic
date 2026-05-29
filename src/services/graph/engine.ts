@@ -340,6 +340,7 @@ export class GraphEngine {
     const data = node.getData()
     if (!data?.isGroup) return
     if (data.hidden) {
+      node.attr('root/pointerEvents', 'none')
       node.attr('body/stroke', 'transparent')
       node.attr('body/fill', 'transparent')
       node.attr('body/fillOpacity', 0)
@@ -348,6 +349,7 @@ export class GraphEngine {
       node.attr('label/fill', 'transparent')
       node.attr('label/pointerEvents', 'none')
     } else {
+      node.attr('root/pointerEvents', '')
       node.attr('body/stroke', data.detached ? '#999' : '#fa8c16')
       node.attr('body/fill', data.detached ? '#f5f5f5' : '#fafafa')
       node.attr('body/fillOpacity', 0.5)
@@ -435,6 +437,7 @@ export class GraphEngine {
         const n = node as unknown as { attr: (path: string, value?: unknown) => unknown; setData: (data: Record<string, unknown>) => void }
         n.setData({ ...data, hidden: !visible })
         if (visible) {
+          n.attr('root/pointerEvents', '')
           n.attr('body/stroke', data.detached ? '#999' : '#fa8c16')
           n.attr('body/fill', data.detached ? '#f5f5f5' : '#fafafa')
           n.attr('body/fillOpacity', 0.5)
@@ -443,6 +446,7 @@ export class GraphEngine {
           n.attr('label/fill', data.detached ? '#999' : '#fa8c16')
           n.attr('label/pointerEvents', 'none')
         } else {
+          n.attr('root/pointerEvents', 'none')
           n.attr('body/stroke', 'transparent')
           n.attr('body/fill', 'transparent')
           n.attr('body/fillOpacity', 0)
