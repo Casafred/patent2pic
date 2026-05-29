@@ -18,7 +18,8 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
     view: 'edge-with-gap-view',
     source: { cell: data.source, port: data.sourcePort },
     target: { cell: data.target, port: data.targetPort },
-    connector: { name: 'smooth' },
+    router: { name: 'orth' },
+    connector: { name: 'rounded', args: { radius: 8 } },
     attrs: {
       line: {
         stroke: style.stroke,
@@ -70,7 +71,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
           },
         },
         position: {
-          distance: 0.5,
+          distance: 0.75,
           offset: { x: 0, y: 0 },
         },
       },

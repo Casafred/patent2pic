@@ -61,8 +61,8 @@ export async function applyElkLayout(
 
   const direction = options?.rankdir ?? 'LR'
 
-  const nodesep = options?.nodesep ?? Math.max(160, maxNodeWidth * 1.5)
-  const ranksep = options?.ranksep ?? Math.max(200, maxNodeWidth * 2.0)
+  const nodesep = options?.nodesep ?? Math.max(80, maxNodeWidth * 0.6)
+  const ranksep = options?.ranksep ?? Math.max(100, maxNodeWidth * 0.8)
 
   const elkNodes: ElkNode[] = nodes.map(n => ({
     id: n.id,
@@ -98,23 +98,28 @@ export async function applyElkLayout(
       'elk.direction': directionToElk(direction),
       'elk.spacing.nodeNode': String(nodesep),
       'elk.layered.spacing.nodeNodeBetweenLayers': String(ranksep),
-      'elk.padding': '[top=80,left=80,bottom=80,right=80]',
+      'elk.padding': '[top=60,left=60,bottom=60,right=60]',
+
+      'elk.aspectRatio': '1.6',
 
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       'elk.layered.crossingMinimization.sweepStrategy': 'CAREFUL',
       'elk.layered.crossingMinimization.semiInteractive': 'true',
 
-      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-      'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+      'elk.layered.nodePlacement.strategy': 'LINEAR_SEGMENTS',
 
-      'elk.spacing.edgeNode': String(Math.max(100, maxNodeHeight * 2.0)),
-      'elk.spacing.edgeEdge': String(Math.max(80, maxNodeHeight * 1.5)),
+      'elk.edgeRouting.orthogonalEdges': 'true',
+      'elk.spacing.edgeNode': String(Math.max(50, maxNodeHeight * 0.8)),
+      'elk.spacing.edgeEdge': String(Math.max(30, maxNodeHeight * 0.5)),
 
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
 
       'elk.layered.cycleBreaking.strategy': 'GREEDY',
 
-      'elk.layered.edgeSpacing.factor': '3.0',
+      'elk.layered.edgeSpacing.factor': '2.0',
+
+      'elk.layered.compaction.postCompaction.strategy': 'LEFT_RIGHT',
+      'elk.layered.compaction.connectedComponents': 'true',
     },
     children: elkNodes,
     edges: elkEdges,

@@ -34,7 +34,8 @@ export class GraphEngine {
       panning: { enabled: true, eventTypes: ['rightMouseDown', 'mouseWheel'] },
       mousewheel: { enabled: true, zoomAtMousePosition: true, modifiers: null, minScale: 0.1, maxScale: 3 },
       connecting: {
-        connector: { name: 'smooth' },
+        router: { name: 'orth' },
+        connector: { name: 'rounded', args: { radius: 8 } },
         anchor: 'center',
         connectionPoint: 'boundary',
         allowBlank: false,
