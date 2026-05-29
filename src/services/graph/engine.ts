@@ -12,6 +12,7 @@ import { buildNode, updateNodeStyle, calculateNodeSize } from './node-builder'
 import { buildEdge, updateEdgeStyle } from './edge-builder'
 import { applyElkLayout, type ElkLayoutOptions } from './layout'
 import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle } from './style-registry'
+import { setupCustomEdge } from './custom-edge'
 import { timingStart, timingEnd } from '@/utils/timing'
 
 export class GraphEngine {
@@ -19,6 +20,8 @@ export class GraphEngine {
   private initialGraphJSON: Record<string, unknown> | null = null
 
   init(container: HTMLElement): void {
+    setupCustomEdge()
+    
     this.graph = new Graph({
       container,
       autoResize: true,
