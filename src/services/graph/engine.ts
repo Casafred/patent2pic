@@ -60,6 +60,7 @@ export class GraphEngine {
         },
       },
       interacting: {
+        nodeMovable: true,
         edgeMovable: true,
         edgeLabelMovable: true,
         vertexMovable: false,
@@ -310,23 +311,51 @@ export class GraphEngine {
 
     let isUpdatingGroup = false
 
-    this.graph.on('node:moved', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined } }) => {
+    this.graph.on('node:moved', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined; attr: (path: string, value?: unknown) => unknown } }) => {
       if (isUpdatingGroup) return
       const data = node.getData()
-      if (data?.isGroup) return
+      if (data?.isGroup) {
+        this.restoreGroupVisibility(node)
+        return
+      }
       isUpdatingGroup = true
       this.updateGroupBoundsForMember(node.id)
       isUpdatingGroup = false
     })
 
-    this.graph.on('node:change:position', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined } }) => {
+    this.graph.on('node:change:position', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined; attr: (path: string, value?: unknown) => unknown } }) => {
       if (isUpdatingGroup) return
       const data = node.getData()
-      if (data?.isGroup) return
+      if (data?.isGroup) {
+        this.restoreGroupVisibility(node)
+        return
+      }
       isUpdatingGroup = true
       this.updateGroupBoundsForMember(node.id)
       isUpdatingGroup = false
     })
+  }
+
+  private restoreGroupVisibility(node: { getData: () => Record<string, unknown> | undefined; attr: (path: string, value?: unknown) => unknown }): void {
+    const data = node.getData()
+    if (!data?.isGroup) return
+    if (data.hidden) {
+      node.attr('body/stroke', 'transparent')
+      node.attr('body/fill', 'transparent')
+      node.attr('body/fillOpacity', 0)
+      node.attr('body/strokeWidth', 0)
+      node.attr('body/pointerEvents', 'none')
+      node.attr('label/fill', 'transparent')
+      node.attr('label/pointerEvents', 'none')
+    } else {
+      node.attr('body/stroke', data.detached ? '#999' : '#fa8c16')
+      node.attr('body/fill', data.detached ? '#f5f5f5' : '#fafafa')
+      node.attr('body/fillOpacity', 0.5)
+      node.attr('body/strokeWidth', 1.5)
+      node.attr('body/pointerEvents', 'stroke')
+      node.attr('label/fill', data.detached ? '#999' : '#fa8c16')
+      node.attr('label/pointerEvents', 'none')
+    }
   }
 
   updateGroupBoundsForMember(nodeId: string): void {
@@ -403,7 +432,8 @@ export class GraphEngine {
     for (const node of nodes) {
       const data = (node.getData() as Record<string, unknown>) || {}
       if (data.isGroup) {
-        const n = node as unknown as { attr: (path: string, value?: unknown) => unknown }
+        const n = node as unknown as { attr: (path: string, value?: unknown) => unknown; setData: (data: Record<string, unknown>) => void }
+        n.setData({ ...data, hidden: !visible })
         if (visible) {
           n.attr('body/stroke', data.detached ? '#999' : '#fa8c16')
           n.attr('body/fill', data.detached ? '#f5f5f5' : '#fafafa')

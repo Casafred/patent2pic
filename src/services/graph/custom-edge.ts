@@ -19,9 +19,14 @@ interface EdgeLabel extends KeyValue {
 
 class EdgeViewWithGap extends EdgeView {
   confirmUpdate(flag: number, options: KeyValue = {}): number {
+    const hadUpdate = this.hasAction(flag, 'update')
     const ret = super.confirmUpdate(flag, options)
-    if (this.hasAction(flag, 'update')) {
-      this.updateLineWithGap()
+    if (hadUpdate) {
+      try {
+        this.updateLineWithGap()
+      } catch {
+        // ignore gap update errors to not break the render cycle
+      }
     }
     return ret
   }

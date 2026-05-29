@@ -46,6 +46,11 @@
         <div class="menu-item" @click="handleMenuAction('toggleLabelDetach')">
           {{ engine.isEdgeLabelDetached(contextMenu.cellId) ? '锁定到线条' : '脱离线条自由移动' }}
         </div>
+        <div class="menu-divider" />
+        <div class="menu-item" @click="handleMenuAction('bringToFront')">置于顶层</div>
+        <div class="menu-item" @click="handleMenuAction('bringForward')">上浮一层</div>
+        <div class="menu-item" @click="handleMenuAction('sendBackward')">下移一层</div>
+        <div class="menu-item" @click="handleMenuAction('sendToBack')">置于底层</div>
       </template>
       <template v-if="contextMenu.type === 'blank'">
         <div class="menu-item" @click="handleMenuAction('fitView')">适配画布</div>
@@ -142,6 +147,12 @@ function bindExtraEvents(): void {
   })
 
   engine.on('edge:contextmenu', (args: unknown) => {
+    const { edge, e } = args as { edge: { id: string }; e: { clientX: number; clientY: number; preventDefault?: () => void } }
+    e.preventDefault?.()
+    showContextMenu(e.clientX, e.clientY, 'edge', edge.id)
+  })
+
+  engine.on('edge:label:contextmenu', (args: unknown) => {
     const { edge, e } = args as { edge: { id: string }; e: { clientX: number; clientY: number; preventDefault?: () => void } }
     e.preventDefault?.()
     showContextMenu(e.clientX, e.clientY, 'edge', edge.id)

@@ -16,10 +16,18 @@ interface ElkNode {
   y?: number
 }
 
+interface ElkLabel {
+  text: string
+  width: number
+  height: number
+  layoutOptions?: Record<string, string>
+}
+
 interface ElkEdge {
   id: string
   sources: string[]
   targets: string[]
+  labels?: ElkLabel[]
 }
 
 const elk = new ELK()
@@ -33,6 +41,16 @@ function directionToElk(rankdir: string): string {
   }
 }
 
+function estimateLabelSize(text: string, fontSize: number): { width: number; height: number } {
+  const lines = text.split('\n')
+  const maxLineLength = Math.max(...lines.map(l => l.length))
+  const charWidth = fontSize * 0.65
+  const lineHeight = fontSize * 1.6
+  const width = Math.max(80, maxLineLength * charWidth * 1.7)
+  const height = Math.max(24, lines.length * lineHeight * 1.8)
+  return { width, height }
+}
+
 export async function applyElkLayout(
   nodes: NodeData[],
   edges: EdgeData[],
@@ -43,8 +61,8 @@ export async function applyElkLayout(
 
   const direction = options?.rankdir ?? 'LR'
 
-  const nodesep = options?.nodesep ?? Math.max(60, maxNodeWidth * 0.5)
-  const ranksep = options?.ranksep ?? Math.max(80, maxNodeWidth * 0.8)
+  const nodesep = options?.nodesep ?? Math.max(120, maxNodeWidth * 1.2)
+  const ranksep = options?.ranksep ?? Math.max(150, maxNodeWidth * 1.5)
 
   const elkNodes: ElkNode[] = nodes.map(n => ({
     id: n.id,
@@ -52,11 +70,26 @@ export async function applyElkLayout(
     height: n.style.height,
   }))
 
-  const elkEdges: ElkEdge[] = edges.map(e => ({
-    id: e.id,
-    sources: [e.source],
-    targets: [e.target],
-  }))
+  const elkEdges: ElkEdge[] = edges.map(e => {
+    const labelText = e.chineseText || e.originalText
+    const fontSize = 12
+    const labelSize = estimateLabelSize(labelText, fontSize)
+
+    return {
+      id: e.id,
+      sources: [e.source],
+      targets: [e.target],
+      labels: [{
+        text: labelText,
+        width: labelSize.width,
+        height: labelSize.height,
+        layoutOptions: {
+          'elk.edgeLabels.placement': 'CENTER',
+          'elk.edgeLabels.inline': 'true',
+        },
+      }],
+    }
+  })
 
   const graph = {
     id: 'root',
@@ -69,17 +102,20 @@ export async function applyElkLayout(
 
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       'elk.layered.crossingMinimization.sweepStrategy': 'CAREFUL',
+      'elk.layered.crossingMinimization.semiInteractive': 'true',
 
       'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
       'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
 
       'elk.edgeRouting.orthogonalEdges': 'true',
-      'elk.spacing.edgeNode': String(Math.max(30, maxNodeHeight * 0.6)),
-      'elk.spacing.edgeEdge': String(Math.max(20, maxNodeHeight * 0.4)),
+      'elk.spacing.edgeNode': String(Math.max(80, maxNodeHeight * 1.5)),
+      'elk.spacing.edgeEdge': String(Math.max(60, maxNodeHeight * 1.0)),
 
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
 
       'elk.layered.cycleBreaking.strategy': 'GREEDY',
+
+      'elk.layered.edgeSpacing.factor': '2.0',
     },
     children: elkNodes,
     edges: elkEdges,
