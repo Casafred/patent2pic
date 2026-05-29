@@ -61,8 +61,8 @@ export async function applyElkLayout(
 
   const direction = options?.rankdir ?? 'LR'
 
-  const nodesep = options?.nodesep ?? Math.max(120, maxNodeWidth * 1.2)
-  const ranksep = options?.ranksep ?? Math.max(150, maxNodeWidth * 1.5)
+  const nodesep = options?.nodesep ?? Math.max(160, maxNodeWidth * 1.5)
+  const ranksep = options?.ranksep ?? Math.max(200, maxNodeWidth * 2.0)
 
   const elkNodes: ElkNode[] = nodes.map(n => ({
     id: n.id,
@@ -107,15 +107,14 @@ export async function applyElkLayout(
       'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
       'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
 
-      'elk.edgeRouting.orthogonalEdges': 'true',
-      'elk.spacing.edgeNode': String(Math.max(80, maxNodeHeight * 1.5)),
-      'elk.spacing.edgeEdge': String(Math.max(60, maxNodeHeight * 1.0)),
+      'elk.spacing.edgeNode': String(Math.max(100, maxNodeHeight * 2.0)),
+      'elk.spacing.edgeEdge': String(Math.max(80, maxNodeHeight * 1.5)),
 
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
 
       'elk.layered.cycleBreaking.strategy': 'GREEDY',
 
-      'elk.layered.edgeSpacing.factor': '2.0',
+      'elk.layered.edgeSpacing.factor': '3.0',
     },
     children: elkNodes,
     edges: elkEdges,

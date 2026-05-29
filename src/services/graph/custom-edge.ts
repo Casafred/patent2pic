@@ -49,6 +49,15 @@ class EdgeViewWithGap extends EdgeView {
     const connection = this.getConnection()
     if (!connection) return
 
+    const segments = connection.segments
+    if (!segments || segments.length === 0) return
+
+    const hasCurve = segments.some(seg => {
+      const type = seg.type
+      return type === 'C' || type === 'S' || type === 'Q' || type === 'T'
+    })
+    if (hasCurve) return
+
     const totalLength = connection.length()
     if (totalLength === 0) return
 
