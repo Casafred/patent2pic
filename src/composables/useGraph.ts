@@ -15,18 +15,10 @@ export function useGraph() {
   }
 
   function bindEvents(): void {
-    graphEngine.on('node:click', (args: unknown) => {
-      const { node, e } = args as { node: { id: string }; e: { ctrlKey: boolean; metaKey: boolean } }
-      if (e.ctrlKey || e.metaKey) {
-        editorStore.toggleNodeInSelection(node.id)
-      } else {
-        editorStore.selectNodes([node.id])
-      }
+    graphEngine.on('node:click', () => {
     })
 
-    graphEngine.on('edge:click', (args: unknown) => {
-      const { edge } = args as { edge: { id: string } }
-      editorStore.selectEdges([edge.id])
+    graphEngine.on('edge:click', () => {
     })
 
     graphEngine.on('blank:click', () => {

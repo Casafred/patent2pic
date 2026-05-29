@@ -17,6 +17,11 @@ interface EdgeLabel extends KeyValue {
   size?: { width: number; height: number }
 }
 
+interface GapRegion {
+  startLength: number
+  endLength: number
+}
+
 class EdgeViewWithGap extends EdgeView {
   confirmUpdate(flag: number, options: KeyValue = {}): number {
     const hadUpdate = this.hasAction(flag, 'update')
@@ -35,13 +40,6 @@ class EdgeViewWithGap extends EdgeView {
     const edge = this.cell as Edge
     const labels = edge.labels as EdgeLabel[]
 
-    if (!labels || labels.length === 0) {
-      return
-    }
-
-    const label = labels[0]
-    if (!label) return
-
     const linePath = this.findOne('line') as SVGPathElement | null
     const wrapPath = this.findOne('wrap') as SVGPathElement | null
     if (!linePath || !wrapPath) return
@@ -52,34 +50,86 @@ class EdgeViewWithGap extends EdgeView {
     const totalLength = connection.length()
     if (totalLength === 0) return
 
-    const position = label.position as LabelPosition | undefined
-    let distance = 0.5
-    if (position !== undefined) {
-      if (typeof position === 'number') {
-        distance = position
-      } else if (typeof position.distance === 'number') {
-        distance = position.distance
+    const gapRegions: GapRegion[] = []
+
+    if (labels && labels.length > 0) {
+      const label = labels[0]
+      if (label) {
+        const distance = this.getLabelDistance(label)
+        const absoluteDistance = distance >= 0 && distance <= 1
+          ? distance * totalLength
+          : totalLength / 2
+        const gapSize = this.calculateGapSize(label)
+        const halfGap = gapSize / 2
+        gapRegions.push({
+          startLength: Math.max(0, absoluteDistance - halfGap),
+          endLength: Math.min(totalLength, absoluteDistance + halfGap),
+        })
       }
     }
 
-    const absoluteDistance = distance >= 0 && distance <= 1
-      ? distance * totalLength
-      : totalLength / 2
+    const graph = edge.model
+    if (graph) {
+      const allEdges = graph.getEdges()
+      for (const otherEdge of allEdges) {
+        if (otherEdge.id === edge.id) continue
 
-    const gapSize = this.calculateGapSize(label)
-    const halfGap = gapSize / 2
+        const otherSource = otherEdge.getSourceCellId()
+        const otherTarget = otherEdge.getTargetCellId()
+        const mySource = edge.getSourceCellId()
+        const myTarget = edge.getTargetCellId()
 
-    const gapStartLength = Math.max(0, absoluteDistance - halfGap)
-    const gapEndLength = Math.min(totalLength, absoluteDistance + halfGap)
+        if (otherSource !== mySource || otherTarget !== myTarget) continue
 
-    if (gapEndLength - gapStartLength < 10) {
-      return
+        const otherLabels = otherEdge.labels as EdgeLabel[]
+        if (!otherLabels || otherLabels.length === 0) continue
+
+        const otherLabel = otherLabels[0]
+        if (!otherLabel) continue
+
+        const otherDistance = this.getLabelDistance(otherLabel)
+        const otherAbsoluteDistance = otherDistance >= 0 && otherDistance <= 1
+          ? otherDistance * totalLength
+          : totalLength / 2
+        const otherGapSize = this.calculateGapSize(otherLabel)
+        const otherHalfGap = otherGapSize / 2
+        gapRegions.push({
+          startLength: Math.max(0, otherAbsoluteDistance - otherHalfGap),
+          endLength: Math.min(totalLength, otherAbsoluteDistance + otherHalfGap),
+        })
+      }
     }
 
-    const gapPath = this.createPathWithGap(connection, gapStartLength, gapEndLength)
+    if (gapRegions.length === 0) return
+
+    gapRegions.sort((a, b) => a.startLength - b.startLength)
+
+    const mergedGaps: GapRegion[] = [gapRegions[0]]
+    for (let i = 1; i < gapRegions.length; i++) {
+      const last = mergedGaps[mergedGaps.length - 1]
+      const current = gapRegions[i]
+      if (current.startLength <= last.endLength + 5) {
+        last.endLength = Math.max(last.endLength, current.endLength)
+      } else {
+        mergedGaps.push(current)
+      }
+    }
+
+    const hasSignificantGap = mergedGaps.some(g => g.endLength - g.startLength >= 10)
+    if (!hasSignificantGap) return
+
+    const gapPath = this.createPathWithGaps(connection, mergedGaps)
 
     linePath.setAttribute('d', gapPath.serialize())
     wrapPath.setAttribute('d', gapPath.serialize())
+  }
+
+  private getLabelDistance(label: EdgeLabel): number {
+    const position = label.position as LabelPosition | undefined
+    if (position === undefined) return 0.5
+    if (typeof position === 'number') return position
+    if (typeof position.distance === 'number') return position.distance
+    return 0.5
   }
 
   private calculateGapSize(label: EdgeLabel): number {
@@ -99,10 +149,9 @@ class EdgeViewWithGap extends EdgeView {
     return Math.max(40, textPixelWidth + padding)
   }
 
-  private createPathWithGap(
+  private createPathWithGaps(
     connection: Path,
-    gapStartLength: number,
-    gapEndLength: number
+    gaps: GapRegion[]
   ): Path {
     const gapPath = new Path()
 
@@ -119,13 +168,11 @@ class EdgeViewWithGap extends EdgeView {
       const segmentStartLength = accumulatedLength
       const segmentEndLength = accumulatedLength + segmentLength
 
-      if (gapEndLength <= segmentStartLength) {
-        if (isFirstSegment) {
-          gapPath.appendSegment(Path.createSegment('M', segment.start))
-          isFirstSegment = false
-        }
-        gapPath.appendSegment(segment.clone())
-      } else if (gapStartLength >= segmentEndLength) {
+      const segmentGaps = gaps.filter(g =>
+        g.endLength > segmentStartLength && g.startLength < segmentEndLength
+      )
+
+      if (segmentGaps.length === 0) {
         if (isFirstSegment) {
           gapPath.appendSegment(Path.createSegment('M', segment.start))
           isFirstSegment = false
@@ -138,18 +185,31 @@ class EdgeViewWithGap extends EdgeView {
         const length = Math.sqrt(diff.x * diff.x + diff.y * diff.y)
         const direction = length > 0 ? { x: diff.x / length, y: diff.y / length } : { x: 0, y: 0 }
 
-        if (gapStartLength > segmentStartLength) {
-          const gapStartPoint = start.clone().move(direction, gapStartLength - segmentStartLength)
-          if (isFirstSegment) {
-            gapPath.appendSegment(Path.createSegment('M', start))
-            isFirstSegment = false
+        let prevEnd = segmentStartLength
+
+        for (const gap of segmentGaps) {
+          const gapStart = Math.max(gap.startLength, segmentStartLength)
+          const gapEnd = Math.min(gap.endLength, segmentEndLength)
+
+          if (gapStart > prevEnd) {
+            const segStart = prevEnd === segmentStartLength
+              ? start
+              : start.clone().move(direction, prevEnd - segmentStartLength)
+            const segEnd = start.clone().move(direction, gapStart - segmentStartLength)
+
+            if (isFirstSegment) {
+              gapPath.appendSegment(Path.createSegment('M', segStart))
+              isFirstSegment = false
+            }
+            gapPath.appendSegment(Path.createSegment('L', segEnd))
           }
-          gapPath.appendSegment(Path.createSegment('L', gapStartPoint))
+
+          prevEnd = gapEnd
         }
 
-        if (gapEndLength < segmentEndLength) {
-          const gapEndPoint = start.clone().move(direction, gapEndLength - segmentStartLength)
-          gapPath.appendSegment(Path.createSegment('M', gapEndPoint))
+        if (prevEnd < segmentEndLength) {
+          const resumePoint = start.clone().move(direction, prevEnd - segmentStartLength)
+          gapPath.appendSegment(Path.createSegment('M', resumePoint))
           gapPath.appendSegment(Path.createSegment('L', end))
         }
       }

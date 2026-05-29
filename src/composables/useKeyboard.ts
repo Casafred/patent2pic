@@ -30,6 +30,12 @@ export function useKeyboard() {
     }
 
     if (e.key === 'Delete' || e.key === 'Backspace') {
+      const activeEl = document.activeElement
+      const tagName = activeEl?.tagName?.toLowerCase()
+      const isContentEditable = activeEl?.getAttribute?.('contenteditable') === 'true'
+      const isInputFocused = tagName === 'input' || tagName === 'textarea' || tagName === 'select' || isContentEditable
+      if (isInputFocused) return
+
       const nodeIds = graphEngine.getSelectedNodeIds()
       const edgeIds = graphEngine.getSelectedEdgeIds()
       if (nodeIds.length > 0 || edgeIds.length > 0) {

@@ -143,18 +143,21 @@ function bindExtraEvents(): void {
     const data = cell?.getData() as Record<string, unknown> | undefined
     const isGroup = !!(data?.isGroup)
     const isGroupDetached = isGroup && !!(data?.detached)
+    editorStore.selectNodes([node.id])
     showContextMenu(e.clientX, e.clientY, 'node', node.id, isGroup, isGroupDetached)
   })
 
   engine.on('edge:contextmenu', (args: unknown) => {
     const { edge, e } = args as { edge: { id: string }; e: { clientX: number; clientY: number; preventDefault?: () => void } }
     e.preventDefault?.()
+    editorStore.selectEdges([edge.id])
     showContextMenu(e.clientX, e.clientY, 'edge', edge.id)
   })
 
   engine.on('edge:label:contextmenu', (args: unknown) => {
     const { edge, e } = args as { edge: { id: string }; e: { clientX: number; clientY: number; preventDefault?: () => void } }
     e.preventDefault?.()
+    editorStore.selectEdges([edge.id])
     showContextMenu(e.clientX, e.clientY, 'edge', edge.id)
   })
 
