@@ -14,6 +14,8 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
 
   const edgeConfig: Record<string, unknown> = {
     id: data.id,
+    shape: 'edge-with-gap',
+    view: 'edge-with-gap-view',
     source: { cell: data.source, port: data.sourcePort },
     target: { cell: data.target, port: data.targetPort },
     router: { name: 'orth' },
