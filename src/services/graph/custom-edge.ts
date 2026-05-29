@@ -49,15 +49,6 @@ class EdgeViewWithGap extends EdgeView {
     const connection = this.getConnection()
     if (!connection) return
 
-    const segments = connection.segments
-    if (!segments || segments.length === 0) return
-
-    const hasCurve = segments.some(seg => {
-      const type = seg.type
-      return type === 'C' || type === 'S' || type === 'Q' || type === 'T'
-    })
-    if (hasCurve) return
-
     const totalLength = connection.length()
     if (totalLength === 0) return
 
@@ -75,7 +66,7 @@ class EdgeViewWithGap extends EdgeView {
       ? distance * totalLength
       : totalLength / 2
 
-    const gapSize = 80
+    const gapSize = this.calculateGapSize(label)
     const halfGap = gapSize / 2
 
     const gapStartLength = Math.max(0, absoluteDistance - halfGap)
@@ -89,6 +80,23 @@ class EdgeViewWithGap extends EdgeView {
 
     linePath.setAttribute('d', gapPath.serialize())
     wrapPath.setAttribute('d', gapPath.serialize())
+  }
+
+  private calculateGapSize(label: EdgeLabel): number {
+    const attrs = label.attrs as KeyValue | undefined
+    const labelTextAttrs = attrs?.labelText as KeyValue | undefined
+    const text = labelTextAttrs?.text as string | undefined
+    const fontSize = (labelTextAttrs?.fontSize as number) || 12
+
+    if (!text) return 60
+
+    const lines = text.split('\n')
+    const maxLineLength = Math.max(...lines.map(l => l.length))
+    const charWidth = fontSize * 0.65
+    const textPixelWidth = maxLineLength * charWidth
+    const padding = fontSize * 2
+
+    return Math.max(40, textPixelWidth + padding)
   }
 
   private createPathWithGap(

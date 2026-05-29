@@ -12,6 +12,7 @@ interface ElkNode {
   id: string
   width: number
   height: number
+  layoutOptions?: Record<string, string>
   x?: number
   y?: number
 }
@@ -46,9 +47,44 @@ function estimateLabelSize(text: string, fontSize: number): { width: number; hei
   const maxLineLength = Math.max(...lines.map(l => l.length))
   const charWidth = fontSize * 0.65
   const lineHeight = fontSize * 1.6
-  const width = Math.max(80, maxLineLength * charWidth * 1.7)
-  const height = Math.max(24, lines.length * lineHeight * 1.8)
+  const width = Math.max(60, maxLineLength * charWidth * 1.5)
+  const height = Math.max(20, lines.length * lineHeight * 1.5)
   return { width, height }
+}
+
+function inferDirection(nodes: NodeData[], _edges: EdgeData[]): 'LR' | 'TB' {
+  const levelSet = new Set(nodes.map(n => n.hierarchyLevel ?? 0))
+  const numLevels = levelSet.size
+
+  const totalNodeWidth = nodes.reduce((sum, n) => sum + n.style.width, 0)
+  const totalNodeHeight = nodes.reduce((sum, n) => sum + n.style.height, 0)
+  const avgNodeWidth = totalNodeWidth / nodes.length
+  const avgNodeHeight = totalNodeHeight / nodes.length
+
+  const maxLevel = Math.max(...nodes.map(n => n.hierarchyLevel ?? 0))
+  const nodesPerLevel = new Map<number, number>()
+  for (const n of nodes) {
+    const level = n.hierarchyLevel ?? 0
+    nodesPerLevel.set(level, (nodesPerLevel.get(level) || 0) + 1)
+  }
+  const maxNodesPerLevel = Math.max(...nodesPerLevel.values(), 1)
+
+  const estimatedLayerWidth = maxNodesPerLevel * (avgNodeWidth + 40)
+  const estimatedLayerHeight = numLevels * (avgNodeHeight + 60)
+
+  if (estimatedLayerWidth > estimatedLayerHeight * 1.5) {
+    return 'TB'
+  }
+
+  if (numLevels <= 3 && maxNodesPerLevel > 3) {
+    return 'TB'
+  }
+
+  if (maxLevel > 3 && maxNodesPerLevel <= 3) {
+    return 'LR'
+  }
+
+  return 'LR'
 }
 
 export async function applyElkLayout(
@@ -56,19 +92,27 @@ export async function applyElkLayout(
   edges: EdgeData[],
   options?: ElkLayoutOptions,
 ): Promise<Map<string, { x: number; y: number }>> {
-  const maxNodeWidth = Math.max(...nodes.map(n => n.style.width), 120)
-  const maxNodeHeight = Math.max(...nodes.map(n => n.style.height), 40)
+  if (nodes.length === 0) return new Map()
 
-  const direction = options?.rankdir ?? 'LR'
+  const avgNodeWidth = nodes.reduce((s, n) => s + n.style.width, 0) / nodes.length
+  const avgNodeHeight = nodes.reduce((s, n) => s + n.style.height, 0) / nodes.length
 
-  const nodesep = options?.nodesep ?? Math.max(80, maxNodeWidth * 0.6)
-  const ranksep = options?.ranksep ?? Math.max(100, maxNodeWidth * 0.8)
+  const direction = options?.rankdir ?? inferDirection(nodes, edges)
 
-  const elkNodes: ElkNode[] = nodes.map(n => ({
-    id: n.id,
-    width: n.style.width,
-    height: n.style.height,
-  }))
+  const nodesep = options?.nodesep ?? Math.max(40, avgNodeHeight * 0.8)
+  const ranksep = options?.ranksep ?? Math.max(60, avgNodeWidth * 0.5)
+
+  const elkNodes: ElkNode[] = nodes.map(n => {
+    const level = n.hierarchyLevel ?? 0
+    return {
+      id: n.id,
+      width: n.style.width,
+      height: n.style.height,
+      layoutOptions: {
+        'elk.layered.layering.layerId': String(level),
+      },
+    }
+  })
 
   const elkEdges: ElkEdge[] = edges.map(e => {
     const labelText = e.chineseText || e.originalText
@@ -98,28 +142,28 @@ export async function applyElkLayout(
       'elk.direction': directionToElk(direction),
       'elk.spacing.nodeNode': String(nodesep),
       'elk.layered.spacing.nodeNodeBetweenLayers': String(ranksep),
-      'elk.padding': '[top=60,left=60,bottom=60,right=60]',
-
-      'elk.aspectRatio': '1.6',
+      'elk.padding': '[top=50,left=50,bottom=50,right=50]',
 
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       'elk.layered.crossingMinimization.sweepStrategy': 'CAREFUL',
-      'elk.layered.crossingMinimization.semiInteractive': 'true',
 
-      'elk.layered.nodePlacement.strategy': 'LINEAR_SEGMENTS',
+      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+      'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
 
       'elk.edgeRouting.orthogonalEdges': 'true',
-      'elk.spacing.edgeNode': String(Math.max(50, maxNodeHeight * 0.8)),
-      'elk.spacing.edgeEdge': String(Math.max(30, maxNodeHeight * 0.5)),
+      'elk.spacing.edgeNode': String(Math.max(30, avgNodeHeight * 0.6)),
+      'elk.spacing.edgeEdge': String(Math.max(20, avgNodeHeight * 0.4)),
 
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
 
       'elk.layered.cycleBreaking.strategy': 'GREEDY',
 
-      'elk.layered.edgeSpacing.factor': '2.0',
+      'elk.layered.edgeSpacing.factor': '1.5',
 
       'elk.layered.compaction.postCompaction.strategy': 'LEFT_RIGHT',
       'elk.layered.compaction.connectedComponents': 'true',
+
+      'elk.layered.layering.strategy': 'LONGEST_PATH',
     },
     children: elkNodes,
     edges: elkEdges,

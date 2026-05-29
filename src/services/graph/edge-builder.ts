@@ -33,28 +33,11 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
       {
         markup: [
           {
-            tagName: 'rect',
-            selector: 'bg',
-          },
-          {
             tagName: 'text',
             selector: 'labelText',
           },
         ],
         attrs: {
-          bg: {
-            ref: 'labelText',
-            refX: '-35%',
-            refY: '-40%',
-            refWidth: '170%',
-            refHeight: '180%',
-            fill: style.labelBgColor || '#ffffff',
-            fillOpacity: 1,
-            stroke: style.labelBgColor || '#ffffff',
-            strokeWidth: 8,
-            rx: 4,
-            ry: 4,
-          },
           labelText: {
             text: getEdgeLabelText(data, isChinese),
             fontSize: style.fontSize,
@@ -64,14 +47,14 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
             textAnchor: 'middle',
             textVerticalAnchor: 'middle',
             lineHeight: style.fontSize * 1.6,
-            stroke: style.labelBgColor || '#ffffff',
-            strokeWidth: 8,
+            stroke: '#ffffff',
+            strokeWidth: 6,
             paintOrder: 'stroke fill',
             strokeLinejoin: 'round',
           },
         },
         position: {
-          distance: 0.75,
+          distance: 0.5,
           offset: { x: 0, y: 0 },
         },
       },
@@ -107,24 +90,16 @@ export function updateEdgeStyle(edge: unknown, style: Partial<EdgeData['style']>
     if (label) {
       const existingLabel = label as Record<string, unknown>
       const existingAttrs = (existingLabel.attrs || {}) as Record<string, unknown>
-      const existingBg = (existingAttrs.bg || {}) as Record<string, unknown>
       const existingLabelText = (existingAttrs.labelText || {}) as Record<string, unknown>
-      
+
       const newLabelText: Record<string, unknown> = { ...existingLabelText }
       if (style.fontSize !== undefined) newLabelText.fontSize = style.fontSize
       if (style.fontFamily !== undefined) newLabelText.fontFamily = style.fontFamily
       if (style.fontColor !== undefined) newLabelText.fill = style.fontColor
 
-      const newBg: Record<string, unknown> = { ...existingBg }
-      if (style.labelBgColor !== undefined) {
-        newBg.fill = style.labelBgColor
-        newLabelText.stroke = style.labelBgColor
-      }
-
       const newLabel = {
         ...existingLabel,
         attrs: {
-          bg: newBg,
           labelText: newLabelText,
         },
       }
