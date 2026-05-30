@@ -33,11 +33,28 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
       {
         markup: [
           {
+            tagName: 'rect',
+            selector: 'bg',
+          },
+          {
             tagName: 'text',
             selector: 'labelText',
           },
         ],
         attrs: {
+          bg: {
+            ref: 'labelText',
+            refWidth: 1.2,
+            refHeight: 1.4,
+            refX: -0.1,
+            refY: -0.2,
+            fill: 'transparent',
+            stroke: 'none',
+            strokeWidth: 0,
+            rx: 4,
+            ry: 4,
+            cursor: 'move',
+          },
           labelText: {
             text: getEdgeLabelText(data, isChinese),
             fontSize: style.fontSize,
@@ -100,6 +117,7 @@ export function updateEdgeStyle(edge: unknown, style: Partial<EdgeData['style']>
       const newLabel = {
         ...existingLabel,
         attrs: {
+          ...existingAttrs,
           labelText: newLabelText,
         },
       }

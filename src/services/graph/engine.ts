@@ -585,10 +585,11 @@ export class GraphEngine {
       edge.setLabels([{
         ...label,
         attrs: {
+          ...existingAttrs,
           bg: {
             ...existingBg,
-            stroke: isDetached ? '#fa8c16' : '#d9d9d9',
-            strokeWidth: isDetached ? 2 : 1,
+            stroke: isDetached ? '#fa8c16' : 'none',
+            strokeWidth: isDetached ? 2 : 0,
           },
           labelText: existingLabelText,
         },
@@ -691,6 +692,7 @@ export class GraphEngine {
         const newLabel = {
           ...firstLabel,
           attrs: {
+            ...existingAttrs,
             bg: existingBg,
             labelText: {
               ...existingLabelText,
