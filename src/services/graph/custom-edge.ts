@@ -1,5 +1,6 @@
 import { Graph, Path, Edge, EdgeView } from '@antv/x6'
 import type { KeyValue, Markup } from '@antv/x6'
+import { ObjectExt } from '@antv/x6'
 
 interface LabelPositionObject {
   distance: number
@@ -34,6 +35,35 @@ class EdgeViewWithGap extends EdgeView {
       }
     }
     return ret
+  }
+
+  dragLabel(e: any, x: number, y: number) {
+    const edge = this.cell as Edge
+    const data = edge.getData() as Record<string, unknown> | undefined
+    const isDetached = !!(data?.labelDetached)
+
+    const eventData = this.getEventData(e) as {
+      index: number
+      positionAngle: number
+      positionArgs?: KeyValue | null
+    } | null
+
+    if (!eventData || eventData.index == null) return
+
+    const originLabel = edge.getLabelAt(eventData.index)
+    const position = this.getLabelPosition(
+      x,
+      y,
+      eventData.positionAngle,
+      eventData.positionArgs,
+    )
+
+    if (!isDetached) {
+      position.offset = { x: 0, y: 0 }
+    }
+
+    const label = ObjectExt.merge({}, originLabel, { position })
+    edge.setLabelAt(eventData.index, label)
   }
 
   private updateLineWithGap(): void {

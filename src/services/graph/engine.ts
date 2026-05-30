@@ -582,8 +582,17 @@ export class GraphEngine {
       const existingBg = (existingAttrs.bg || {}) as Record<string, unknown>
       const existingLabelText = (existingAttrs.labelText || {}) as Record<string, unknown>
       
+      const existingPosition = label.position as Record<string, unknown> | undefined
+      const newPosition = isDetached
+        ? existingPosition
+        : {
+            ...(existingPosition || {}),
+            offset: { x: 0, y: 0 },
+          }
+
       edge.setLabels([{
         ...label,
+        position: newPosition,
         attrs: {
           ...existingAttrs,
           bg: {
