@@ -55,14 +55,30 @@ export class GraphEngine {
             zIndex: 10,
           })
         },
-        validateConnection({ targetMagnet }) {
-          return !!targetMagnet
+        validateConnection({ edge, sourceCell, targetCell, type }) {
+          if (!sourceCell || !targetCell) return false
+
+          if (edge) {
+            const edgeData = edge.getData() as Record<string, unknown> | undefined
+            if (edgeData?.originalText !== undefined) {
+              if (type === 'source') {
+                const originalTarget = edge.getTargetCellId()
+                if (targetCell.id !== originalTarget) return false
+              } else {
+                const originalSource = edge.getSourceCellId()
+                if (sourceCell.id !== originalSource) return false
+              }
+            }
+          }
+
+          return true
         },
       },
       interacting: {
         nodeMovable: true,
         edgeMovable: true,
         edgeLabelMovable: true,
+        arrowheadMovable: true,
         vertexMovable: false,
         vertexAddable: false,
         vertexDeletable: false,
