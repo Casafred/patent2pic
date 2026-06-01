@@ -88,6 +88,127 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
   return edgeConfig
 }
 
+export function buildTrunkEdge(
+  firstEdgeData: EdgeData,
+  forkNodeId: string,
+  mergedEdgeIds: string[],
+  isChinese: boolean = false,
+): Record<string, unknown> {
+  const style = firstEdgeData.style || getDefaultEdgeStyle(firstEdgeData.relationType)
+  const sourceMarker = firstEdgeData.style?.arrowType === 'both'
+    ? { name: arrowTypeToMarker(style.arrowType) }
+    : undefined
+
+  return {
+    id: `trunk-${forkNodeId}`,
+    shape: 'edge-with-gap',
+    view: 'edge-with-gap-view',
+    source: { cell: firstEdgeData.source },
+    target: { cell: forkNodeId },
+    router: { name: 'orth' },
+    connector: { name: 'rounded', args: { radius: 8 } },
+    attrs: {
+      line: {
+        stroke: style.stroke,
+        strokeWidth: style.strokeWidth,
+        strokeDasharray: style.strokeDasharray ?? '',
+        sourceMarker,
+        targetMarker: { name: '' },
+      },
+    },
+    labels: [
+      {
+        markup: [
+          { tagName: 'rect', selector: 'bg' },
+          { tagName: 'text', selector: 'labelText' },
+        ],
+        attrs: {
+          bg: {
+            ref: 'labelText',
+            refWidth: 1.2,
+            refHeight: 1.4,
+            refX: -0.1,
+            refY: -0.2,
+            fill: 'transparent',
+            stroke: 'none',
+            strokeWidth: 0,
+            rx: 4,
+            ry: 4,
+            cursor: 'move',
+          },
+          labelText: {
+            text: getEdgeLabelText(firstEdgeData, isChinese),
+            fontSize: style.fontSize,
+            fontFamily: style.fontFamily,
+            fill: style.fontColor,
+            fontWeight: 'bold',
+            textAnchor: 'middle',
+            textVerticalAnchor: 'middle',
+            lineHeight: style.fontSize * 1.6,
+            stroke: '#ffffff',
+            strokeWidth: 6,
+            paintOrder: 'stroke fill',
+            strokeLinejoin: 'round',
+          },
+        },
+        position: {
+          distance: 0.5,
+          offset: { x: 0, y: 0 },
+        },
+      },
+    ],
+    data: {
+      originalText: firstEdgeData.originalText,
+      chineseText: firstEdgeData.chineseText,
+      relationType: firstEdgeData.relationType,
+      labelDetached: false,
+      isTrunk: true,
+      realSourceId: firstEdgeData.source,
+      forkNodeId,
+      mergedEdgeIds,
+    },
+    zIndex: 10,
+  }
+}
+
+export function buildBranchEdge(
+  edgeData: EdgeData,
+  forkNodeId: string,
+): Record<string, unknown> {
+  const style = edgeData.style || getDefaultEdgeStyle(edgeData.relationType)
+  const marker = arrowTypeToMarker(style.arrowType)
+
+  return {
+    id: `branch-${edgeData.id}`,
+    shape: 'edge-with-gap',
+    view: 'edge-with-gap-view',
+    source: { cell: forkNodeId },
+    target: { cell: edgeData.target },
+    router: { name: 'orth' },
+    connector: { name: 'rounded', args: { radius: 8 } },
+    attrs: {
+      line: {
+        stroke: style.stroke,
+        strokeWidth: style.strokeWidth,
+        strokeDasharray: style.strokeDasharray ?? '',
+        sourceMarker: { name: '' },
+        targetMarker: marker ? { name: marker } : { name: '' },
+      },
+    },
+    labels: [],
+    data: {
+      originalText: edgeData.originalText,
+      chineseText: edgeData.chineseText,
+      relationType: edgeData.relationType,
+      isBranch: true,
+      forkNodeId,
+      realTargetId: edgeData.target,
+      originalEdgeId: edgeData.id,
+    },
+    zIndex: 10,
+  }
+}
+
 export function updateEdgeStyle(edge: unknown, style: Partial<EdgeData['style']>): void {
   const marker = style.arrowType ? arrowTypeToMarker(style.arrowType) : undefined
   const e = edge as { attr: (attrs: Record<string, unknown>) => void; getLabels: () => unknown[]; setLabels: (labels: unknown[]) => void }

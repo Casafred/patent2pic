@@ -9,7 +9,7 @@ import { Transform } from '@antv/x6-plugin-transform'
 import type { NodeData, EdgeData } from '@/types/graph'
 import type { ExtractResult, ExtractGroup } from '@/types/ai'
 import { buildNode, updateNodeStyle, calculateNodeSize } from './node-builder'
-import { buildEdge, updateEdgeStyle } from './edge-builder'
+import { buildEdge, buildTrunkEdge, buildBranchEdge, updateEdgeStyle } from './edge-builder'
 import { applyElkLayout, type ElkLayoutOptions } from './layout'
 import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle } from './style-registry'
 import { setupCustomEdge } from './custom-edge'
@@ -60,6 +60,25 @@ export class GraphEngine {
 
           if (edge) {
             const edgeData = edge.getData() as Record<string, unknown> | undefined
+
+            if (edgeData?.isTrunk) {
+              const realSourceId = edgeData.realSourceId as string
+              const forkNodeId = edgeData.forkNodeId as string
+              if (type === 'source') {
+                return sourceCell.id === realSourceId && targetCell.id === forkNodeId
+              }
+              return targetCell.id === forkNodeId
+            }
+
+            if (edgeData?.isBranch) {
+              const forkNodeId = edgeData.forkNodeId as string
+              const realTargetId = edgeData.realTargetId as string
+              if (type === 'source') {
+                return sourceCell.id === forkNodeId
+              }
+              return sourceCell.id === forkNodeId && targetCell.id === realTargetId
+            }
+
             if (edgeData?.originalText !== undefined) {
               if (type === 'source') {
                 const originalTarget = edge.getTargetCellId()
@@ -99,7 +118,7 @@ export class GraphEngine {
       filter(this: Graph, cell) {
         if (cell.isNode()) {
           const data = cell.getData()
-          if (data?.hidden) return false
+          if (data?.hidden || data?.isForkNode) return false
         }
         return true
       },
@@ -181,15 +200,80 @@ export class GraphEngine {
       this.graph.addNode(config)
     }
 
-    const edgeDistanceMap = new Map<string, number>()
+    const mergeGroupMap = new Map<string, EdgeData[]>()
     for (const edgeData of edgeDataList) {
+      const key = `${edgeData.source}||${edgeData.originalText}`
+      if (!mergeGroupMap.has(key)) {
+        mergeGroupMap.set(key, [])
+      }
+      mergeGroupMap.get(key)!.push(edgeData)
+    }
+
+    const mergedEdgeIds = new Set<string>()
+    for (const [, groupEdges] of mergeGroupMap) {
+      const uniqueTargets = new Set(groupEdges.map(e => e.target))
+      if (groupEdges.length >= 2 && uniqueTargets.size >= 2) {
+        for (const edgeData of groupEdges) {
+          mergedEdgeIds.add(edgeData.id)
+        }
+      }
+    }
+
+    const nonMergedEdges = edgeDataList.filter(e => !mergedEdgeIds.has(e.id))
+    const edgeDistanceMap = new Map<string, number>()
+    for (const edgeData of nonMergedEdges) {
       const key = `${edgeData.source}->${edgeData.target}`
       const count = edgeDistanceMap.get(key) || 0
       edgeDistanceMap.set(key, count + 1)
     }
 
     const edgeIndexMap = new Map<string, number>()
-    for (const edgeData of edgeDataList) {
+
+    let forkGroupIndex = 0
+    for (const [, groupEdges] of mergeGroupMap) {
+      const uniqueTargets = new Set(groupEdges.map(e => e.target))
+      if (groupEdges.length >= 2 && uniqueTargets.size >= 2) {
+        const sourceId = groupEdges[0].source
+        const targetIds = [...new Set(groupEdges.map(e => e.target))]
+        const forkNodeId = `fork-${sourceId}-${forkGroupIndex}`
+        forkGroupIndex++
+
+        const forkPos = this.calculateForkPosition(sourceId, targetIds)
+
+        this.graph.addNode({
+          id: forkNodeId,
+          x: forkPos.x,
+          y: forkPos.y,
+          width: 1,
+          height: 1,
+          shape: 'rect',
+          zIndex: -10,
+          attrs: {
+            body: {
+              fill: 'transparent',
+              stroke: 'transparent',
+              strokeWidth: 0,
+            },
+          },
+          data: {
+            isForkNode: true,
+            sourceId,
+            targetIds,
+          },
+        })
+
+        const mergedIds = groupEdges.map(e => e.id)
+        const trunkConfig = buildTrunkEdge(groupEdges[0], forkNodeId, mergedIds, isChinese)
+        this.graph.addEdge(trunkConfig)
+
+        for (const edgeData of groupEdges) {
+          const branchConfig = buildBranchEdge(edgeData, forkNodeId)
+          this.graph.addEdge(branchConfig)
+        }
+      }
+    }
+
+    for (const edgeData of nonMergedEdges) {
       const key = `${edgeData.source}->${edgeData.target}`
       const totalCount = edgeDistanceMap.get(key) || 1
       const currentIndex = edgeIndexMap.get(key) || 0
@@ -313,24 +397,28 @@ export class GraphEngine {
     this.graph.on('node:moved', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined; attr: (path: string, value?: unknown) => unknown } }) => {
       if (isUpdatingGroup) return
       const data = node.getData()
+      if (data?.isForkNode) return
       if (data?.isGroup) {
         this.restoreGroupVisibility(node)
         return
       }
       isUpdatingGroup = true
       this.updateGroupBoundsForMember(node.id)
+      this.updateForkNodePositions()
       isUpdatingGroup = false
     })
 
     this.graph.on('node:change:position', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined; attr: (path: string, value?: unknown) => unknown } }) => {
       if (isUpdatingGroup) return
       const data = node.getData()
+      if (data?.isForkNode) return
       if (data?.isGroup) {
         this.restoreGroupVisibility(node)
         return
       }
       isUpdatingGroup = true
       this.updateGroupBoundsForMember(node.id)
+      this.updateForkNodePositions()
       isUpdatingGroup = false
     })
   }
@@ -356,6 +444,70 @@ export class GraphEngine {
       node.attr('body/pointerEvents', 'stroke')
       node.attr('label/fill', data.detached ? '#999' : '#fa8c16')
       node.attr('label/pointerEvents', 'none')
+    }
+  }
+
+  private calculateForkPosition(sourceId: string, targetIds: string[]): { x: number; y: number } {
+    if (!this.graph) return { x: 0, y: 0 }
+
+    const sourceCell = this.graph.getCellById(sourceId)
+    if (!sourceCell || !sourceCell.isNode()) return { x: 0, y: 0 }
+
+    const sourceNode = sourceCell as unknown as {
+      getPosition: () => { x: number; y: number }
+      getSize: () => { width: number; height: number }
+    }
+    const sourcePos = sourceNode.getPosition()
+    const sourceSize = sourceNode.getSize()
+    const sourceCenterX = sourcePos.x + sourceSize.width / 2
+    const sourceCenterY = sourcePos.y + sourceSize.height / 2
+
+    let targetCenterSumX = 0
+    let targetCenterSumY = 0
+    let targetCount = 0
+
+    for (const targetId of targetIds) {
+      const targetCell = this.graph.getCellById(targetId)
+      if (!targetCell || !targetCell.isNode()) continue
+
+      const targetNode = targetCell as unknown as {
+        getPosition: () => { x: number; y: number }
+        getSize: () => { width: number; height: number }
+      }
+      const targetPos = targetNode.getPosition()
+      const targetSize = targetNode.getSize()
+      targetCenterSumX += targetPos.x + targetSize.width / 2
+      targetCenterSumY += targetPos.y + targetSize.height / 2
+      targetCount++
+    }
+
+    if (targetCount === 0) return { x: sourceCenterX, y: sourceCenterY }
+
+    const targetCenterX = targetCenterSumX / targetCount
+    const targetCenterY = targetCenterSumY / targetCount
+
+    const forkX = sourceCenterX + 0.8 * (targetCenterX - sourceCenterX)
+    const forkY = sourceCenterY + 0.8 * (targetCenterY - sourceCenterY)
+
+    return { x: forkX, y: forkY }
+  }
+
+  private updateForkNodePositions(): void {
+    if (!this.graph) return
+
+    const forkNodes = this.graph.getNodes().filter(n => {
+      const data = n.getData() as Record<string, unknown> | undefined
+      return data?.isForkNode
+    })
+
+    for (const forkNode of forkNodes) {
+      const data = forkNode.getData() as Record<string, unknown>
+      const sourceId = data.sourceId as string
+      const targetIds = data.targetIds as string[]
+
+      const newPos = this.calculateForkPosition(sourceId, targetIds)
+      const fn = forkNode as unknown as { setPosition: (x: number, y: number) => void }
+      fn.setPosition(newPos.x, newPos.y)
     }
   }
 
@@ -696,6 +848,8 @@ export class GraphEngine {
     this.graph.startBatch('fontSize')
     const nodes = this.graph.getNodes()
     for (const node of nodes) {
+      const data = node.getData() as Record<string, unknown> | undefined
+      if (data?.isForkNode) continue
       const n = node as unknown as { attr: (path: string, value?: unknown) => unknown }
       n.attr('label/fontSize', fontSize)
     }
@@ -737,7 +891,12 @@ export class GraphEngine {
     const nodes = this.graph.getNodes()
     const edges = this.graph.getEdges()
 
-    const nodeDataList: NodeData[] = nodes.map(n => {
+    const realNodes = nodes.filter(n => {
+      const data = n.getData() as Record<string, unknown>
+      return !data?.isForkNode
+    })
+
+    const nodeDataList: NodeData[] = realNodes.map(n => {
       const data = n.getData() as Record<string, unknown>
       const size = n.getSize()
       return {
@@ -750,9 +909,35 @@ export class GraphEngine {
       }
     })
 
-    const edgeDataList: EdgeData[] = edges.map(e => {
+    const edgeDataList: EdgeData[] = []
+    for (const e of edges) {
       const data = e.getData() as Record<string, unknown>
-      return {
+
+      if (data?.isBranch) continue
+
+      if (data?.isTrunk) {
+        const sourceId = data.realSourceId as string
+        const forkNodeId = data.forkNodeId as string
+        const branchEdges = edges.filter(be => {
+          const bd = be.getData() as Record<string, unknown>
+          return bd?.isBranch && bd.forkNodeId === forkNodeId
+        })
+        for (const be of branchEdges) {
+          const bd = be.getData() as Record<string, unknown>
+          edgeDataList.push({
+            id: (bd.originalEdgeId as string) || be.id,
+            source: sourceId,
+            target: (bd.realTargetId as string) || '',
+            originalText: (data.originalText as string) || '',
+            chineseText: (data.chineseText as string) || '',
+            relationType: (data.relationType as EdgeData['relationType']) || 'position',
+            style: {} as EdgeData['style'],
+          })
+        }
+        continue
+      }
+
+      edgeDataList.push({
         id: e.id,
         source: (e.getSourceCellId() as string) || '',
         target: (e.getTargetCellId() as string) || '',
@@ -760,18 +945,21 @@ export class GraphEngine {
         chineseText: (data?.chineseText as string) || '',
         relationType: (data?.relationType as EdgeData['relationType']) || 'position',
         style: {} as EdgeData['style'],
-      }
-    }).filter(e => e.source && e.target)
+      })
+    }
 
-    const positions = await applyElkLayout(nodeDataList, edgeDataList, options)
+    const filteredEdgeDataList = edgeDataList.filter(e => e.source && e.target)
+
+    const positions = await applyElkLayout(nodeDataList, filteredEdgeDataList, options)
 
     this.graph.startBatch('layout')
-    for (const node of nodes) {
+    for (const node of realNodes) {
       const pos = positions.get(node.id)
       if (pos) {
         node.setPosition(pos.x, pos.y)
       }
     }
+    this.updateForkNodePositions()
     this.graph.stopBatch('layout')
   }
 
@@ -806,7 +994,13 @@ export class GraphEngine {
   }
 
   selectAll(): void {
-    this.graph?.getCells().forEach(c => this.graph!.select(c))
+    this.graph?.getCells().forEach(c => {
+      if (c.isNode()) {
+        const data = c.getData() as Record<string, unknown> | undefined
+        if (data?.isForkNode) return
+      }
+      this.graph!.select(c)
+    })
   }
 
   clearSelection(): void {
