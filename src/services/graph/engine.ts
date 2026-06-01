@@ -183,6 +183,41 @@ export class GraphEngine {
       style: getDefaultEdgeStyle(e.relationType),
     }))
 
+    const autoGroupInfoMap = new Map<string, { memberNodeIds: string[] }>()
+    const outgoingInfoMap = new Map<string, {
+      containmentTargets: Set<string>
+      hasOtherOutgoing: boolean
+    }>()
+    for (const edgeData of edgeDataList) {
+      const existing = outgoingInfoMap.get(edgeData.source)
+      if (edgeData.relationType === 'containment') {
+        if (existing) {
+          existing.containmentTargets.add(edgeData.target)
+        } else {
+          outgoingInfoMap.set(edgeData.source, {
+            containmentTargets: new Set([edgeData.target]),
+            hasOtherOutgoing: false,
+          })
+        }
+      } else {
+        if (existing) {
+          existing.hasOtherOutgoing = true
+        } else {
+          outgoingInfoMap.set(edgeData.source, {
+            containmentTargets: new Set(),
+            hasOtherOutgoing: true,
+          })
+        }
+      }
+    }
+    for (const [nodeId, info] of outgoingInfoMap) {
+      if (!info.hasOtherOutgoing && info.containmentTargets.size >= 3) {
+        autoGroupInfoMap.set(nodeId, {
+          memberNodeIds: [...info.containmentTargets],
+        })
+      }
+    }
+
     timingStart(`    │    布局计算 (ELK)`)
     const positions = await applyElkLayout(nodeDataList, edgeDataList, layoutOptions)
     timingEnd(`    │    布局计算 (ELK)`)
@@ -292,6 +327,10 @@ export class GraphEngine {
       this.graph.addEdge(config)
     }
     timingEnd(`    │    添加节点和边`)
+
+    if (autoGroupInfoMap.size > 0) {
+      this.convertAutoGroupNodes(autoGroupInfoMap, isChinese)
+    }
 
     if (result.groups && result.groups.length > 0) {
       timingStart(`    │    渲染分组`)
@@ -445,6 +484,123 @@ export class GraphEngine {
       node.attr('label/fill', data.detached ? '#999' : '#fa8c16')
       node.attr('label/pointerEvents', 'none')
     }
+  }
+
+  private convertAutoGroupNodes(
+    autoGroupInfoMap: Map<string, { memberNodeIds: string[] }>,
+    isChinese: boolean,
+  ): void {
+    if (!this.graph) return
+
+    this.graph.startBatch('autoGroup')
+
+    for (const [nodeId, info] of autoGroupInfoMap) {
+      const cell = this.graph.getCellById(nodeId)
+      if (!cell || !cell.isNode()) continue
+
+      const edgesToRemove: unknown[] = []
+      const forkNodeIdsToRemove = new Set<string>()
+
+      for (const edge of this.graph.getEdges()) {
+        const data = edge.getData() as Record<string, unknown> | undefined
+        if (!data) continue
+
+        if (data.relationType === 'containment' && !data.isTrunk && !data.isBranch && edge.getSourceCellId() === nodeId) {
+          edgesToRemove.push(edge)
+          continue
+        }
+
+        if (data.isTrunk && data.realSourceId === nodeId) {
+          edgesToRemove.push(edge)
+          forkNodeIdsToRemove.add(data.forkNodeId as string)
+          continue
+        }
+      }
+
+      for (const forkNodeId of forkNodeIdsToRemove) {
+        for (const edge of this.graph.getEdges()) {
+          const data = edge.getData() as Record<string, unknown> | undefined
+          if (data?.isBranch && data.forkNodeId === forkNodeId) {
+            if (!edgesToRemove.includes(edge)) {
+              edgesToRemove.push(edge)
+            }
+          }
+        }
+      }
+
+      for (const edge of edgesToRemove) {
+        ;(edge as { remove: () => void }).remove()
+      }
+
+      for (const forkNodeId of forkNodeIdsToRemove) {
+        const forkCell = this.graph.getCellById(forkNodeId)
+        if (forkCell) forkCell.remove()
+      }
+
+      const memberNodes = info.memberNodeIds
+        .map(id => this.graph!.getCellById(id))
+        .filter(c => c && c.isNode())
+
+      if (memberNodes.length === 0) continue
+
+      const bounds = this.getNodesBounds(memberNodes)
+      const padding = 20
+
+      const nodeData = cell.getData() as Record<string, unknown>
+      const groupLabel = isChinese
+        ? ((nodeData?.chineseText as string) || (nodeData?.originalText as string) || '')
+        : `${nodeData?.originalText || ''}\n${nodeData?.chineseText || ''}`
+
+      const node = cell as unknown as {
+        setPosition: (x: number, y: number) => void
+        resize: (width: number, height: number) => void
+        attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
+        setData: (data: Record<string, unknown>) => void
+        setZIndex: (z: number) => void
+      }
+
+      node.setPosition(bounds.minX - padding, bounds.minY - padding - 24)
+      node.resize(
+        bounds.maxX - bounds.minX + padding * 2,
+        bounds.maxY - bounds.minY + padding * 2 + 24,
+      )
+      node.attr({
+        body: {
+          fill: '#fafafa',
+          fillOpacity: 0.5,
+          stroke: '#fa8c16',
+          strokeWidth: 1.5,
+          strokeDasharray: '6 3',
+          rx: 8,
+          ry: 8,
+          pointerEvents: 'stroke',
+        },
+        label: {
+          text: groupLabel,
+          fontSize: 11,
+          fill: '#fa8c16',
+          fontWeight: 'bold',
+          textAnchor: 'left',
+          textVerticalAnchor: 'top',
+          refX: 12,
+          refY: 8,
+          pointerEvents: 'none',
+        },
+      })
+      node.setData({
+        ...nodeData,
+        isGroup: true,
+        isAutoGroup: true,
+        label: { original: nodeData?.originalText || '', chinese: nodeData?.chineseText || '' },
+        memberNodeIds: info.memberNodeIds,
+        detached: false,
+      })
+      node.setZIndex(-1)
+    }
+
+    this.updateGroupBoundsForMember('')
+
+    this.graph.stopBatch('autoGroup')
   }
 
   private calculateForkPosition(sourceId: string, targetIds: string[]): { x: number; y: number } {
@@ -849,7 +1005,7 @@ export class GraphEngine {
     const nodes = this.graph.getNodes()
     for (const node of nodes) {
       const data = node.getData() as Record<string, unknown> | undefined
-      if (data?.isForkNode) continue
+      if (data?.isForkNode || data?.isGroup) continue
       const n = node as unknown as { attr: (path: string, value?: unknown) => unknown }
       n.attr('label/fontSize', fontSize)
     }
@@ -893,7 +1049,7 @@ export class GraphEngine {
 
     const realNodes = nodes.filter(n => {
       const data = n.getData() as Record<string, unknown>
-      return !data?.isForkNode
+      return !data?.isForkNode && !data?.isGroup
     })
 
     const nodeDataList: NodeData[] = realNodes.map(n => {
@@ -948,7 +1104,16 @@ export class GraphEngine {
       })
     }
 
-    const filteredEdgeDataList = edgeDataList.filter(e => e.source && e.target)
+    const groupNodeIds = new Set(
+      nodes.filter(n => {
+        const data = n.getData() as Record<string, unknown>
+        return !!data?.isGroup
+      }).map(n => n.id)
+    )
+
+    const filteredEdgeDataList = edgeDataList.filter(e =>
+      e.source && e.target && !groupNodeIds.has(e.source) && !groupNodeIds.has(e.target)
+    )
 
     const positions = await applyElkLayout(nodeDataList, filteredEdgeDataList, options)
 
@@ -960,6 +1125,7 @@ export class GraphEngine {
       }
     }
     this.updateForkNodePositions()
+    this.updateGroupBoundsForMember('')
     this.graph.stopBatch('layout')
   }
 
@@ -997,7 +1163,7 @@ export class GraphEngine {
     this.graph?.getCells().forEach(c => {
       if (c.isNode()) {
         const data = c.getData() as Record<string, unknown> | undefined
-        if (data?.isForkNode) return
+        if (data?.isForkNode || data?.isGroup) return
       }
       this.graph!.select(c)
     })
