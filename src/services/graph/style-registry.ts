@@ -21,6 +21,12 @@ export function getHierarchyNodeStyle(hierarchyLevel: number, _nodeType: NodeTyp
   return HIERARCHY_LEVEL_COLORS[level]
 }
 
+const FALLBACK_EDGE_STYLE: Pick<EdgeStyle, 'stroke' | 'strokeDasharray' | 'arrowType'> = {
+  stroke: '#333333',
+  strokeDasharray: null,
+  arrowType: 'solid-triangle' as ArrowType,
+}
+
 const RELATION_TYPE_STYLES: Record<RelationType, Pick<EdgeStyle, 'stroke' | 'strokeDasharray' | 'arrowType'>> = {
   position: { stroke: '#1890FF', strokeDasharray: null, arrowType: 'solid-triangle' },
   action: { stroke: '#52c41a', strokeDasharray: null, arrowType: 'solid-triangle' },
@@ -46,8 +52,8 @@ export function getDefaultNodeStyle(nodeType: NodeType): NodeStyle {
   }
 }
 
-export function getDefaultEdgeStyle(relationType: RelationType): EdgeStyle {
-  const styleMap = RELATION_TYPE_STYLES[relationType]
+export function getDefaultEdgeStyle(relationType: RelationType | string): EdgeStyle {
+  const styleMap = RELATION_TYPE_STYLES[relationType as RelationType] || FALLBACK_EDGE_STYLE
   return {
     stroke: styleMap.stroke,
     strokeWidth: 4.5,

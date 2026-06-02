@@ -9,7 +9,7 @@ function getEdgeLabelText(data: EdgeData, isChinese: boolean): string {
 }
 
 export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<string, unknown> {
-  const style = data.style || getDefaultEdgeStyle(data.relationType)
+  const style = (data.style && Object.keys(data.style).length > 0) ? data.style : getDefaultEdgeStyle(data.relationType)
   const marker = arrowTypeToMarker(style.arrowType)
 
   const edgeConfig: Record<string, unknown> = {
@@ -54,6 +54,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
             rx: 4,
             ry: 4,
             cursor: 'move',
+            pointerEvents: 'all',
           },
           labelText: {
             text: getEdgeLabelText(data, isChinese),
@@ -68,6 +69,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
             strokeWidth: 6,
             paintOrder: 'stroke fill',
             strokeLinejoin: 'round',
+            pointerEvents: 'none',
           },
         },
         position: {
@@ -80,6 +82,7 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
       originalText: data.originalText,
       chineseText: data.chineseText,
       relationType: data.relationType,
+      style,
       labelDetached: false,
     },
     zIndex: 10,
@@ -94,7 +97,7 @@ export function buildTrunkEdge(
   mergedEdgeIds: string[],
   isChinese: boolean = false,
 ): Record<string, unknown> {
-  const style = firstEdgeData.style || getDefaultEdgeStyle(firstEdgeData.relationType)
+  const style = (firstEdgeData.style && Object.keys(firstEdgeData.style).length > 0) ? firstEdgeData.style : getDefaultEdgeStyle(firstEdgeData.relationType)
   const sourceMarker = firstEdgeData.style?.arrowType === 'both'
     ? { name: arrowTypeToMarker(style.arrowType) }
     : undefined
@@ -135,6 +138,7 @@ export function buildTrunkEdge(
             rx: 4,
             ry: 4,
             cursor: 'move',
+            pointerEvents: 'all',
           },
           labelText: {
             text: getEdgeLabelText(firstEdgeData, isChinese),
@@ -149,6 +153,7 @@ export function buildTrunkEdge(
             strokeWidth: 6,
             paintOrder: 'stroke fill',
             strokeLinejoin: 'round',
+            pointerEvents: 'none',
           },
         },
         position: {
@@ -161,6 +166,7 @@ export function buildTrunkEdge(
       originalText: firstEdgeData.originalText,
       chineseText: firstEdgeData.chineseText,
       relationType: firstEdgeData.relationType,
+      style,
       labelDetached: false,
       isTrunk: true,
       realSourceId: firstEdgeData.source,
@@ -175,7 +181,7 @@ export function buildBranchEdge(
   edgeData: EdgeData,
   forkNodeId: string,
 ): Record<string, unknown> {
-  const style = edgeData.style || getDefaultEdgeStyle(edgeData.relationType)
+  const style = (edgeData.style && Object.keys(edgeData.style).length > 0) ? edgeData.style : getDefaultEdgeStyle(edgeData.relationType)
   const marker = arrowTypeToMarker(style.arrowType)
 
   return {
@@ -200,6 +206,7 @@ export function buildBranchEdge(
       originalText: edgeData.originalText,
       chineseText: edgeData.chineseText,
       relationType: edgeData.relationType,
+      style,
       isBranch: true,
       forkNodeId,
       realTargetId: edgeData.target,
