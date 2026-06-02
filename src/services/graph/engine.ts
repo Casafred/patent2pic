@@ -110,6 +110,35 @@ export class GraphEngine {
       },
     })
 
+    this.graph.on('edge:mouseenter', ({ edge }: { edge: any }) => {
+      const data = edge.getData() as Record<string, unknown> | undefined
+      if (data?.isBranch) return
+      edge.addTools([
+        { name: 'source-arrowhead', args: { attrs: { fill: '#1890FF', stroke: '#1890FF' } } },
+        { name: 'target-arrowhead', args: { attrs: { fill: '#1890FF', stroke: '#1890FF' } } },
+      ])
+    })
+
+    this.graph.on('edge:mouseleave', ({ edge }: { edge: any }) => {
+      edge.removeTools()
+    })
+
+    this.graph.on('edge:click', ({ edge }: { edge: any }) => {
+      const data = edge.getData() as Record<string, unknown> | undefined
+      if (data?.isBranch || data?.isTrunk) return
+      this.highlightEdge(edge.id)
+    })
+
+    this.graph.on('edge:label:click', ({ edge }: { edge: any }) => {
+      const data = edge.getData() as Record<string, unknown> | undefined
+      if (data?.isBranch || data?.isTrunk) return
+      this.highlightEdge(edge.id)
+    })
+
+    this.graph.on('blank:click', () => {
+      this.clearHighlight()
+    })
+
     this.graph.use(new Selection({
       enabled: true,
       rubberband: true,
@@ -333,9 +362,23 @@ export class GraphEngine {
     }
 
     if (result.groups && result.groups.length > 0) {
-      timingStart(`    │    渲染分组`)
-      this.renderGroups(result.groups, isChinese)
-      timingEnd(`    │    渲染分组`)
+      const autoGroupMemberIds = new Set<string>()
+      for (const [, info] of autoGroupInfoMap) {
+        for (const memberId of info.memberNodeIds) {
+          autoGroupMemberIds.add(memberId)
+        }
+      }
+
+      const filteredGroups = result.groups.filter(group => {
+        const overlap = group.memberNodeIds.filter(id => autoGroupMemberIds.has(id))
+        return overlap.length < group.memberNodeIds.length * 0.5
+      })
+
+      if (filteredGroups.length > 0) {
+        timingStart(`    │    渲染分组`)
+        this.renderGroups(filteredGroups, isChinese)
+        timingEnd(`    │    渲染分组`)
+      }
     }
 
     this.graph.stopBatch('build')
@@ -772,6 +815,75 @@ export class GraphEngine {
 
   rebindGroupTracking(): void {
     this.bindGroupTracking()
+  }
+
+  private highlightedEdgeId: string | null = null
+
+  highlightEdge(edgeId: string): void {
+    this.clearHighlight()
+    if (!this.graph) return
+
+    const cell = this.graph.getCellById(edgeId)
+    if (!cell || !cell.isEdge()) return
+
+    this.highlightedEdgeId = edgeId
+
+    const edge = cell as unknown as {
+      attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
+      getSourceCellId: () => string | null
+      getTargetCellId: () => string | null
+    }
+
+    edge.attr('line/strokeWidth', 5)
+    edge.attr('line/stroke', '#1890FF')
+
+    const sourceId = edge.getSourceCellId()
+    const targetId = edge.getTargetCellId()
+
+    for (const nodeId of [sourceId, targetId]) {
+      if (!nodeId) continue
+      const nodeCell = this.graph!.getCellById(nodeId)
+      if (!nodeCell || !nodeCell.isNode()) continue
+      const n = nodeCell as unknown as { attr: (path: string, value?: unknown) => void }
+      n.attr('body/strokeWidth', 4)
+      n.attr('body/stroke', '#1890FF')
+    }
+  }
+
+  clearHighlight(): void {
+    if (!this.graph || !this.highlightedEdgeId) return
+
+    const edgeId = this.highlightedEdgeId
+    this.highlightedEdgeId = null
+
+    const cell = this.graph.getCellById(edgeId)
+    if (!cell || !cell.isEdge()) return
+
+    const edge = cell as unknown as {
+      attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
+      getSourceCellId: () => string | null
+      getTargetCellId: () => string | null
+      getData: () => Record<string, unknown> | undefined
+    }
+
+    const data = edge.getData()
+    const style = data?.style as Record<string, unknown> | undefined
+    edge.attr('line/strokeWidth', (style?.strokeWidth as number) ?? 2)
+    edge.attr('line/stroke', (style?.stroke as string) ?? '#333333')
+
+    const sourceId = edge.getSourceCellId()
+    const targetId = edge.getTargetCellId()
+
+    for (const nodeId of [sourceId, targetId]) {
+      if (!nodeId) continue
+      const nodeCell = this.graph!.getCellById(nodeId)
+      if (!nodeCell || !nodeCell.isNode()) continue
+      const nodeData = nodeCell.getData() as Record<string, unknown> | undefined
+      const nodeStyle = nodeData?.style as Record<string, unknown> | undefined
+      const n = nodeCell as unknown as { attr: (path: string, value?: unknown) => void }
+      n.attr('body/strokeWidth', (nodeStyle?.strokeWidth as number) ?? 2)
+      n.attr('body/stroke', (nodeStyle?.stroke as string) ?? '#333333')
+    }
   }
 
   addNode(data: NodeData): string {
