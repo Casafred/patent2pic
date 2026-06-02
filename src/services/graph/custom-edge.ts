@@ -30,59 +30,6 @@ function getConnectionSide(
   }
 }
 
-function ensurePerpendicularEntry(
-  route: Array<{ x: number; y: number }>,
-  bbox: { x: number; y: number; width: number; height: number },
-  side: Direction,
-  padding: number,
-): Array<{ x: number; y: number }> {
-  if (route.length < 2) return route
-
-  const centerX = bbox.x + bbox.width / 2
-  const centerY = bbox.y + bbox.height / 2
-
-  let approachX: number
-  let approachY: number
-
-  switch (side) {
-    case 'right':
-      approachX = bbox.x + bbox.width + padding
-      approachY = centerY
-      break
-    case 'left':
-      approachX = bbox.x - padding
-      approachY = centerY
-      break
-    case 'bottom':
-      approachX = centerX
-      approachY = bbox.y + bbox.height + padding
-      break
-    case 'top':
-      approachX = centerX
-      approachY = bbox.y - padding
-      break
-  }
-
-  const result = [...route]
-  const lastIdx = result.length - 1
-  const last = result[lastIdx]
-  const prev = result[lastIdx - 1]
-
-  const isHorizSide = side === 'right' || side === 'left'
-  const segDx = Math.abs(last.x - prev.x)
-  const segDy = Math.abs(last.y - prev.y)
-
-  if (isHorizSide && segDx <= segDy) {
-    result[lastIdx] = { x: approachX, y: prev.y }
-    result.push({ x: approachX, y: approachY })
-  } else if (!isHorizSide && segDy <= segDx) {
-    result[lastIdx] = { x: prev.x, y: approachY }
-    result.push({ x: approachX, y: approachY })
-  }
-
-  return result
-}
-
 function perpendicularManhattanRouter(
   this: EdgeView,
   vertices: Array<{ x: number; y: number }>,
@@ -125,16 +72,13 @@ function perpendicularManhattanRouter(
     targetBBox.width, targetBBox.height,
   )
 
-  const padding = (options.padding as number) || 20
-
   const enhancedOptions = {
     ...options,
     startDirections: [startSide],
     endDirections: [endSide],
   }
 
-  const route = manhattanFn.call(edgeView, vertices, enhancedOptions, edgeView)
-  return ensurePerpendicularEntry(route, targetBBox, endSide, padding)
+  return manhattanFn.call(edgeView, vertices, enhancedOptions, edgeView)
 }
 
 interface LabelPositionObject {
