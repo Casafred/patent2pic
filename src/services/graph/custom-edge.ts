@@ -30,74 +30,6 @@ function getConnectionSide(
   }
 }
 
-function ensurePerpendicularApproach(
-  route: Array<{ x: number; y: number }>,
-  bbox: { x: number; y: number; width: number; height: number },
-  side: Direction,
-  padding: number,
-  isTarget: boolean,
-): Array<{ x: number; y: number }> {
-  if (route.length === 0) return route
-
-  const centerX = bbox.x + bbox.width / 2
-  const centerY = bbox.y + bbox.height / 2
-  const isHorizSide = side === 'right' || side === 'left'
-
-  const vertex = isTarget ? route[route.length - 1] : route[0]
-
-  if (isHorizSide && Math.abs(vertex.y - centerY) < 0.5) return route
-  if (!isHorizSide && Math.abs(vertex.x - centerX) < 0.5) return route
-
-  let approachX: number
-  let approachY: number
-  switch (side) {
-    case 'right':  approachX = bbox.x + bbox.width + padding; approachY = centerY; break
-    case 'left':   approachX = bbox.x - padding;              approachY = centerY; break
-    case 'bottom': approachX = centerX;                        approachY = bbox.y + bbox.height + padding; break
-    case 'top':    approachX = centerX;                        approachY = bbox.y - padding; break
-  }
-
-  const result = [...route]
-
-  if (isTarget) {
-    const last = result[result.length - 1]
-    if (isHorizSide) {
-      if (Math.abs(last.x - approachX) < 0.5) {
-        result.push({ x: approachX, y: approachY })
-      } else {
-        result.push({ x: approachX, y: last.y })
-        result.push({ x: approachX, y: approachY })
-      }
-    } else {
-      if (Math.abs(last.y - approachY) < 0.5) {
-        result.push({ x: approachX, y: approachY })
-      } else {
-        result.push({ x: last.x, y: approachY })
-        result.push({ x: approachX, y: approachY })
-      }
-    }
-  } else {
-    const first = result[0]
-    if (isHorizSide) {
-      if (Math.abs(first.x - approachX) < 0.5) {
-        result.unshift({ x: approachX, y: approachY })
-      } else {
-        result.unshift({ x: approachX, y: first.y })
-        result.unshift({ x: approachX, y: approachY })
-      }
-    } else {
-      if (Math.abs(first.y - approachY) < 0.5) {
-        result.unshift({ x: approachX, y: approachY })
-      } else {
-        result.unshift({ x: first.x, y: approachY })
-        result.unshift({ x: approachX, y: approachY })
-      }
-    }
-  }
-
-  return result
-}
-
 function perpendicularManhattanRouter(
   this: EdgeView,
   vertices: Array<{ x: number; y: number }>,
@@ -140,20 +72,13 @@ function perpendicularManhattanRouter(
     targetBBox.width, targetBBox.height,
   )
 
-  const padding = (options.padding as number) || 20
-
   const enhancedOptions = {
     ...options,
     startDirections: [startSide],
     endDirections: [endSide],
   }
 
-  const route = manhattanFn.call(edgeView, vertices, enhancedOptions, edgeView)
-
-  const withTargetFix = ensurePerpendicularApproach(route, targetBBox, endSide, padding, true)
-  const withBothFix = ensurePerpendicularApproach(withTargetFix, sourceBBox, startSide, padding, false)
-
-  return withBothFix
+  return manhattanFn.call(edgeView, vertices, enhancedOptions, edgeView)
 }
 
 interface LabelPositionObject {

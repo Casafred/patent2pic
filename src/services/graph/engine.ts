@@ -363,16 +363,28 @@ export class GraphEngine {
     }
 
     if (result.groups && result.groups.length > 0) {
-      const autoGroupMemberIds = new Set<string>()
-      for (const [, info] of autoGroupInfoMap) {
-        for (const memberId of info.memberNodeIds) {
-          autoGroupMemberIds.add(memberId)
-        }
+      const autoGroupMemberSets: Set<string>[] = []
+      const autoGroupSourceIds = new Set<string>()
+      for (const [sourceId, info] of autoGroupInfoMap) {
+        autoGroupMemberSets.push(new Set(info.memberNodeIds))
+        autoGroupSourceIds.add(sourceId)
       }
 
       const filteredGroups = result.groups.filter(group => {
-        const overlap = group.memberNodeIds.filter(id => autoGroupMemberIds.has(id))
-        return overlap.length < group.memberNodeIds.length * 0.5
+        const groupMemberSet = new Set(group.memberNodeIds)
+
+        for (const autoMemberSet of autoGroupMemberSets) {
+          const overlapCount = group.memberNodeIds.filter(id => autoMemberSet.has(id)).length
+          if (overlapCount >= Math.min(groupMemberSet.size, autoMemberSet.size) * 0.5) {
+            return false
+          }
+        }
+
+        if (group.memberNodeIds.some(id => autoGroupSourceIds.has(id))) {
+          return false
+        }
+
+        return true
       })
 
       if (filteredGroups.length > 0) {
