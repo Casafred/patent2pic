@@ -1,6 +1,85 @@
-import { Graph, Path, Edge, EdgeView } from '@antv/x6'
+import { Graph, Path, Edge, EdgeView, Registry } from '@antv/x6'
 import type { KeyValue, Markup } from '@antv/x6'
 import { ObjectExt } from '@antv/x6'
+
+type Direction = 'top' | 'right' | 'bottom' | 'left'
+
+function getConnectionSide(
+  nodeCenterX: number,
+  nodeCenterY: number,
+  otherCenterX: number,
+  otherCenterY: number,
+  nodeWidth: number,
+  nodeHeight: number,
+): Direction {
+  const dx = otherCenterX - nodeCenterX
+  const dy = otherCenterY - nodeCenterY
+
+  if (dx === 0 && dy === 0) return 'right'
+
+  const halfWidth = nodeWidth / 2
+  const halfHeight = nodeHeight / 2
+
+  const tx = dx !== 0 ? halfWidth / Math.abs(dx) : Infinity
+  const ty = dy !== 0 ? halfHeight / Math.abs(dy) : Infinity
+
+  if (tx <= ty) {
+    return dx > 0 ? 'right' : 'left'
+  } else {
+    return dy > 0 ? 'bottom' : 'top'
+  }
+}
+
+function perpendicularManhattanRouter(
+  this: EdgeView,
+  vertices: Array<{ x: number; y: number }>,
+  options: Record<string, unknown>,
+  edgeView: EdgeView,
+): Array<{ x: number; y: number }> {
+  const manhattanFn = Registry.Router.registry.get('manhattan')
+  if (!manhattanFn) {
+    return vertices
+  }
+
+  const edge = edgeView.cell
+  const sourceCell = edge.getSourceCell()
+  const targetCell = edge.getTargetCell()
+
+  if (!sourceCell || !targetCell) {
+    return manhattanFn.call(edgeView, vertices, options, edgeView)
+  }
+
+  const sourceData = sourceCell.getData() as Record<string, unknown> | undefined
+  const targetData = targetCell.getData() as Record<string, unknown> | undefined
+  if (sourceData?.isForkNode || targetData?.isForkNode) {
+    return manhattanFn.call(edgeView, vertices, options, edgeView)
+  }
+
+  const sourceBBox = sourceCell.getBBox()
+  const targetBBox = targetCell.getBBox()
+  const sourceCenter = sourceBBox.center
+  const targetCenter = targetBBox.center
+
+  const startSide = getConnectionSide(
+    sourceCenter.x, sourceCenter.y,
+    targetCenter.x, targetCenter.y,
+    sourceBBox.width, sourceBBox.height,
+  )
+
+  const endSide = getConnectionSide(
+    targetCenter.x, targetCenter.y,
+    sourceCenter.x, sourceCenter.y,
+    targetBBox.width, targetBBox.height,
+  )
+
+  const enhancedOptions = {
+    ...options,
+    startDirections: [startSide],
+    endDirections: [endSide],
+  }
+
+  return manhattanFn.call(edgeView, vertices, enhancedOptions, edgeView)
+}
 
 interface LabelPositionObject {
   distance: number
@@ -273,6 +352,7 @@ Graph.registerEdge('edge-with-gap', {
 }, true)
 
 export function setupCustomEdge(): void {
+  Graph.registerRouter('perpendicularManhattan', perpendicularManhattanRouter, true)
   EdgeView.registry.register('edge-with-gap-view', EdgeViewWithGap, true)
 }
 
