@@ -251,6 +251,18 @@ export class GraphEngine {
       style: getDefaultEdgeStyle(e.relationType),
     }))
 
+    // Find the maximum hierarchy level across all nodes
+    let maxHierarchyLevel = 0
+    for (const nodeData of nodeDataList) {
+      if ((nodeData.hierarchyLevel ?? 0) > maxHierarchyLevel) {
+        maxHierarchyLevel = nodeData.hierarchyLevel ?? 0
+      }
+    }
+    const nodeHierarchyMap = new Map<string, number>()
+    for (const nodeData of nodeDataList) {
+      nodeHierarchyMap.set(nodeData.id, nodeData.hierarchyLevel ?? 0)
+    }
+
     const autoGroupInfoMap = new Map<string, { memberNodeIds: string[] }>()
     const outgoingInfoMap = new Map<string, {
       containmentTargets: Set<string>
@@ -279,7 +291,9 @@ export class GraphEngine {
       }
     }
     for (const [nodeId, info] of outgoingInfoMap) {
-      if (!info.hasOtherOutgoing && info.containmentTargets.size >= 3) {
+      // Only convert to group box for the highest hierarchy level node
+      const nodeLevel = nodeHierarchyMap.get(nodeId) ?? 0
+      if (!info.hasOtherOutgoing && info.containmentTargets.size >= 3 && nodeLevel >= maxHierarchyLevel) {
         autoGroupInfoMap.set(nodeId, {
           memberNodeIds: [...info.containmentTargets],
         })
@@ -1230,8 +1244,30 @@ export class GraphEngine {
     for (const node of nodes) {
       const data = node.getData() as Record<string, unknown> | undefined
       if (data?.isForkNode || data?.isGroup) continue
-      const n = node as unknown as { attr: (path: string, value?: unknown) => unknown }
+      const n = node as unknown as {
+        attr: (path: string, value?: unknown) => unknown
+        getSize: () => { width: number; height: number }
+        resize: (width: number, height: number) => void
+        getData: () => Record<string, unknown> | undefined
+        setData: (data: Record<string, unknown>) => void
+      }
       n.attr('label/fontSize', fontSize)
+
+      // Recalculate node size based on new font size to prevent text overflow
+      const originalText = (data?.originalText as string) || ''
+      const chineseText = (data?.chineseText as string) || ''
+      const nodeStyle = (data?.style as Record<string, unknown>) || {}
+      const fontFamily = (nodeStyle.fontFamily as string) || '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+      const fontWeight = (nodeStyle.fontWeight as string) || 'bold'
+      const isChinese = (data?.isChinese as boolean) || false
+      const currentSize = n.getSize()
+      const newSize = calculateNodeSize(originalText, chineseText, isChinese, fontSize, fontFamily, fontWeight, currentSize.width, currentSize.height)
+      n.resize(newSize.width, newSize.height)
+
+      // Update stored style
+      const currentData = n.getData() || {}
+      const currentStyle = (currentData.style as Record<string, unknown>) || {}
+      n.setData({ ...currentData, style: { ...currentStyle, fontSize } })
     }
     this.graph.stopBatch('fontSize')
   }
@@ -1241,7 +1277,7 @@ export class GraphEngine {
     this.graph.startBatch('fontSize')
     const edges = this.graph.getEdges()
     for (const edge of edges) {
-      const e = edge as { getLabels: () => unknown[]; setLabels: (labels: unknown[]) => void }
+      const e = edge as { getLabels: () => unknown[]; setLabels: (labels: unknown[]) => void; getData: () => Record<string, unknown> | undefined; setData: (data: Record<string, unknown>) => void }
       const labels = e.getLabels()
       if (labels.length > 0) {
         const firstLabel = labels[0] as Record<string, unknown>
@@ -1256,11 +1292,17 @@ export class GraphEngine {
             labelText: {
               ...existingLabelText,
               fontSize,
+              lineHeight: fontSize * 1.6,
             },
           },
         }
         e.setLabels([newLabel])
       }
+
+      // Update stored style
+      const edgeData = e.getData() || {}
+      const edgeStyle = (edgeData.style as Record<string, unknown>) || {}
+      e.setData({ ...edgeData, style: { ...edgeStyle, fontSize } })
     }
     this.graph.stopBatch('fontSize')
   }
