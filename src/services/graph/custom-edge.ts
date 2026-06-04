@@ -30,29 +30,96 @@ function getConnectionSide(
   }
 }
 
+interface BBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function getExitPoint(bbox: BBox, side: Direction): { x: number; y: number } {
+  const cx = bbox.x + bbox.width / 2
+  const cy = bbox.y + bbox.height / 2
+  switch (side) {
+    case 'top':    return { x: cx, y: bbox.y }
+    case 'bottom': return { x: cx, y: bbox.y + bbox.height }
+    case 'left':   return { x: bbox.x, y: cy }
+    case 'right':  return { x: bbox.x + bbox.width, y: cy }
+  }
+}
+
+function isHorizontal(side: Direction): boolean {
+  return side === 'left' || side === 'right'
+}
+
+function orthRouter(
+  sourceBBox: BBox,
+  targetBBox: BBox,
+  startSide: Direction,
+  endSide: Direction,
+  jetty: number,
+): Array<{ x: number; y: number }> {
+  const startPt = getExitPoint(sourceBBox, startSide)
+  const endPt = getExitPoint(targetBBox, endSide)
+
+  const startHoriz = isHorizontal(startSide)
+  const endHoriz = isHorizontal(endSide)
+
+  const points: Array<{ x: number; y: number }> = [startPt]
+
+  if (startHoriz && endHoriz) {
+    if (startSide === endSide) {
+      const midX = startSide === 'right'
+        ? Math.max(startPt.x, endPt.x) + jetty
+        : Math.min(startPt.x, endPt.x) - jetty
+      points.push({ x: midX, y: startPt.y })
+      points.push({ x: midX, y: endPt.y })
+    } else {
+      const midX = (startPt.x + endPt.x) / 2
+      points.push({ x: midX, y: startPt.y })
+      points.push({ x: midX, y: endPt.y })
+    }
+  } else if (!startHoriz && !endHoriz) {
+    if (startSide === endSide) {
+      const midY = startSide === 'bottom'
+        ? Math.max(startPt.y, endPt.y) + jetty
+        : Math.min(startPt.y, endPt.y) - jetty
+      points.push({ x: startPt.x, y: midY })
+      points.push({ x: endPt.x, y: midY })
+    } else {
+      const midY = (startPt.y + endPt.y) / 2
+      points.push({ x: startPt.x, y: midY })
+      points.push({ x: endPt.x, y: midY })
+    }
+  } else if (startHoriz && !endHoriz) {
+    points.push({ x: endPt.x, y: startPt.y })
+  } else {
+    points.push({ x: startPt.x, y: endPt.y })
+  }
+
+  points.push(endPt)
+  return points
+}
+
 function perpendicularManhattanRouter(
   this: EdgeView,
   vertices: Array<{ x: number; y: number }>,
   options: Record<string, unknown>,
   edgeView: EdgeView,
 ): Array<{ x: number; y: number }> {
-  const manhattanFn = Registry.Router.registry.get('manhattan')
-  if (!manhattanFn) {
-    return vertices
-  }
-
   const edge = edgeView.cell
   const sourceCell = edge.getSourceCell()
   const targetCell = edge.getTargetCell()
 
   if (!sourceCell || !targetCell) {
-    return manhattanFn.call(edgeView, vertices, options, edgeView)
+    return vertices
   }
 
   const sourceData = sourceCell.getData() as Record<string, unknown> | undefined
   const targetData = targetCell.getData() as Record<string, unknown> | undefined
   if (sourceData?.isForkNode || targetData?.isForkNode) {
-    return manhattanFn.call(edgeView, vertices, options, edgeView)
+    const manhattanFn = Registry.Router.registry.get('manhattan')
+    return manhattanFn ? manhattanFn.call(edgeView, vertices, options, edgeView) : vertices
   }
 
   const sourceBBox = sourceCell.getBBox()
@@ -72,13 +139,15 @@ function perpendicularManhattanRouter(
     targetBBox.width, targetBBox.height,
   )
 
-  const enhancedOptions = {
-    ...options,
-    startDirections: [startSide],
-    endDirections: [endSide],
-  }
+  const jetty = (options.padding as number) || 20
 
-  return manhattanFn.call(edgeView, vertices, enhancedOptions, edgeView)
+  return orthRouter(
+    { x: sourceBBox.x, y: sourceBBox.y, width: sourceBBox.width, height: sourceBBox.height },
+    { x: targetBBox.x, y: targetBBox.y, width: targetBBox.width, height: targetBBox.height },
+    startSide,
+    endSide,
+    jetty,
+  )
 }
 
 interface LabelPositionObject {
