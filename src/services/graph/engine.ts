@@ -1442,38 +1442,33 @@ export class GraphEngine {
     let svgStr = ''
     this.graph.toSVG((svg: string) => {
       svgStr = svg
-    }, {
-      viewBox: {
-        x: contentBBox.x - padding,
-        y: contentBBox.y - padding,
-        width: contentBBox.width + padding * 2,
-        height: contentBBox.height + padding * 2,
-      },
-      preserveDimensions: {
-        width: contentBBox.width + padding * 2,
-        height: contentBBox.height + padding * 2,
-      },
-      copyStyles: true,
-      serializeImages: true,
-      stylesheet: [
-        'text { font-family: Arial, Helvetica, sans-serif; }',
-        '.x6-edge .x6-edge-label .x6-edge-label-text { font-family: Arial, Helvetica, sans-serif; }',
-      ].join('\n'),
     })
 
-    // Ensure proper xmlns declarations for standalone SVG file
-    if (svgStr && !svgStr.includes('xmlns="http://www.w3.org/2000/svg"')) {
-      svgStr = svgStr.replace(
-        /<svg/,
-        '<svg xmlns="http://www.w3.org/2000/svg"'
-      )
-    }
-    if (svgStr && !svgStr.includes('xmlns:xlink')) {
-      svgStr = svgStr.replace(
-        /<svg/,
-        '<svg xmlns:xlink="http://www.w3.org/1999/xlink"'
-      )
-    }
+    if (!svgStr) return ''
+
+    // Manually set viewBox and dimensions to ensure complete display
+    const svgWidth = contentBBox.width + padding * 2
+    const svgHeight = contentBBox.height + padding * 2
+    const viewBox = `${contentBBox.x - padding} ${contentBBox.y - padding} ${svgWidth} ${svgHeight}`
+
+    svgStr = svgStr.replace(
+      /<svg([^>]*)>/,
+      (_, attrs: string) => {
+        const cleaned = attrs
+          .replace(/\s*viewBox\s*=\s*["'][^"']*["']/g, '')
+          .replace(/\s*width\s*=\s*["'][^"']*["']/g, '')
+          .replace(/\s*height\s*=\s*["'][^"']*["']/g, '')
+        // Ensure xmlns declarations
+        let newAttrs = cleaned
+        if (!newAttrs.includes('xmlns="http://www.w3.org/2000/svg"')) {
+          newAttrs = ' xmlns="http://www.w3.org/2000/svg"' + newAttrs
+        }
+        if (!newAttrs.includes('xmlns:xlink')) {
+          newAttrs = ' xmlns:xlink="http://www.w3.org/1999/xlink"' + newAttrs
+        }
+        return `<svg${newAttrs} viewBox="${viewBox}" width="${svgWidth}" height="${svgHeight}">`
+      }
+    )
 
     return svgStr
   }
