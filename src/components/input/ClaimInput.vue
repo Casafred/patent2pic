@@ -73,6 +73,7 @@
             <el-icon v-if="getTaskForClaim(claim.id)!.status === 'running'" class="is-loading" :size="14"><Loading /></el-icon>
             <el-icon v-else-if="getTaskForClaim(claim.id)!.status === 'success'" :size="14" style="color: #67c23a"><CircleCheckFilled /></el-icon>
             <el-icon v-else-if="getTaskForClaim(claim.id)!.status === 'error'" :size="14" style="color: #f56c6c"><CircleCloseFilled /></el-icon>
+            <el-icon v-else-if="getTaskForClaim(claim.id)!.status === 'aborted'" :size="14" style="color: #909399"><CircleCloseFilled /></el-icon>
           </span>
         </div>
       </div>
@@ -113,7 +114,7 @@
               class="task-progress"
             />
             <span class="task-status-text">
-              {{ task.status === 'pending' ? '等待中' : task.status === 'running' ? '处理中' : task.status === 'success' ? '完成' : '失败' }}
+              {{ task.status === 'pending' ? '等待中' : task.status === 'running' ? '处理中' : task.status === 'success' ? '完成' : task.status === 'aborted' ? '已终止' : '失败' }}
             </span>
           </div>
         </div>
@@ -216,8 +217,7 @@ async function handleParallelGenerate(): Promise<void> {
 }
 
 function handleParallelAbort(): void {
-  // TODO: implement abort for parallel tasks
-  parallelExtract.reset()
+  parallelExtract.abortAll()
 }
 </script>
 

@@ -15,7 +15,7 @@ export interface ParallelTask {
   claimId: string
   claimIndex: number
   claimPreview: string
-  status: 'pending' | 'running' | 'success' | 'error'
+  status: 'pending' | 'running' | 'success' | 'error' | 'aborted'
   progress: number
   tabId: string
   errorMessage: string | null
@@ -37,6 +37,8 @@ export function useParallelExtract() {
 
   const tasks = ref<ParallelTask[]>([])
   const isRunning = ref(false)
+  let abortControllers: AbortController[] = []
+  let aborted = false
 
   const maxConcurrency = computed(() => {
     return getModelConcurrency(aiStore.activeProviderType, aiStore.activeModel)
@@ -47,13 +49,13 @@ export function useParallelExtract() {
   })
 
   const completedCount = computed(() =>
-    tasks.value.filter(t => t.status === 'success' || t.status === 'error').length
+    tasks.value.filter(t => t.status === 'success' || t.status === 'error' || t.status === 'aborted').length
   )
 
   const totalCount = computed(() => tasks.value.length)
 
   const allDone = computed(() =>
-    tasks.value.length > 0 && tasks.value.every(t => t.status === 'success' || t.status === 'error')
+    tasks.value.length > 0 && tasks.value.every(t => t.status === 'success' || t.status === 'error' || t.status === 'aborted')
   )
 
   function initTasks(claims: Claim[]): void {
@@ -70,6 +72,12 @@ export function useParallelExtract() {
   }
 
   async function processSingleClaim(claim: Claim, task: ParallelTask): Promise<void> {
+    if (aborted) {
+      task.status = 'aborted'
+      task.errorMessage = '用户终止'
+      return
+    }
+
     const startTime = Date.now()
     task.status = 'running'
     task.progress = 10
@@ -80,6 +88,7 @@ export function useParallelExtract() {
     graphStore.updateTabName(tab.id, `权利要求 ${claim.index}`)
 
     const abortController = new AbortController()
+    abortControllers.push(abortController)
     const providerType = aiStore.activeProviderType
     const model = aiStore.activeModel
     const claimPreview = claim.rawText.slice(0, 80).replace(/\n/g, ' ')
@@ -110,6 +119,7 @@ export function useParallelExtract() {
         },
         abortController.signal,
       )) {
+        if (aborted) break
         if (chunk.done) break
         fullContent += chunk.content
         task.progress = Math.min(80, 10 + (fullContent.length / 2000) * 70)
@@ -117,6 +127,14 @@ export function useParallelExtract() {
     } catch (err) {
       const isAbort = (err as Error).name === 'AbortError'
       streamError = isAbort ? '用户终止分析' : ((err as Error).message || '流式请求失败')
+    }
+
+    if (aborted) {
+      task.status = 'aborted'
+      task.errorMessage = '用户终止'
+      task.durationMs = Date.now() - startTime
+      graphStore.removeTab(tab.id)
+      return
     }
 
     if (streamError) {
@@ -253,6 +271,8 @@ export function useParallelExtract() {
     if (!aiStore.activeApiKey) return
 
     isRunning.value = true
+    aborted = false
+    abortControllers = []
     aiStore.isExtracting = true
     aiStore.extractError = null
 
@@ -266,6 +286,12 @@ export function useParallelExtract() {
     const executing = new Set<Promise<void>>()
 
     for (const task of queue) {
+      if (aborted) {
+        task.status = 'aborted'
+        task.errorMessage = '用户终止'
+        continue
+      }
+
       const claim = claimMap.get(task.claimId)
       if (!claim) continue
 
@@ -285,6 +311,35 @@ export function useParallelExtract() {
 
     isRunning.value = false
     aiStore.isExtracting = false
+    abortControllers = []
+  }
+
+  function abortAll(): void {
+    aborted = true
+    // Abort all active HTTP requests
+    for (const controller of abortControllers) {
+      try {
+        controller.abort()
+      } catch {
+        // ignore
+      }
+    }
+    abortControllers = []
+
+    // Mark all pending/running tasks as aborted
+    for (const task of tasks.value) {
+      if (task.status === 'pending' || task.status === 'running') {
+        task.status = 'aborted'
+        task.errorMessage = '用户终止'
+        // Remove tabs that were created for aborted tasks
+        if (task.tabId) {
+          graphStore.removeTab(task.tabId)
+        }
+      }
+    }
+
+    isRunning.value = false
+    aiStore.isExtracting = false
   }
 
   function reset(): void {
@@ -301,6 +356,7 @@ export function useParallelExtract() {
     totalCount,
     allDone,
     runParallel,
+    abortAll,
     reset,
   }
 }
