@@ -69,11 +69,20 @@ function getSideCenterPoint(
   }
 }
 
+function sideFromPortId(portId: string | undefined): Direction | null {
+  if (!portId) return null
+  if (portId.endsWith('-top')) return 'top'
+  if (portId.endsWith('-bottom')) return 'bottom'
+  if (portId.endsWith('-left')) return 'left'
+  if (portId.endsWith('-right')) return 'right'
+  return null
+}
+
 const perpendicularBoundary = function (
   line: Line,
   view: any,
   _magnet: SVGElement,
-  _options: Record<string, unknown>,
+  options: Record<string, unknown>,
 ): Point {
   const refPoint = line.start
   const anchorPoint = line.end
@@ -86,7 +95,8 @@ const perpendicularBoundary = function (
     bbox = new Rectangle(anchorPoint.x - 50, anchorPoint.y - 25, 100, 50)
   }
 
-  const side = inferSideFromRefPoint(refPoint.x, refPoint.y, {
+  const portSide = sideFromPortId(options.port as string | undefined)
+  const side = portSide ?? inferSideFromRefPoint(refPoint.x, refPoint.y, {
     x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height,
   })
 
@@ -242,13 +252,19 @@ function perpendicularManhattanRouter(
   const sourceCenter = sourceBBox.center
   const targetCenter = targetBBox.center
 
-  const startSide = getConnectionSide(
+  const sourceTerminal = edge.getSource() as unknown as Record<string, unknown>
+  const targetTerminal = edge.getTarget() as unknown as Record<string, unknown>
+
+  const startSideFromPort = sideFromPortId(sourceTerminal?.port as string | undefined)
+  const endSideFromPort = sideFromPortId(targetTerminal?.port as string | undefined)
+
+  const startSide = startSideFromPort ?? getConnectionSide(
     sourceCenter.x, sourceCenter.y,
     targetCenter.x, targetCenter.y,
     sourceBBox.width, sourceBBox.height,
   )
 
-  const endSide = getConnectionSide(
+  const endSide = endSideFromPort ?? getConnectionSide(
     targetCenter.x, targetCenter.y,
     sourceCenter.x, sourceCenter.y,
     targetBBox.width, targetBBox.height,

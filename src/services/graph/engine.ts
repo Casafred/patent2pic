@@ -80,16 +80,10 @@ export class GraphEngine {
             }
 
             if (edgeData?.originalText !== undefined) {
-              const newCell = type === 'source' ? sourceCell : targetCell
-              const newData = newCell.getData() as Record<string, unknown> | undefined
-              if (newData?.isForkNode || newData?.isGroup) return false
-
               if (type === 'source') {
-                const originalTarget = edge.getTargetCellId()
-                return targetCell.id === originalTarget
+                return sourceCell.id === edge.getSourceCellId() && targetCell.id === edge.getTargetCellId()
               }
-              const originalSource = edge.getSourceCellId()
-              return sourceCell.id === originalSource
+              return sourceCell.id === edge.getSourceCellId() && targetCell.id === edge.getTargetCellId()
             }
           }
 
