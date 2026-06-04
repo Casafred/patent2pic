@@ -1,6 +1,7 @@
 import { Graph, Path, Edge, EdgeView, Registry } from '@antv/x6'
 import type { KeyValue, Markup } from '@antv/x6'
 import { ObjectExt } from '@antv/x6'
+import { Line, Point, Rectangle } from '@antv/x6-geometry'
 
 type Direction = 'top' | 'right' | 'bottom' | 'left'
 
@@ -28,6 +29,73 @@ function getConnectionSide(
   } else {
     return dy > 0 ? 'bottom' : 'top'
   }
+}
+
+function inferSideFromRefPoint(
+  refX: number,
+  refY: number,
+  bbox: { x: number; y: number; width: number; height: number },
+): Direction {
+  const cx = bbox.x + bbox.width / 2
+  const cy = bbox.y + bbox.height / 2
+  const dx = refX - cx
+  const dy = refY - cy
+  const halfW = bbox.width / 2
+  const halfH = bbox.height / 2
+
+  if (dx === 0 && dy === 0) return 'right'
+
+  const tx = dx !== 0 ? halfW / Math.abs(dx) : Infinity
+  const ty = dy !== 0 ? halfH / Math.abs(dy) : Infinity
+
+  if (tx <= ty) {
+    return dx > 0 ? 'right' : 'left'
+  } else {
+    return dy > 0 ? 'bottom' : 'top'
+  }
+}
+
+function getSideCenterPoint(
+  bbox: { x: number; y: number; width: number; height: number },
+  side: Direction,
+): { x: number; y: number } {
+  const cx = bbox.x + bbox.width / 2
+  const cy = bbox.y + bbox.height / 2
+  switch (side) {
+    case 'right':  return { x: bbox.x + bbox.width, y: cy }
+    case 'left':   return { x: bbox.x, y: cy }
+    case 'bottom': return { x: cx, y: bbox.y + bbox.height }
+    case 'top':    return { x: cx, y: bbox.y }
+  }
+}
+
+const perpendicularBoundary = function (
+  line: Line,
+  view: any,
+  _magnet: SVGElement,
+  _options: Record<string, unknown>,
+): Point {
+  const refPoint = line.start
+  const anchorPoint = line.end
+
+  let bbox: Rectangle
+  const cellView = view
+  if (cellView && cellView.cell && cellView.cell.isNode()) {
+    bbox = cellView.cell.getBBox()
+  } else {
+    bbox = new Rectangle(anchorPoint.x - 50, anchorPoint.y - 25, 100, 50)
+  }
+
+  const side = inferSideFromRefPoint(refPoint.x, refPoint.y, {
+    x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height,
+  })
+
+  const pt = getSideCenterPoint(
+    { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height },
+    side,
+  )
+
+  return new Point(pt.x, pt.y)
 }
 
 interface BBox {
@@ -469,6 +537,7 @@ Graph.registerEdge('edge-with-gap', {
 
 export function setupCustomEdge(): void {
   Graph.registerRouter('perpendicularManhattan', perpendicularManhattanRouter, true)
+  Graph.registerConnectionPoint('perpendicularBoundary', perpendicularBoundary as any, true)
   EdgeView.registry.register('edge-with-gap-view', EdgeViewWithGap, true)
 }
 

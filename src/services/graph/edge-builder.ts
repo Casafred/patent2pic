@@ -16,8 +16,8 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
     id: data.id,
     shape: 'edge-with-gap',
     view: 'edge-with-gap-view',
-    source: { cell: data.source, port: data.sourcePort, connectionPoint: 'boundary' },
-    target: { cell: data.target, port: data.targetPort, connectionPoint: 'boundary' },
+    source: { cell: data.source, port: data.sourcePort, connectionPoint: 'perpendicularBoundary' },
+    target: { cell: data.target, port: data.targetPort, connectionPoint: 'perpendicularBoundary' },
     router: { name: 'perpendicularManhattan', args: { padding: 20, step: 10 } },
     connector: { name: 'rounded', args: { radius: 8 } },
     attrs: {
@@ -106,8 +106,8 @@ export function buildTrunkEdge(
     id: `trunk-${forkNodeId}`,
     shape: 'edge-with-gap',
     view: 'edge-with-gap-view',
-    source: { cell: firstEdgeData.source, connectionPoint: 'boundary' },
-    target: { cell: forkNodeId, connectionPoint: 'boundary' },
+    source: { cell: firstEdgeData.source, connectionPoint: 'perpendicularBoundary' },
+    target: { cell: forkNodeId, connectionPoint: 'perpendicularBoundary' },
     router: { name: 'perpendicularManhattan', args: { padding: 20, step: 10 } },
     connector: { name: 'rounded', args: { radius: 8 } },
     attrs: {
@@ -188,8 +188,8 @@ export function buildBranchEdge(
     id: `branch-${edgeData.id}`,
     shape: 'edge-with-gap',
     view: 'edge-with-gap-view',
-    source: { cell: forkNodeId, connectionPoint: 'boundary' },
-    target: { cell: edgeData.target, connectionPoint: 'boundary' },
+    source: { cell: forkNodeId, connectionPoint: 'perpendicularBoundary' },
+    target: { cell: edgeData.target, connectionPoint: 'perpendicularBoundary' },
     router: { name: 'perpendicularManhattan', args: { padding: 20, step: 10 } },
     connector: { name: 'rounded', args: { radius: 8 } },
     attrs: {

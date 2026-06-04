@@ -37,7 +37,7 @@ export class GraphEngine {
         router: { name: 'perpendicularManhattan', args: { padding: 20, step: 10 } },
         connector: { name: 'rounded', args: { radius: 8 } },
         anchor: 'center',
-        connectionPoint: 'boundary',
+        connectionPoint: 'perpendicularBoundary',
         allowBlank: false,
         allowLoop: false,
         allowMulti: true,
