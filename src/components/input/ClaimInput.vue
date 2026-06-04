@@ -19,8 +19,8 @@
             :disabled="!claimStore.rawText.trim() || aiStore.isExtracting || !aiStore.activeApiKey"
             @click="handleGenerate"
           >
-            <el-icon v-if="aiStore.isExtracting" class="is-loading"><Loading /></el-icon>
-            {{ aiStore.isExtracting ? '抽取中...' : '生成分解图' }}
+            <el-icon v-if="aiStore.isExtracting && !parallelExtract.isRunning.value" class="is-loading"><Loading /></el-icon>
+            {{ aiStore.isExtracting && !parallelExtract.isRunning.value ? '抽取中...' : '生成分解图' }}
           </el-button>
         </div>
       </div>
@@ -42,7 +42,24 @@
 
       <div v-if="claimStore.claims.length > 1" class="claim-list">
         <div class="claim-list-header">
-          <h4>识别到 {{ claimStore.claims.length }} 条权利要求</h4>
+          <div class="claim-list-header-row">
+            <h4>识别到 {{ claimStore.claims.length }} 条权利要求</h4>
+            <el-button
+              size="small"
+              type="success"
+              :disabled="aiStore.isExtracting || !aiStore.activeApiKey"
+              @click="handleParallelGenerate"
+            >
+              并行处理全部 ({{ effectiveConc }} 并发)
+            </el-button>
+          </div>
+          <div class="concurrency-hint">
+            <el-icon :size="12"><InfoFilled /></el-icon>
+            当前模型 {{ aiStore.activeModel }} 最大并发: {{ parallelExtract.maxConcurrency.value }}
+            <span v-if="parallelExtract.maxConcurrency.value < claimStore.claims.length" class="concurrency-warn">
+              · 如需更高并发请选择并发数更高的模型
+            </span>
+          </div>
         </div>
         <div
           v-for="claim in claimStore.claims"
@@ -52,14 +69,53 @@
         >
           <span class="claim-index">{{ claim.index }}</span>
           <span class="claim-preview">{{ getClaimPreview(claim) }}</span>
+          <span v-if="getTaskForClaim(claim.id)" class="claim-task-status">
+            <el-icon v-if="getTaskForClaim(claim.id)!.status === 'running'" class="is-loading" :size="14"><Loading /></el-icon>
+            <el-icon v-else-if="getTaskForClaim(claim.id)!.status === 'success'" :size="14" style="color: #67c23a"><CircleCheckFilled /></el-icon>
+            <el-icon v-else-if="getTaskForClaim(claim.id)!.status === 'error'" :size="14" style="color: #f56c6c"><CircleCloseFilled /></el-icon>
+          </span>
         </div>
       </div>
 
-      <div v-if="aiStore.isExtracting" class="extract-progress">
+      <!-- Single extraction progress -->
+      <div v-if="aiStore.isExtracting && !parallelExtract.isRunning.value" class="extract-progress">
         <el-progress :percentage="100" :indeterminate="true" :show-text="false" />
         <div class="progress-row">
           <p class="progress-text">AI 正在分析权利要求结构...</p>
           <el-button size="small" type="danger" @click="abort">终止</el-button>
+        </div>
+      </div>
+
+      <!-- Parallel extraction progress -->
+      <div v-if="parallelExtract.isRunning.value" class="extract-progress">
+        <el-progress
+          :percentage="parallelProgress"
+          :format="() => `${parallelExtract.completedCount.value}/${parallelExtract.totalCount.value}`"
+        />
+        <div class="progress-row">
+          <p class="progress-text">
+            并行处理中... {{ parallelExtract.completedCount.value }}/{{ parallelExtract.totalCount.value }} 完成
+          </p>
+          <el-button size="small" type="danger" @click="handleParallelAbort">终止全部</el-button>
+        </div>
+        <div class="parallel-tasks">
+          <div
+            v-for="task in parallelExtract.tasks.value"
+            :key="task.claimId"
+            :class="['parallel-task-item', task.status]"
+          >
+            <span class="task-index">{{ task.claimIndex }}</span>
+            <el-progress
+              :percentage="task.progress"
+              :stroke-width="4"
+              :show-text="false"
+              :status="task.status === 'success' ? 'success' : task.status === 'error' ? 'exception' : undefined"
+              class="task-progress"
+            />
+            <span class="task-status-text">
+              {{ task.status === 'pending' ? '等待中' : task.status === 'running' ? '处理中' : task.status === 'success' ? '完成' : '失败' }}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -86,17 +142,19 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Loading, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
+import { Loading, ArrowDown, ArrowUp, InfoFilled, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { useClaimStore } from '@/stores/claim'
 import { useAIStore } from '@/stores/ai'
 import { useGraphStore } from '@/stores/graph'
 import { useAIExtract } from '@/composables/useAIExtract'
+import { useParallelExtract } from '@/composables/useParallelExtract'
 import { parseClaims, getClaimPreview } from '@/services/claim/parser'
 
 const claimStore = useClaimStore()
 const aiStore = useAIStore()
 const graphStore = useGraphStore()
 const { extractActiveClaim, error: extractError, abort } = useAIExtract()
+const parallelExtract = useParallelExtract()
 
 const hasGraphData = computed(() => {
   const tab = graphStore.activeTab
@@ -115,6 +173,19 @@ const collapsedPreview = computed(() => {
   return preview.length > 40 ? preview.slice(0, 40) + '...' : preview
 })
 
+const effectiveConc = computed(() => parallelExtract.effectiveConcurrency.value)
+
+const parallelProgress = computed(() => {
+  const total = parallelExtract.totalCount.value
+  if (total === 0) return 0
+  const done = parallelExtract.completedCount.value
+  return Math.round((done / total) * 100)
+})
+
+function getTaskForClaim(claimId: string) {
+  return parallelExtract.tasks.value.find(t => t.claimId === claimId)
+}
+
 function handleTextInput(): void {
   const claims = parseClaims(claimStore.rawText)
   claimStore.setClaims(claims)
@@ -132,6 +203,21 @@ async function handleGenerate(): Promise<void> {
   if (result) {
     claimStore.collapseInput()
   }
+}
+
+async function handleParallelGenerate(): Promise<void> {
+  if (claimStore.claims.length === 0) {
+    handleTextInput()
+  }
+  if (claimStore.claims.length === 0) return
+  if (!aiStore.activeApiKey) return
+
+  await parallelExtract.runParallel(claimStore.claims)
+}
+
+function handleParallelAbort(): void {
+  // TODO: implement abort for parallel tasks
+  parallelExtract.reset()
 }
 </script>
 
@@ -195,10 +281,29 @@ async function handleGenerate(): Promise<void> {
   background: var(--bg-tertiary);
 }
 
+.claim-list-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .claim-list-header h4 {
   font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.concurrency-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.concurrency-warn {
+  color: #e6a23c;
 }
 
 .claim-item {
@@ -238,6 +343,14 @@ async function handleGenerate(): Promise<void> {
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
   line-height: 1.5;
+  flex: 1;
+  min-width: 0;
+}
+
+.claim-task-status {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 .extract-progress {
@@ -256,6 +369,60 @@ async function handleGenerate(): Promise<void> {
   color: var(--text-tertiary);
   text-align: center;
   margin-top: var(--spacing-xs);
+}
+
+.parallel-tasks {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.parallel-task-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.parallel-task-item .task-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+  background: var(--border-color);
+  color: var(--text-secondary);
+}
+
+.parallel-task-item.success .task-index {
+  background: #67c23a;
+  color: white;
+}
+
+.parallel-task-item.error .task-index {
+  background: #f56c6c;
+  color: white;
+}
+
+.parallel-task-item.running .task-index {
+  background: var(--color-primary);
+  color: white;
+}
+
+.task-progress {
+  flex: 1;
+}
+
+.task-status-text {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  min-width: 36px;
+  text-align: right;
 }
 
 .extract-error {
