@@ -37,19 +37,38 @@ interface BBox {
   height: number
 }
 
-function getExitPoint(bbox: BBox, side: Direction): { x: number; y: number } {
+function isHorizontal(side: Direction): boolean {
+  return side === 'left' || side === 'right'
+}
+
+function getOutsidePoint(bbox: BBox, side: Direction, jetty: number): { x: number; y: number } {
   const cx = bbox.x + bbox.width / 2
   const cy = bbox.y + bbox.height / 2
   switch (side) {
-    case 'top':    return { x: cx, y: bbox.y }
-    case 'bottom': return { x: cx, y: bbox.y + bbox.height }
-    case 'left':   return { x: bbox.x, y: cy }
-    case 'right':  return { x: bbox.x + bbox.width, y: cy }
+    case 'right':  return { x: bbox.x + bbox.width + jetty, y: cy }
+    case 'left':   return { x: bbox.x - jetty, y: cy }
+    case 'bottom': return { x: cx, y: bbox.y + bbox.height + jetty }
+    case 'top':    return { x: cx, y: bbox.y - jetty }
   }
 }
 
-function isHorizontal(side: Direction): boolean {
-  return side === 'left' || side === 'right'
+function segmentCrossesBBox(
+  x1: number, y1: number, x2: number, y2: number,
+  bbox: BBox,
+): boolean {
+  if (y1 === y2) {
+    const minX = Math.min(x1, x2)
+    const maxX = Math.max(x1, x2)
+    return minX < bbox.x + bbox.width && maxX > bbox.x &&
+           y1 > bbox.y && y1 < bbox.y + bbox.height
+  }
+  if (x1 === x2) {
+    const minY = Math.min(y1, y2)
+    const maxY = Math.max(y1, y2)
+    return x1 > bbox.x && x1 < bbox.x + bbox.width &&
+           minY < bbox.y + bbox.height && maxY > bbox.y
+  }
+  return false
 }
 
 function orthRouter(
@@ -59,45 +78,73 @@ function orthRouter(
   endSide: Direction,
   jetty: number,
 ): Array<{ x: number; y: number }> {
-  const startPt = getExitPoint(sourceBBox, startSide)
-  const endPt = getExitPoint(targetBBox, endSide)
+  const s = getOutsidePoint(sourceBBox, startSide, jetty)
+  const e = getOutsidePoint(targetBBox, endSide, jetty)
 
   const startHoriz = isHorizontal(startSide)
   const endHoriz = isHorizontal(endSide)
 
-  const points: Array<{ x: number; y: number }> = [startPt]
+  const points: Array<{ x: number; y: number }> = [{ x: s.x, y: s.y }]
 
   if (startHoriz && endHoriz) {
     if (startSide === endSide) {
       const midX = startSide === 'right'
-        ? Math.max(startPt.x, endPt.x) + jetty
-        : Math.min(startPt.x, endPt.x) - jetty
-      points.push({ x: midX, y: startPt.y })
-      points.push({ x: midX, y: endPt.y })
+        ? Math.max(s.x, e.x)
+        : Math.min(s.x, e.x)
+      points.push({ x: midX, y: s.y })
+      points.push({ x: midX, y: e.y })
     } else {
-      const midX = (startPt.x + endPt.x) / 2
-      points.push({ x: midX, y: startPt.y })
-      points.push({ x: midX, y: endPt.y })
+      const midX = (s.x + e.x) / 2
+      points.push({ x: midX, y: s.y })
+      points.push({ x: midX, y: e.y })
     }
   } else if (!startHoriz && !endHoriz) {
     if (startSide === endSide) {
       const midY = startSide === 'bottom'
-        ? Math.max(startPt.y, endPt.y) + jetty
-        : Math.min(startPt.y, endPt.y) - jetty
-      points.push({ x: startPt.x, y: midY })
-      points.push({ x: endPt.x, y: midY })
+        ? Math.max(s.y, e.y)
+        : Math.min(s.y, e.y)
+      points.push({ x: s.x, y: midY })
+      points.push({ x: e.x, y: midY })
     } else {
-      const midY = (startPt.y + endPt.y) / 2
-      points.push({ x: startPt.x, y: midY })
-      points.push({ x: endPt.x, y: midY })
+      const midY = (s.y + e.y) / 2
+      points.push({ x: s.x, y: midY })
+      points.push({ x: e.x, y: midY })
     }
   } else if (startHoriz && !endHoriz) {
-    points.push({ x: endPt.x, y: startPt.y })
+    const lShapeCrossesTarget = segmentCrossesBBox(s.x, s.y, e.x, s.y, targetBBox)
+    if (lShapeCrossesTarget) {
+      const reverseCrossesSource = segmentCrossesBBox(s.x, s.y, s.x, e.y, sourceBBox)
+      if (reverseCrossesSource) {
+        const outerX = startSide === 'right'
+          ? Math.max(sourceBBox.x + sourceBBox.width, targetBBox.x + targetBBox.width) + jetty
+          : Math.min(sourceBBox.x, targetBBox.x) - jetty
+        points.push({ x: outerX, y: s.y })
+        points.push({ x: outerX, y: e.y })
+      } else {
+        points.push({ x: s.x, y: e.y })
+      }
+    } else {
+      points.push({ x: e.x, y: s.y })
+    }
   } else {
-    points.push({ x: startPt.x, y: endPt.y })
+    const lShapeCrossesTarget = segmentCrossesBBox(s.x, s.y, s.x, e.y, targetBBox)
+    if (lShapeCrossesTarget) {
+      const reverseCrossesSource = segmentCrossesBBox(s.x, s.y, e.x, s.y, sourceBBox)
+      if (reverseCrossesSource) {
+        const outerY = startSide === 'bottom'
+          ? Math.max(sourceBBox.y + sourceBBox.height, targetBBox.y + targetBBox.height) + jetty
+          : Math.min(sourceBBox.y, targetBBox.y) - jetty
+        points.push({ x: s.x, y: outerY })
+        points.push({ x: e.x, y: outerY })
+      } else {
+        points.push({ x: e.x, y: s.y })
+      }
+    } else {
+      points.push({ x: s.x, y: e.y })
+    }
   }
 
-  points.push(endPt)
+  points.push({ x: e.x, y: e.y })
   return points
 }
 
