@@ -37,6 +37,7 @@ Section "MainSection" SEC01
   File "patent2pic.exe"
   File "patent2pic_lib.dll"
   File "icon.ico"
+  File "首次使用教程.txt"
 
   CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\patent2pic.exe" "" "$INSTDIR\icon.ico"
   CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
@@ -66,6 +67,7 @@ Section Uninstall
   Delete "$INSTDIR\patent2pic.exe"
   Delete "$INSTDIR\patent2pic_lib.dll"
   Delete "$INSTDIR\icon.ico"
+  Delete "$INSTDIR\首次使用教程.txt"
 
   Delete "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall ${PRODUCT_NAME}.lnk"
   Delete "$SMPROGRAMS\${PRODUCT_NAME}\Website.lnk"
