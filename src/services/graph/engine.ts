@@ -291,9 +291,15 @@ export class GraphEngine {
       }
     }
     for (const [nodeId, info] of outgoingInfoMap) {
-      // Only convert to group box for the highest hierarchy level node
       const nodeLevel = nodeHierarchyMap.get(nodeId) ?? 0
-      if (!info.hasOtherOutgoing && info.containmentTargets.size >= 3 && nodeLevel >= maxHierarchyLevel) {
+      if (nodeLevel >= maxHierarchyLevel && info.containmentTargets.size >= 1) {
+        // Highest hierarchy level: convert to group box if it has any containment targets
+        // (no threshold on target count, allow other outgoing edges)
+        autoGroupInfoMap.set(nodeId, {
+          memberNodeIds: [...info.containmentTargets],
+        })
+      } else if (!info.hasOtherOutgoing && info.containmentTargets.size >= 3) {
+        // Other levels: only convert if all outgoing edges are containment and >= 3 targets
         autoGroupInfoMap.set(nodeId, {
           memberNodeIds: [...info.containmentTargets],
         })
@@ -469,7 +475,8 @@ export class GraphEngine {
 
       const bounds = this.getNodesBounds(memberNodes)
 
-      const padding = 20
+      const padding = 25
+      const labelSpace = 36
       const groupLabel = isChinese
         ? (group.label.chinese || group.label.original)
         : `${group.label.original}\n${group.label.chinese}`
@@ -477,9 +484,9 @@ export class GraphEngine {
       this.graph.addNode({
         id: group.id,
         x: bounds.minX - padding,
-        y: bounds.minY - padding - 24,
+        y: bounds.minY - padding - labelSpace,
         width: bounds.maxX - bounds.minX + padding * 2,
-        height: bounds.maxY - bounds.minY + padding * 2 + 24,
+        height: bounds.maxY - bounds.minY + padding * 2 + labelSpace,
         shape: 'rect',
         zIndex: -1,
         attrs: {
@@ -495,7 +502,7 @@ export class GraphEngine {
           },
           label: {
             text: groupLabel,
-            fontSize: 11,
+            fontSize: 20,
             fill: '#fa8c16',
             fontWeight: 'bold',
             textAnchor: 'left',
@@ -652,7 +659,8 @@ export class GraphEngine {
       if (memberNodes.length === 0) continue
 
       const bounds = this.getNodesBounds(memberNodes)
-      const padding = 20
+      const padding = 25
+      const labelSpace = 36
 
       const nodeData = cell.getData() as Record<string, unknown>
       const groupLabel = isChinese
@@ -667,10 +675,10 @@ export class GraphEngine {
         setZIndex: (z: number) => void
       }
 
-      node.setPosition(bounds.minX - padding, bounds.minY - padding - 24)
+      node.setPosition(bounds.minX - padding, bounds.minY - padding - labelSpace)
       node.resize(
         bounds.maxX - bounds.minX + padding * 2,
-        bounds.maxY - bounds.minY + padding * 2 + 24,
+        bounds.maxY - bounds.minY + padding * 2 + labelSpace,
       )
       node.attr({
         body: {
@@ -685,7 +693,7 @@ export class GraphEngine {
         },
         label: {
           text: groupLabel,
-          fontSize: 11,
+          fontSize: 20,
           fill: '#fa8c16',
           fontWeight: 'bold',
           textAnchor: 'left',
@@ -795,16 +803,17 @@ export class GraphEngine {
       if (memberNodes.length === 0) continue
 
       const bounds = this.getNodesBounds(memberNodes)
-      const padding = 20
+      const padding = 25
+      const labelSpace = 36
 
       const g = groupNode as unknown as {
         setPosition: (x: number, y: number) => void
         resize: (width: number, height: number) => void
       }
-      g.setPosition(bounds.minX - padding, bounds.minY - padding - 24)
+      g.setPosition(bounds.minX - padding, bounds.minY - padding - labelSpace)
       g.resize(
         bounds.maxX - bounds.minX + padding * 2,
-        bounds.maxY - bounds.minY + padding * 2 + 24
+        bounds.maxY - bounds.minY + padding * 2 + labelSpace
       )
     }
   }
@@ -1042,7 +1051,7 @@ export class GraphEngine {
         },
         label: {
           text: label,
-          fontSize: 11,
+          fontSize: 20,
           fill: '#fa8c16',
           fontWeight: 'bold',
           textAnchor: 'left',
@@ -1092,6 +1101,27 @@ export class GraphEngine {
     if (!this.graph) return
     const cell = this.graph.getCellById(id)
     if (cell && cell.isNode()) {
+      const data = cell.getData() as Record<string, unknown> | undefined
+      // For group nodes, only update visual attrs, never resize (which would collapse the group box)
+      if (data?.isGroup) {
+        this.graph.startBatch('nodeStyle')
+        const n = cell as unknown as { attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void }
+        const bodyAttrs: Record<string, unknown> = {}
+        const labelAttrs: Record<string, unknown> = {}
+        if (style.fill !== undefined) bodyAttrs.fill = style.fill
+        if (style.stroke !== undefined) bodyAttrs.stroke = style.stroke
+        if (style.strokeWidth !== undefined) bodyAttrs.strokeWidth = style.strokeWidth
+        if (style.strokeDasharray !== undefined) bodyAttrs.strokeDasharray = style.strokeDasharray ?? ''
+        if (style.borderRadius !== undefined) { bodyAttrs.rx = style.borderRadius; bodyAttrs.ry = style.borderRadius }
+        if (style.fontSize !== undefined) labelAttrs.fontSize = style.fontSize
+        if (style.fontFamily !== undefined) labelAttrs.fontFamily = style.fontFamily
+        if (style.fontColor !== undefined) labelAttrs.fill = style.fontColor
+        if (style.fontWeight !== undefined) labelAttrs.fontWeight = style.fontWeight
+        if (Object.keys(bodyAttrs).length > 0) n.attr({ body: bodyAttrs })
+        if (Object.keys(labelAttrs).length > 0) n.attr({ label: labelAttrs })
+        this.graph.stopBatch('nodeStyle')
+        return
+      }
       this.graph.startBatch('nodeStyle')
       updateNodeStyle(cell, style)
       this.graph.stopBatch('nodeStyle')
@@ -1243,7 +1273,8 @@ export class GraphEngine {
     const nodes = this.graph.getNodes()
     for (const node of nodes) {
       const data = node.getData() as Record<string, unknown> | undefined
-      if (data?.isForkNode || data?.isGroup) continue
+      if (data?.isForkNode) continue
+
       const n = node as unknown as {
         attr: (path: string, value?: unknown) => unknown
         getSize: () => { width: number; height: number }
@@ -1252,6 +1283,13 @@ export class GraphEngine {
         setData: (data: Record<string, unknown>) => void
       }
       n.attr('label/fontSize', fontSize)
+
+      if (data?.isGroup) {
+        // For group nodes, only update font size, don't resize (would collapse the group box)
+        const currentData = n.getData() || {}
+        n.setData({ ...currentData, groupFontSize: fontSize })
+        continue
+      }
 
       // Recalculate node size based on new font size to prevent text overflow
       const originalText = (data?.originalText as string) || ''
@@ -1527,7 +1565,8 @@ export class GraphEngine {
         if (!newAttrs.includes('xmlns:xlink')) {
           newAttrs = ' xmlns:xlink="http://www.w3.org/1999/xlink"' + newAttrs
         }
-        return `<svg${newAttrs} viewBox="${viewBox}" width="${svgWidth}" height="${svgHeight}">`
+        // Use 100% width/height so the SVG fills the browser window and centers via viewBox
+        return `<svg${newAttrs} viewBox="${viewBox}" width="100%" height="100%">`
       }
     )
 

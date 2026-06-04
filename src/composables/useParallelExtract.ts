@@ -83,7 +83,7 @@ export function useParallelExtract() {
     task.progress = 10
 
     const isChinese = isChineseText(claim.rawText)
-    const tab = graphStore.addTab(undefined, isChinese)
+    const tab = graphStore.addTab(undefined, isChinese, false)
     task.tabId = tab.id
     graphStore.updateTabName(tab.id, `权利要求 ${claim.index}`)
 
@@ -180,8 +180,9 @@ export function useParallelExtract() {
     task.progress = 90
     graphStore.updateTabExtractResult(tab.id, result)
 
-    // Only build graph on the engine if this tab is currently active.
-    // Other tabs will be built when the user switches to them (handled in AppLayout.vue).
+    // Build graph if this tab is currently active (e.g., user switched to it manually)
+    // Otherwise, extractResult is saved; AppLayout.vue watch will build on switch,
+    // or runParallel will build the first successful tab after all tasks complete.
     if (graphStore.activeTabId === tab.id) {
       await graphEngine.batchBuild(result, undefined, isChinese)
     }
@@ -308,6 +309,16 @@ export function useParallelExtract() {
 
     // Wait for remaining tasks
     await Promise.all(executing)
+
+    // After all tasks complete, activate the first successful tab and build its graph
+    const firstSuccess = tasks.value.find(t => t.status === 'success' && t.tabId)
+    if (firstSuccess && firstSuccess.tabId) {
+      graphStore.setActiveTabId(firstSuccess.tabId)
+      const tab = graphStore.tabs.find(t => t.id === firstSuccess.tabId)
+      if (tab?.extractResult) {
+        await graphEngine.batchBuild(tab.extractResult, undefined, tab.isChinese)
+      }
+    }
 
     isRunning.value = false
     aiStore.isExtracting = false

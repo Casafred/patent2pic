@@ -28,7 +28,7 @@ export const useGraphStore = defineStore('graph', () => {
 
   let tabCounter = 0
 
-  function addTab(name?: string, isChinese: boolean = false): TabData {
+  function addTab(name?: string, isChinese: boolean = false, activate: boolean = true): TabData {
     tabCounter++
     const tab: TabData = {
       id: `tab-${Date.now()}-${tabCounter}`,
@@ -38,7 +38,9 @@ export const useGraphStore = defineStore('graph', () => {
       isChinese,
     }
     tabs.value.push(tab)
-    activeTabId.value = tab.id
+    if (activate) {
+      activeTabId.value = tab.id
+    }
     return tab
   }
 
