@@ -293,17 +293,12 @@ export class GraphEngine {
     for (const [nodeId, info] of outgoingInfoMap) {
       const nodeLevel = nodeHierarchyMap.get(nodeId) ?? 0
       if (nodeLevel >= maxHierarchyLevel && info.containmentTargets.size >= 1) {
-        // Highest hierarchy level: convert to group box if it has any containment targets
-        // (no threshold on target count, allow other outgoing edges)
-        autoGroupInfoMap.set(nodeId, {
-          memberNodeIds: [...info.containmentTargets],
-        })
-      } else if (!info.hasOtherOutgoing && info.containmentTargets.size >= 3) {
-        // Other levels: only convert if all outgoing edges are containment and >= 3 targets
+        // Only the highest hierarchy level nodes can become group boxes
         autoGroupInfoMap.set(nodeId, {
           memberNodeIds: [...info.containmentTargets],
         })
       }
+      // Non-highest-level nodes always appear as normal nodes with containment edges
     }
 
     timingStart(`    │    布局计算 (ELK)`)
