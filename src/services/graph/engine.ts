@@ -1407,7 +1407,7 @@ export class GraphEngine {
 
     const padding = options?.padding ?? 40
     const backgroundColor = options?.backgroundColor ?? '#ffffff'
-    const scale = options?.scale ?? 3
+    const scale = options?.scale ?? 4
 
     return new Promise<Blob | null>((resolve) => {
       this.graph!.toPNG((dataUrl: string) => {
@@ -1437,29 +1437,24 @@ export class GraphEngine {
     if (!this.graph) return ''
 
     const padding = _options?.padding ?? 40
-    const contentArea = this.graph.getContentArea()
-    const contentBBox = contentArea.x !== undefined ? contentArea : null
+    const contentBBox = this.graph.getContentBBox()
 
     let svgStr = ''
     this.graph.toSVG((svg: string) => {
-      if (contentBBox && (contentBBox as { x: number }).x !== undefined) {
-        const bbox = contentBBox as { x: number; y: number; width: number; height: number }
-        const svgWidth = bbox.width + padding * 2
-        const svgHeight = bbox.height + padding * 2
-        const viewBox = `${bbox.x - padding} ${bbox.y - padding} ${svgWidth} ${svgHeight}`
-        svgStr = svg.replace(
-          /<svg([^>]*)>/,
-          (_, attrs: string) => {
-            const cleaned = attrs
-              .replace(/\s*viewBox\s*=\s*["'][^"']*["']/g, '')
-              .replace(/\s*width\s*=\s*["'][^"']*["']/g, '')
-              .replace(/\s*height\s*=\s*["'][^"']*["']/g, '')
-            return `<svg${cleaned} viewBox="${viewBox}" width="${svgWidth}" height="${svgHeight}">`
-          }
-        )
-      } else {
-        svgStr = svg
-      }
+      svgStr = svg
+    }, {
+      viewBox: {
+        x: contentBBox.x - padding,
+        y: contentBBox.y - padding,
+        width: contentBBox.width + padding * 2,
+        height: contentBBox.height + padding * 2,
+      },
+      preserveDimensions: {
+        width: contentBBox.width + padding * 2,
+        height: contentBBox.height + padding * 2,
+      },
+      copyStyles: true,
+      serializeImages: true,
     })
     return svgStr
   }

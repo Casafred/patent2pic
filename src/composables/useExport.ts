@@ -8,7 +8,7 @@ function isTauri(): boolean {
 export function useExport() {
 
   async function exportPNG(): Promise<Blob | null> {
-    return graphEngine.toPNG({ padding: 40, scale: 3 })
+    return graphEngine.toPNG({ padding: 40, scale: 4 })
   }
 
   function exportSVG(): string {
