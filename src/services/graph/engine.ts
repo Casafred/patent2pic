@@ -1455,7 +1455,26 @@ export class GraphEngine {
       },
       copyStyles: true,
       serializeImages: true,
+      stylesheet: [
+        'text { font-family: Arial, Helvetica, sans-serif; }',
+        '.x6-edge .x6-edge-label .x6-edge-label-text { font-family: Arial, Helvetica, sans-serif; }',
+      ].join('\n'),
     })
+
+    // Ensure proper xmlns declarations for standalone SVG file
+    if (svgStr && !svgStr.includes('xmlns="http://www.w3.org/2000/svg"')) {
+      svgStr = svgStr.replace(
+        /<svg/,
+        '<svg xmlns="http://www.w3.org/2000/svg"'
+      )
+    }
+    if (svgStr && !svgStr.includes('xmlns:xlink')) {
+      svgStr = svgStr.replace(
+        /<svg/,
+        '<svg xmlns:xlink="http://www.w3.org/1999/xlink"'
+      )
+    }
+
     return svgStr
   }
 
