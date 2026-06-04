@@ -143,6 +143,25 @@ export class GraphEngine {
       edge.removeTools()
     })
 
+    // Batch arrowhead drag operations so they appear as a single undo step
+    // snapArrowhead calls setTerminal() on every mousemove, which creates
+    // multiple history entries without batching
+    let arrowheadDragging = false
+    this.graph.on('cell:mousedown', ({ e, cell }: { e: MouseEvent; cell: any }) => {
+      if (!cell || !cell.isEdge()) return
+      const target = e.target as HTMLElement
+      if (target && target.getAttribute('data-terminal')) {
+        arrowheadDragging = true
+        this.graph!.startBatch('arrowhead-drag')
+      }
+    })
+    this.graph.on('cell:mouseup', () => {
+      if (arrowheadDragging) {
+        arrowheadDragging = false
+        this.graph!.stopBatch('arrowhead-drag')
+      }
+    })
+
     this.graph.on('edge:click', ({ edge }: { edge: any }) => {
       const data = edge.getData() as Record<string, unknown> | undefined
       if (data?.isBranch) return
