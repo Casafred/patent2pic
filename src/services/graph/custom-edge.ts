@@ -172,9 +172,23 @@ function orthRouter(
       points.push({ x: midX, y: s.y })
       points.push({ x: midX, y: e.y })
     } else {
+      // Opposite horizontal sides (left/right) - check if midX segment crosses bbox
       const midX = (s.x + e.x) / 2
-      points.push({ x: midX, y: s.y })
-      points.push({ x: midX, y: e.y })
+      const midXCrossesBBox = segmentCrossesBBox(midX, s.y, midX, e.y, sourceBBox) ||
+        segmentCrossesBBox(midX, s.y, midX, e.y, targetBBox)
+      if (midXCrossesBBox) {
+        // Route around the top or bottom of the bboxes
+        const topY = Math.min(sourceBBox.y, targetBBox.y) - jetty
+        const bottomY = Math.max(sourceBBox.y + sourceBBox.height, targetBBox.y + targetBBox.height) + jetty
+        const topDist = Math.abs(s.y - topY) + Math.abs(e.y - topY)
+        const bottomDist = Math.abs(s.y - bottomY) + Math.abs(e.y - bottomY)
+        const outerY = topDist <= bottomDist ? topY : bottomY
+        points.push({ x: s.x, y: outerY })
+        points.push({ x: e.x, y: outerY })
+      } else {
+        points.push({ x: midX, y: s.y })
+        points.push({ x: midX, y: e.y })
+      }
     }
   } else if (!startHoriz && !endHoriz) {
     if (startSide === endSide) {
@@ -184,9 +198,23 @@ function orthRouter(
       points.push({ x: s.x, y: midY })
       points.push({ x: e.x, y: midY })
     } else {
+      // Opposite vertical sides (top/bottom) - check if midY segment crosses bbox
       const midY = (s.y + e.y) / 2
-      points.push({ x: s.x, y: midY })
-      points.push({ x: e.x, y: midY })
+      const midYCrossesBBox = segmentCrossesBBox(s.x, midY, e.x, midY, sourceBBox) ||
+        segmentCrossesBBox(s.x, midY, e.x, midY, targetBBox)
+      if (midYCrossesBBox) {
+        // Route around the left or right of the bboxes
+        const leftX = Math.min(sourceBBox.x, targetBBox.x) - jetty
+        const rightX = Math.max(sourceBBox.x + sourceBBox.width, targetBBox.x + targetBBox.width) + jetty
+        const leftDist = Math.abs(s.x - leftX) + Math.abs(e.x - leftX)
+        const rightDist = Math.abs(s.x - rightX) + Math.abs(e.x - rightX)
+        const outerX = leftDist <= rightDist ? leftX : rightX
+        points.push({ x: outerX, y: s.y })
+        points.push({ x: outerX, y: e.y })
+      } else {
+        points.push({ x: s.x, y: midY })
+        points.push({ x: e.x, y: midY })
+      }
     }
   } else if (startHoriz && !endHoriz) {
     const lShapeCrossesTarget = segmentCrossesBBox(s.x, s.y, e.x, s.y, targetBBox)
