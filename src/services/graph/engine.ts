@@ -39,7 +39,7 @@ export class GraphEngine {
         anchor: 'center',
         connectionPoint: 'perpendicularBoundary',
         allowBlank: false,
-        allowLoop: false,
+        allowLoop: true,
         allowMulti: true,
         snap: { radius: 30 },
         createEdge() {
@@ -80,13 +80,38 @@ export class GraphEngine {
             }
 
             if (edgeData?.originalText !== undefined) {
-              if (type === 'source') {
-                return sourceCell.id === edge.getSourceCellId() && targetCell.id === edge.getTargetCellId()
-              }
-              return sourceCell.id === edge.getSourceCellId() && targetCell.id === edge.getTargetCellId()
+              // Use stored original node IDs for validation.
+              // edge.getSourceCellId()/getTargetCellId() are unreliable because
+              // snapArrowhead updates terminals in real-time via setTerminal().
+              const origSourceId = (edgeData._origSourceId as string) || edge.getSourceCellId()
+              const origTargetId = (edgeData._origTargetId as string) || edge.getTargetCellId()
+              return sourceCell.id === origSourceId && targetCell.id === origTargetId
             }
           }
 
+          return true
+        },
+        validateEdge({ edge, type, previous }) {
+          const edgeData = edge.getData() as Record<string, unknown> | undefined
+          if (edgeData?.originalText !== undefined) {
+            const prevTerminal = previous as unknown as Record<string, unknown>
+            const prevCellId = prevTerminal?.cell as string | undefined
+            if (type === 'source') {
+              const origSourceId = (edgeData._origSourceId as string) || prevCellId
+              if (edge.getSourceCellId() !== origSourceId) return false
+            } else {
+              const origTargetId = (edgeData._origTargetId as string) || prevCellId
+              if (edge.getTargetCellId() !== origTargetId) return false
+            }
+            // Update stored IDs with the new port info (port may have changed)
+            const currentSource = edge.getSource() as unknown as Record<string, unknown>
+            const currentTarget = edge.getTarget() as unknown as Record<string, unknown>
+            edge.setData({
+              ...edgeData,
+              _origSourceId: currentSource?.cell as string || edgeData._origSourceId,
+              _origTargetId: currentTarget?.cell as string || edgeData._origTargetId,
+            })
+          }
           return true
         },
       },

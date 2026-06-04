@@ -164,6 +164,127 @@ function orthRouter(
 
   const points: Array<{ x: number; y: number }> = [{ x: s.x, y: s.y }]
 
+  // Same node: source and target bbox are identical, need to route around the node
+  const sameNode = sourceBBox.x === targetBBox.x && sourceBBox.y === targetBBox.y
+    && sourceBBox.width === targetBBox.width && sourceBBox.height === targetBBox.height
+
+  if (sameNode) {
+    // Route around the node to connect two different ports on the same node
+    if (startSide === endSide) {
+      // Same side: go out, loop around, and come back
+      // e.g. top→top: go up from top, go right/left, go down past bottom, go left/right, go up to top
+      if (startHoriz) {
+        // left→left or right→right: go around top or bottom
+        const topY = sourceBBox.y - jetty
+        const bottomY = sourceBBox.y + sourceBBox.height + jetty
+        const topDist = Math.abs(s.y - topY) + Math.abs(e.y - topY)
+        const bottomDist = Math.abs(s.y - bottomY) + Math.abs(e.y - bottomY)
+        const outerY = topDist <= bottomDist ? topY : bottomY
+        points.push({ x: s.x, y: outerY })
+        points.push({ x: e.x, y: outerY })
+      } else {
+        // top→top or bottom→bottom: go around left or right
+        const leftX = sourceBBox.x - jetty
+        const rightX = sourceBBox.x + sourceBBox.width + jetty
+        const leftDist = Math.abs(s.x - leftX) + Math.abs(e.x - leftX)
+        const rightDist = Math.abs(s.x - rightX) + Math.abs(e.x - rightX)
+        const outerX = leftDist <= rightDist ? leftX : rightX
+        points.push({ x: outerX, y: s.y })
+        points.push({ x: outerX, y: e.y })
+      }
+    } else if (startHoriz && !endHoriz) {
+      // e.g. right→top: go right, go up past top, go left to center, go down into top
+      // But we need to avoid crossing the node
+      // Strategy: go out from start side, then around the node to the end side
+      if (startSide === 'right') {
+        // Going out right, need to reach top or bottom
+        if (endSide === 'top') {
+          const outerX = sourceBBox.x + sourceBBox.width + jetty
+          const outerY = sourceBBox.y - jetty
+          points.push({ x: outerX, y: s.y })
+          points.push({ x: outerX, y: outerY })
+          points.push({ x: e.x, y: outerY })
+        } else { // bottom
+          const outerX = sourceBBox.x + sourceBBox.width + jetty
+          const outerY = sourceBBox.y + sourceBBox.height + jetty
+          points.push({ x: outerX, y: s.y })
+          points.push({ x: outerX, y: outerY })
+          points.push({ x: e.x, y: outerY })
+        }
+      } else { // left
+        if (endSide === 'top') {
+          const outerX = sourceBBox.x - jetty
+          const outerY = sourceBBox.y - jetty
+          points.push({ x: outerX, y: s.y })
+          points.push({ x: outerX, y: outerY })
+          points.push({ x: e.x, y: outerY })
+        } else { // bottom
+          const outerX = sourceBBox.x - jetty
+          const outerY = sourceBBox.y + sourceBBox.height + jetty
+          points.push({ x: outerX, y: s.y })
+          points.push({ x: outerX, y: outerY })
+          points.push({ x: e.x, y: outerY })
+        }
+      }
+    } else if (!startHoriz && endHoriz) {
+      // e.g. top→right: go up, go right past right, go down to center, go left into right
+      if (startSide === 'top') {
+        if (endSide === 'right') {
+          const outerY = sourceBBox.y - jetty
+          const outerX = sourceBBox.x + sourceBBox.width + jetty
+          points.push({ x: s.x, y: outerY })
+          points.push({ x: outerX, y: outerY })
+          points.push({ x: outerX, y: e.y })
+        } else { // left
+          const outerY = sourceBBox.y - jetty
+          const outerX = sourceBBox.x - jetty
+          points.push({ x: s.x, y: outerY })
+          points.push({ x: outerX, y: outerY })
+          points.push({ x: outerX, y: e.y })
+        }
+      } else { // bottom
+        if (endSide === 'right') {
+          const outerY = sourceBBox.y + sourceBBox.height + jetty
+          const outerX = sourceBBox.x + sourceBBox.width + jetty
+          points.push({ x: s.x, y: outerY })
+          points.push({ x: outerX, y: outerY })
+          points.push({ x: outerX, y: e.y })
+        } else { // left
+          const outerY = sourceBBox.y + sourceBBox.height + jetty
+          const outerX = sourceBBox.x - jetty
+          points.push({ x: s.x, y: outerY })
+          points.push({ x: outerX, y: outerY })
+          points.push({ x: outerX, y: e.y })
+        }
+      }
+    } else {
+      // Opposite sides: e.g. top→bottom, left→right
+      if ((startSide === 'top' && endSide === 'bottom') || (startSide === 'bottom' && endSide === 'top')) {
+        // Go around left or right side
+        const leftX = sourceBBox.x - jetty
+        const rightX = sourceBBox.x + sourceBBox.width + jetty
+        const leftDist = Math.abs(s.x - leftX) + Math.abs(e.x - leftX)
+        const rightDist = Math.abs(s.x - rightX) + Math.abs(e.x - rightX)
+        const outerX = leftDist <= rightDist ? leftX : rightX
+        points.push({ x: outerX, y: s.y })
+        points.push({ x: outerX, y: e.y })
+      } else {
+        // left→right or right→left: go around top or bottom
+        const topY = sourceBBox.y - jetty
+        const bottomY = sourceBBox.y + sourceBBox.height + jetty
+        const topDist = Math.abs(s.y - topY) + Math.abs(e.y - topY)
+        const bottomDist = Math.abs(s.y - bottomY) + Math.abs(e.y - bottomY)
+        const outerY = topDist <= bottomDist ? topY : bottomY
+        points.push({ x: s.x, y: outerY })
+        points.push({ x: e.x, y: outerY })
+      }
+    }
+
+    points.push({ x: e.x, y: e.y })
+    return points
+  }
+
+  // Different nodes: standard routing
   if (startHoriz && endHoriz) {
     if (startSide === endSide) {
       const midX = startSide === 'right'
@@ -173,8 +294,20 @@ function orthRouter(
       points.push({ x: midX, y: e.y })
     } else {
       const midX = (s.x + e.x) / 2
-      points.push({ x: midX, y: s.y })
-      points.push({ x: midX, y: e.y })
+      const midXCrossesBBox = segmentCrossesBBox(midX, s.y, midX, e.y, sourceBBox) ||
+        segmentCrossesBBox(midX, s.y, midX, e.y, targetBBox)
+      if (midXCrossesBBox) {
+        const topY = Math.min(sourceBBox.y, targetBBox.y) - jetty
+        const bottomY = Math.max(sourceBBox.y + sourceBBox.height, targetBBox.y + targetBBox.height) + jetty
+        const topDist = Math.abs(s.y - topY) + Math.abs(e.y - topY)
+        const bottomDist = Math.abs(s.y - bottomY) + Math.abs(e.y - bottomY)
+        const outerY = topDist <= bottomDist ? topY : bottomY
+        points.push({ x: s.x, y: outerY })
+        points.push({ x: e.x, y: outerY })
+      } else {
+        points.push({ x: midX, y: s.y })
+        points.push({ x: midX, y: e.y })
+      }
     }
   } else if (!startHoriz && !endHoriz) {
     if (startSide === endSide) {
@@ -185,8 +318,20 @@ function orthRouter(
       points.push({ x: e.x, y: midY })
     } else {
       const midY = (s.y + e.y) / 2
-      points.push({ x: s.x, y: midY })
-      points.push({ x: e.x, y: midY })
+      const midYCrossesBBox = segmentCrossesBBox(s.x, midY, e.x, midY, sourceBBox) ||
+        segmentCrossesBBox(s.x, midY, e.x, midY, targetBBox)
+      if (midYCrossesBBox) {
+        const leftX = Math.min(sourceBBox.x, targetBBox.x) - jetty
+        const rightX = Math.max(sourceBBox.x + sourceBBox.width, targetBBox.x + targetBBox.width) + jetty
+        const leftDist = Math.abs(s.x - leftX) + Math.abs(e.x - leftX)
+        const rightDist = Math.abs(s.x - rightX) + Math.abs(e.x - rightX)
+        const outerX = leftDist <= rightDist ? leftX : rightX
+        points.push({ x: outerX, y: s.y })
+        points.push({ x: outerX, y: e.y })
+      } else {
+        points.push({ x: s.x, y: midY })
+        points.push({ x: e.x, y: midY })
+      }
     }
   } else if (startHoriz && !endHoriz) {
     const lShapeCrossesTarget = segmentCrossesBBox(s.x, s.y, e.x, s.y, targetBBox)

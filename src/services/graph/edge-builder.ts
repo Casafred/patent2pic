@@ -84,6 +84,8 @@ export function buildEdge(data: EdgeData, isChinese: boolean = false): Record<st
       relationType: data.relationType,
       style,
       labelDetached: false,
+      _origSourceId: data.source,
+      _origTargetId: data.target,
     },
     zIndex: 10,
   }
