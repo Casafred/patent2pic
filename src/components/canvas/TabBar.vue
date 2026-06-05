@@ -11,7 +11,6 @@
         <span
           class="tab-close"
           @click.stop="handleTabClose(tab.id)"
-          v-if="graphStore.tabs.length > 1"
         >×</span>
       </div>
     </div>
@@ -22,6 +21,7 @@
 import { useGraphStore } from '@/stores/graph'
 import { ElMessageBox } from 'element-plus'
 import { useProjectFile } from '@/composables/useProjectFile'
+import { graphEngine } from '@/services/graph/engine'
 
 const graphStore = useGraphStore()
 const { saveProject } = useProjectFile()
@@ -33,6 +33,16 @@ function handleTabClick(id: string): void {
 async function handleTabClose(id: string): Promise<void> {
   const tab = graphStore.tabs.find((t: { id: string }) => t.id === id)
   if (!tab) return
+
+  // If this is the last tab, clear it to empty state instead of closing
+  if (graphStore.tabs.length <= 1) {
+    const graph = graphEngine.getGraph()
+    if (graph) {
+      graph.clearCells()
+    }
+    graphStore.clearActiveTabGraph()
+    return
+  }
 
   try {
     await ElMessageBox.confirm(

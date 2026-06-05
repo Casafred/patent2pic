@@ -40,7 +40,7 @@ const hasSelection = computed(() =>
 )
 
 watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
-  if (!newTabId || newTabId === oldTabId) return
+  if (newTabId === oldTabId) return
 
   if (oldTabId) {
     const oldTab = graphStore.tabs.find(t => t.id === oldTabId)
@@ -50,6 +50,18 @@ watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
     }
   }
 
+  const graph = graphEngine.getGraph()
+  if (!graph) return
+
+  // Clear the graph engine's canvas
+  graph.clearCells()
+
+  if (!newTabId) {
+    // Last tab closed - reset to empty state
+    graphStore.clearGraph()
+    return
+  }
+
   const newTab = graphStore.tabs.find(t => t.id === newTabId)
   if (!newTab) return
 
@@ -57,11 +69,6 @@ watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
   if (newTab.claimId) {
     claimStore.setActiveClaim(newTab.claimId)
   }
-
-  const graph = graphEngine.getGraph()
-  if (!graph) return
-
-  graph.clearCells()
 
   if (newTab.serializedGraph && Object.keys(newTab.serializedGraph).length > 0) {
     graphEngine.fromJSON(newTab.serializedGraph)
