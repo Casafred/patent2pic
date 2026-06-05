@@ -338,8 +338,8 @@
   <div class="subtitle">专利功能分解图生成工具 · 用户使用说明书</div>
   <div class="divider-line"></div>
   <div class="version-info">
-    版本 V0.2.0<br/>
-    2026 年 5 月（更新）
+    版本 V0.3.0<br/>
+    2026 年 6 月（更新）
   </div>
 </div>
 
@@ -372,6 +372,7 @@
     <li class="level2"><span>5.2 AI 智能抽取</span></li>
     <li class="level2"><span>5.2.1 提示词设置</span></li>
     <li class="level2"><span>5.2.2 翻译设置</span></li>
+    <li class="level2"><span>5.2.3 并行处理模式</span></li>
     <li class="level2"><span>5.3 画布操作</span></li>
     <li class="level2"><span>5.4 节点与边的编辑</span></li>
     <li class="level2"><span>5.5 样式自定义</span></li>
@@ -383,6 +384,7 @@
     <li class="level2"><span>6.1 节点类型</span></li>
     <li class="level2"><span>6.2 关系类型</span></li>
     <li class="level2"><span>6.3 线型说明</span></li>
+    <li class="level2"><span>6.4 组合框说明</span></li>
     <li class="level1"><span>7 常见问题</span></li>
     <li class="level1"><span>8 附录</span></li>
   </ul>
@@ -444,24 +446,28 @@
 </div>
 
 <div class="feature-card">
-  <div class="card-title">🔍 智能解析</div>
+  <div class="card-title">智能解析</div>
   <div class="card-desc">自动识别和解析专利独立权利要求文本，支持多条权利要求同时输入与分段识别。</div>
 </div>
 <div class="feature-card">
-  <div class="card-title">🤖 AI 抽取</div>
+  <div class="card-title">AI 抽取</div>
   <div class="card-desc">集成 DeepSeek、OpenAI 兼容接口、智谱 AI 等多种 AI 服务，智能提取技术特征和结构关系。</div>
 </div>
 <div class="feature-card">
-  <div class="card-title">✏️ 可视化编辑</div>
-  <div class="card-desc">基于图形编辑器，支持节点拖拽、缩放、自动布局、样式自定义等丰富的交互操作。</div>
+  <div class="card-title">可视化编辑</div>
+  <div class="card-desc">基于图形编辑器，支持节点拖拽、缩放、自动布局、样式自定义、全局字号调节等丰富的交互操作。</div>
 </div>
 <div class="feature-card">
-  <div class="card-title">📦 多格式导出</div>
-  <div class="card-desc">支持导出为 PNG 图片、SVG 矢量图、JSON 数据文件，以及项目文件保存与加载。</div>
+  <div class="card-title">多格式导出</div>
+  <div class="card-desc">支持导出为 PNG 高清图片、SVG 矢量图、Excel 对照表、JSON 数据文件，以及项目文件保存与加载。</div>
 </div>
 <div class="feature-card">
-  <div class="card-title">🌐 权利要求翻译</div>
+  <div class="card-title">权利要求翻译</div>
   <div class="card-desc">支持在权利要求阅读器中一句一对照呈现翻译结果，翻译与原文高亮同步，可独立配置翻译模型与目标语言。</div>
+</div>
+<div class="feature-card">
+  <div class="card-title">并行处理</div>
+  <div class="card-desc">支持同时处理多条权利要求，并行调用 AI 接口，为每条权利要求独立创建画布，大幅提升批量处理效率。</div>
 </div>
 
 <h2>1.3 系统要求</h2>
@@ -503,7 +509,7 @@
 </div>
 
 <div class="tip-box warning">
-  <div class="tip-title">⚠ 注意</div>
+  <div class="tip-title">注意</div>
   便携版中 <code>patent2pic.exe</code> 与 <code>patent2pic_lib.dll</code> 必须在同一目录下，请勿分开存放。
 </div>
 
@@ -540,6 +546,9 @@
     <text x="87" y="167" text-anchor="middle" fill="#888" font-size="9">权利要求列表</text>
     <rect x="20" y="185" width="135" height="25" rx="4" fill="#1890FF" stroke="#1890FF" stroke-width="1"/>
     <text x="87" y="202" text-anchor="middle" fill="white" font-size="9">生成分解图按钮</text>
+    <rect x="20" y="220" width="135" height="50" rx="4" fill="#f6ffed" stroke="#52c41a" stroke-width="1"/>
+    <text x="87" y="240" text-anchor="middle" fill="#52c41a" font-size="9">权利要求对照阅读</text>
+    <text x="87" y="255" text-anchor="middle" fill="#52c41a" font-size="8">翻译 + 导出Excel</text>
 
     <!-- 中间区域 -->
     <rect x="170" y="50" width="200" height="300" rx="4" fill="#f8f9fa" stroke="#999" stroke-width="1.5"/>
@@ -548,7 +557,7 @@
 
     <!-- 工具栏 -->
     <rect x="180" y="105" width="180" height="25" rx="3" fill="#e0e0e0" stroke="#bbb" stroke-width="1"/>
-    <text x="270" y="122" text-anchor="middle" fill="#555" font-size="9">工具栏（打开/保存/撤销/缩放/导出）</text>
+    <text x="270" y="122" text-anchor="middle" fill="#555" font-size="8">打开/保存/撤销/字号/组合框/导出</text>
 
     <!-- 标签栏 -->
     <rect x="180" y="135" width="180" height="22" rx="3" fill="#d0d0d0" stroke="#bbb" stroke-width="1"/>
@@ -596,18 +605,39 @@
   <li><strong>清空按钮</strong> — 一键清空输入内容</li>
   <li><strong>权利要求列表</strong> — 自动识别多条权利要求后，以列表形式展示，点击可切换</li>
   <li><strong>"生成分解图"按钮</strong> — 点击后调用 AI 进行分析抽取</li>
-  <li><strong>抽取进度</strong> — AI 分析过程中显示进度提示</li>
+  <li><strong>抽取进度</strong> — AI 分析过程中显示进度提示，支持点击"终止"按钮中断分析</li>
+  <li><strong>收起/展开</strong> — 生成图形后，输入区可收起为精简条，点击展开恢复</li>
+  <li><strong>权利要求对照阅读</strong> — 收起输入区后显示，以原文与翻译对照方式阅读权利要求，支持节点高亮同步</li>
+  <li><strong>导出 Excel</strong> — 翻译完成后，可一键导出原文与翻译的 Excel 对照表</li>
 </ul>
 
 <h2>3.4 中间区域 — 画布工作区</h2>
 <p>中间区域是核心的图形编辑区域，由上至下包含：</p>
 <ul>
-  <li><strong>工具栏</strong> — 提供文件操作、撤销/重做、缩放、布局、导出等快捷操作</li>
-  <li><strong>标签栏</strong> — 多条权利要求对应多个标签页，可切换查看</li>
+  <li><strong>工具栏</strong> — 提供文件操作、撤销/重做、视图调整、字号调节、组合框控制、导出等快捷操作</li>
+  <li><strong>标签栏</strong> — 多条权利要求对应多个标签页，可切换查看；关闭最后一个标签页时恢复空白画布</li>
   <li><strong>图形画布</strong> — 显示和编辑分解图的主要区域，支持拖拽、缩放、右键菜单等</li>
   <li><strong>图例</strong> — 画布左下角，鼠标悬停展开，显示节点类型、关系类型等图例</li>
   <li><strong>缩放比例</strong> — 画布右下角显示当前缩放百分比</li>
 </ul>
+
+<h3>工具栏按钮一览</h3>
+<table>
+  <tr><th>按钮</th><th>功能说明</th></tr>
+  <tr><td>打开</td><td>打开已保存的 .p2p 项目文件</td></tr>
+  <tr><td>保存</td><td>将当前项目保存为 .p2p 文件</td></tr>
+  <tr><td>撤销</td><td>撤销上一步操作（Ctrl+Z）</td></tr>
+  <tr><td>重做</td><td>恢复撤销的操作（Ctrl+Y）</td></tr>
+  <tr><td>适配</td><td>自动调整缩放使所有内容可见</td></tr>
+  <tr><td>居中</td><td>将内容居中显示</td></tr>
+  <tr><td>重置</td><td>恢复到初始生成状态（清除后续编辑）</td></tr>
+  <tr><td>+ 节点</td><td>手动添加新节点</td></tr>
+  <tr><td>+ 组合框</td><td>手动添加新的组合框</td></tr>
+  <tr><td>组合框</td><td>显示/隐藏所有组合框</td></tr>
+  <tr><td>字号 −/+</td><td>统一调节所有节点和边的字号（10px ~ 28px）</td></tr>
+  <tr><td>清空</td><td>清除当前画布上的所有内容</td></tr>
+  <tr><td>导出</td><td>导出为 PNG（3x 高清）或 SVG 格式</td></tr>
+</table>
 
 <h2>3.5 右侧面板 — 样式编辑区</h2>
 <p>右侧面板在选中节点或边时自动显示，用于精细调整图形样式：</p>
@@ -671,7 +701,7 @@
 </div>
 
 <div class="tip-box">
-  <div class="tip-title">💡 提示</div>
+  <div class="tip-title">提示</div>
   API 端点地址默认已填充各服务商的标准地址，一般情况下无需修改。如使用代理或私有部署，可自定义修改。
 </div>
 
@@ -704,8 +734,8 @@
 </div>
 
 <div class="tip-box warning">
-  <div class="tip-title">⚠ 注意</div>
-  如果生成失败，界面会显示错误提示信息，可点击"重试"按钮重新生成。请检查 API Key 是否正确、网络是否通畅。
+  <div class="tip-title">注意</div>
+  如果生成失败，界面会显示错误提示信息，可点击"重试"按钮重新生成。请检查 API Key 是否正确、网络是否通畅。分析过程中可点击"终止"按钮中断。
 </div>
 
 <h2>4.4 编辑与调整</h2>
@@ -717,12 +747,15 @@
   <li><strong>缩放画布</strong> — 使用工具栏按钮或鼠标滚轮缩放</li>
   <li><strong>自动布局</strong> — 点击工具栏"自动布局"按钮重新排列</li>
   <li><strong>样式调整</strong> — 选中元素后，在右侧面板修改样式</li>
+  <li><strong>全局字号调节</strong> — 使用工具栏"字号 −/+"按钮统一调节所有节点和边的字号</li>
+  <li><strong>重置图形</strong> — 点击工具栏"重置"按钮恢复到初始生成状态</li>
 </ul>
 
 <h2>4.5 导出与保存</h2>
 <p>编辑完成后，可通过以下方式保存成果：</p>
 <ul>
-  <li><strong>导出图片</strong> — 点击工具栏"导出"按钮，选择 PNG 或 SVG 格式</li>
+  <li><strong>导出图片</strong> — 点击工具栏"导出"按钮，选择 PNG（3x 高清）或 SVG 格式</li>
+  <li><strong>导出 Excel</strong> — 翻译完成后，在权利要求对照阅读区点击"导出Excel"按钮</li>
   <li><strong>导出数据</strong> — 选择 JSON 格式导出结构化数据</li>
   <li><strong>保存项目</strong> — 点击"保存"按钮，将项目保存为 .p2p 文件，后续可重新打开编辑</li>
 </ul>
@@ -769,6 +802,9 @@
 <h3>切换激活权利要求</h3>
 <p>点击列表中的权利要求条目，即可切换当前激活的权利要求。激活的权利要求以蓝色高亮显示，后续的"生成分解图"操作将针对当前激活的权利要求执行。</p>
 
+<h3>输入区折叠与展开</h3>
+<p>生成图形后，输入区可点击"收起"按钮折叠为精简条，仅显示当前权利要求编号和预览文本，为对照阅读区腾出空间。点击精简条可重新展开输入区。</p>
+
 <h2>5.2 AI 智能抽取</h2>
 <p>AI 抽取是 Patent2Pic 的核心功能，通过调用 AI 大语言模型，自动从权利要求文本中提取技术特征和结构关系。</p>
 
@@ -802,18 +838,18 @@
   <tr><td>动作关系</td><td>部件之间的功能动作关系</td></tr>
   <tr><td>包含关系</td><td>部件之间的层级包含关系</td></tr>
   <tr><td>逻辑关系</td><td>部件之间的条件/因果逻辑关系</td></tr>
-  <tr><td>限定框/分组</td><td>将相关部件归入同一限定框中</td></tr>
+  <tr><td>限定框/组合框</td><td>将相关部件归入同一组合框中（最高层级节点自动转换为组合框）</td></tr>
 </table>
 
 <h3>5.2.1 提示词设置</h3>
 <p>在设置对话框中切换到 <strong>"提示词设置"</strong> 标签页，可自定义 AI 分析时使用的提示词，以优化抽取效果。</p>
 
 <div class="feature-card">
-  <div class="card-title">📝 系统提示词 (System Prompt)</div>
+  <div class="card-title">系统提示词 (System Prompt)</div>
   <div class="card-desc">定义 AI 的角色和行为规范，影响抽取结果的质量和格式。修改后会在后续 AI 分析中生效。</div>
 </div>
 <div class="feature-card">
-  <div class="card-title">💬 用户提示词模板 (User Prompt)</div>
+  <div class="card-title">用户提示词模板 (User Prompt)</div>
   <div class="card-desc">定义发送给 AI 的具体指令。模板中的 <code>{claimText}</code> 占位符会在实际调用时被替换为当前权利要求文本。</div>
 </div>
 
@@ -826,7 +862,7 @@
 </ul>
 
 <div class="tip-box warning">
-  <div class="tip-title">⚠ 注意</div>
+  <div class="tip-title">注意</div>
   自定义提示词可能影响 AI 抽取结果的格式和质量。如果修改后抽取结果异常，建议点击"恢复默认"还原为预设提示词。
 </div>
 
@@ -855,7 +891,7 @@
 <p>开启 <strong>"自动翻译"</strong> 后，在点击"生成分解图"时，系统将<strong>并行执行</strong> AI 抽取与翻译任务，无需手动触发翻译。关闭自动翻译时，需手动触发翻译操作。</p>
 
 <div class="tip-box">
-  <div class="tip-title">💡 提示</div>
+  <div class="tip-title">提示</div>
   自动翻译与 AI 抽取并行执行，不会增加分解图生成的等待时间。翻译结果会在各句翻译完成后实时显示在阅读器中。
 </div>
 
@@ -881,7 +917,7 @@
 </ul>
 
 <div class="tip-box">
-  <div class="tip-title">💡 提示</div>
+  <div class="tip-title">提示</div>
   翻译功能复用已有服务商的 API Key 和端点配置，无需额外注册新的账号。只需在翻译设置中选择服务商和模型即可。
 </div>
 
@@ -913,19 +949,82 @@
   <div class="diagram-caption">图 5-2c 对照阅读与高亮同步示意</div>
 </div>
 
+<h4>翻译编辑与导出</h4>
+<p>翻译完成后，每句翻译文本右侧显示编辑按钮，点击可手动修改翻译内容。修改后点击"保存"即可更新。</p>
+<p>翻译完成后，对照阅读区右上角显示"导出Excel"按钮，点击可将原文与翻译导出为 Excel 对照表文件。</p>
+
 <h4>翻译状态与重试</h4>
 <p>每句翻译会实时显示翻译状态：</p>
 <table>
   <tr><th>状态</th><th>显示</th><th>说明</th></tr>
-  <tr><td>翻译中</td><td>⏳ 翻译中...</td><td>该句正在翻译处理中</td></tr>
+  <tr><td>翻译中</td><td>翻译中...</td><td>该句正在翻译处理中</td></tr>
   <tr><td>翻译完成</td><td>翻译文本</td><td>翻译成功，显示翻译结果</td></tr>
-  <tr><td>翻译失败</td><td>❌ 错误信息 + 重试按钮</td><td>翻译失败，可点击"重试"重新翻译该句</td></tr>
+  <tr><td>翻译失败</td><td>错误信息 + 重试按钮</td><td>翻译失败，可点击"重试"重新翻译该句</td></tr>
   <tr><td>未翻译</td><td>—</td><td>尚未开始翻译</td></tr>
 </table>
 
 <div class="tip-box success">
-  <div class="tip-title">✓ 容错机制</div>
+  <div class="tip-title">容错机制</div>
   翻译采用逐句并行处理，单句翻译失败不会影响其他句子的翻译。失败的句子可单独重试，无需重新翻译全部内容。
+</div>
+
+<h3>5.2.3 并行处理模式</h3>
+<p>当输入的文本中包含多条独立权利要求时，Patent2Pic 支持并行处理模式，同时调用 AI 接口处理多条权利要求，大幅提升批量处理效率。</p>
+
+<div class="diagram">
+  <svg width="480" height="160" viewBox="0 0 480 160">
+    <!-- 输入 -->
+    <rect x="5" y="50" width="100" height="50" rx="8" fill="#e8f4fd" stroke="#1890FF" stroke-width="1.5"/>
+    <text x="55" y="72" text-anchor="middle" fill="#1890FF" font-size="9" font-weight="bold">多条权利要求</text>
+    <text x="55" y="88" text-anchor="middle" fill="#1890FF" font-size="8">1, 2, 3...</text>
+
+    <!-- 并行分发 -->
+    <rect x="130" y="30" width="80" height="100" rx="8" fill="#f6ffed" stroke="#52c41a" stroke-width="1.5"/>
+    <text x="170" y="65" text-anchor="middle" fill="#52c41a" font-size="9" font-weight="bold">并行调用</text>
+    <text x="170" y="82" text-anchor="middle" fill="#52c41a" font-size="8">AI 接口</text>
+    <text x="170" y="98" text-anchor="middle" fill="#52c41a" font-size="8">同时处理</text>
+
+    <line x1="105" y1="65" x2="130" y2="55" stroke="#52c41a" stroke-width="1"/>
+    <line x1="105" y1="75" x2="130" y2="80" stroke="#52c41a" stroke-width="1"/>
+    <line x1="105" y1="85" x2="130" y2="105" stroke="#52c41a" stroke-width="1"/>
+
+    <!-- 多个画布 -->
+    <rect x="240" y="15" width="80" height="35" rx="6" fill="#fff7e6" stroke="#fa8c16" stroke-width="1"/>
+    <text x="280" y="37" text-anchor="middle" fill="#fa8c16" font-size="9" font-weight="bold">画布 1</text>
+    <rect x="240" y="60" width="80" height="35" rx="6" fill="#fff7e6" stroke="#fa8c16" stroke-width="1"/>
+    <text x="280" y="82" text-anchor="middle" fill="#fa8c16" font-size="9" font-weight="bold">画布 2</text>
+    <rect x="240" y="105" width="80" height="35" rx="6" fill="#fff7e6" stroke="#fa8c16" stroke-width="1"/>
+    <text x="280" y="127" text-anchor="middle" fill="#fa8c16" font-size="9" font-weight="bold">画布 3</text>
+
+    <line x1="210" y1="50" x2="240" y2="32" stroke="#fa8c16" stroke-width="1"/>
+    <line x1="210" y1="80" x2="240" y2="77" stroke="#fa8c16" stroke-width="1"/>
+    <line x1="210" y1="105" x2="240" y2="122" stroke="#fa8c16" stroke-width="1"/>
+
+    <!-- 结果 -->
+    <rect x="350" y="40" width="120" height="70" rx="8" fill="#f9f0ff" stroke="#722ed1" stroke-width="1.5"/>
+    <text x="410" y="65" text-anchor="middle" fill="#722ed1" font-size="9" font-weight="bold">独立画布</text>
+    <text x="410" y="82" text-anchor="middle" fill="#722ed1" font-size="8">每条权利要求</text>
+    <text x="410" y="98" text-anchor="middle" fill="#722ed1" font-size="8">对应一个标签页</text>
+
+    <line x1="320" y1="32" x2="350" y2="60" stroke="#722ed1" stroke-width="1"/>
+    <line x1="320" y1="77" x2="350" y2="75" stroke="#722ed1" stroke-width="1"/>
+    <line x1="320" y1="122" x2="350" y2="90" stroke="#722ed1" stroke-width="1"/>
+  </svg>
+  <div class="diagram-caption">图 5-2d 并行处理模式示意</div>
+</div>
+
+<p>并行处理模式的工作方式：</p>
+<ul>
+  <li><strong>自动识别</strong> — 输入多条权利要求后，系统自动识别并逐条处理</li>
+  <li><strong>并行调用</strong> — 同时向 AI 接口发送多个请求，充分利用 API 并发能力</li>
+  <li><strong>独立画布</strong> — 每条权利要求成功处理后，自动创建独立的画布标签页</li>
+  <li><strong>进度显示</strong> — 实时显示每条权利要求的处理状态和进度</li>
+  <li><strong>容错处理</strong> — 单条权利要求处理失败不影响其他条目的处理</li>
+</ul>
+
+<div class="tip-box">
+  <div class="tip-title">提示</div>
+  并行处理时，系统会根据所选 AI 服务商的并发限制自动控制同时进行的请求数量，避免超出 API 速率限制。处理完成后，自动激活首个成功生成的画布。
 </div>
 
 <h2>5.3 画布操作</h2>
@@ -940,6 +1039,29 @@
   <tr><td>平移画布</td><td>鼠标按住空白区域拖动</td></tr>
 </table>
 
+<h3>全局字号调节</h3>
+<p>工具栏提供"字号 −/+"控制，可统一调节画布中所有节点和边的字号：</p>
+<ul>
+  <li><strong>调节范围</strong>：10px ~ 28px</li>
+  <li><strong>调节方式</strong>：点击"−"减小字号，点击"+"增大字号</li>
+  <li><strong>同步调整</strong>：节点和边的字号同步变化，节点边框自动适应字号调整</li>
+  <li><strong>行间距</strong>：边标签的双行文字行间距随字号自动调整</li>
+</ul>
+
+<div class="tip-box">
+  <div class="tip-title">提示</div>
+  全局字号调节不影响组合框的尺寸，组合框仅调整字号不改变框体大小，避免调整字号时组合框坍缩。
+</div>
+
+<h3>边点击高亮</h3>
+<p>点击画布中的边（关系线）时，该边及其连接的节点会以红色高亮显示，方便快速识别关系路径。如果点击的是分叉干线（trunk），则所有分支线及对应节点也会同时高亮。点击空白区域取消高亮。</p>
+
+<h3>组合框显示与隐藏</h3>
+<p>工具栏提供"组合框"复选框，可一键显示或隐藏画布中所有组合框。隐藏组合框后，其中的节点仍正常显示，仅组合框边框和标签不可见。</p>
+
+<h3>重置图形</h3>
+<p>点击工具栏"重置"按钮，可将当前画布恢复到 AI 初始生成的状态，清除后续的所有手动编辑操作。</p>
+
 <h3>右键菜单</h3>
 <p>在画布不同区域右键点击，会弹出对应的操作菜单：</p>
 
@@ -947,7 +1069,7 @@
   <svg width="480" height="200" viewBox="0 0 480 200">
     <!-- 节点右键菜单 -->
     <rect x="10" y="10" width="140" height="170" rx="6" fill="#fff" stroke="#ccc" stroke-width="1" filter="url(#shadow)"/>
-    <text x="20" y="30" fill="#333" font-size="10" font-weight="bold">📌 节点右键菜单</text>
+    <text x="20" y="30" fill="#333" font-size="10" font-weight="bold">节点右键菜单</text>
     <rect x="15" y="38" width="130" height="22" rx="3" fill="#e8f4fd"/>
     <text x="25" y="53" fill="#1890FF" font-size="9">编辑</text>
     <rect x="15" y="64" width="130" height="22" rx="3" fill="#fff"/>
@@ -960,7 +1082,7 @@
 
     <!-- 边右键菜单 -->
     <rect x="170" y="30" width="140" height="90" rx="6" fill="#fff" stroke="#ccc" stroke-width="1" filter="url(#shadow)"/>
-    <text x="180" y="50" fill="#333" font-size="10" font-weight="bold">🔗 边右键菜单</text>
+    <text x="180" y="50" fill="#333" font-size="10" font-weight="bold">边右键菜单</text>
     <rect x="175" y="58" width="130" height="22" rx="3" fill="#f6ffed"/>
     <text x="185" y="73" fill="#52c41a" font-size="9">编辑</text>
     <rect x="175" y="84" width="130" height="22" rx="3" fill="#fff"/>
@@ -968,7 +1090,7 @@
 
     <!-- 空白区域右键菜单 -->
     <rect x="330" y="10" width="140" height="120" rx="6" fill="#fff" stroke="#ccc" stroke-width="1" filter="url(#shadow)"/>
-    <text x="340" y="30" fill="#333" font-size="10" font-weight="bold">⬜ 空白区域右键</text>
+    <text x="340" y="30" fill="#333" font-size="10" font-weight="bold">空白区域右键</text>
     <rect x="335" y="38" width="130" height="22" rx="3" fill="#fff7e6"/>
     <text x="345" y="53" fill="#fa8c16" font-size="9">适配画布</text>
     <rect x="335" y="64" width="130" height="22" rx="3" fill="#fff"/>
@@ -1014,7 +1136,7 @@
 
     <text x="25" y="156" fill="#555" font-size="9">节点类型</text>
     <rect x="25" y="161" width="170" height="24" rx="3" fill="#f8f8f8" stroke="#ddd" stroke-width="1"/>
-    <text x="32" y="177" fill="#333" font-size="9">部件 (component) ▾</text>
+    <text x="32" y="177" fill="#333" font-size="9">部件 (component)</text>
 
     <rect x="25" y="200" width="78" height="28" rx="4" fill="#f0f0f0" stroke="#ccc" stroke-width="1"/>
     <text x="64" y="218" text-anchor="middle" fill="#555" font-size="9">取消</text>
@@ -1037,13 +1159,20 @@
 
     <text x="245" y="176" fill="#555" font-size="9">关系类型</text>
     <rect x="245" y="181" width="170" height="24" rx="3" fill="#f8f8f8" stroke="#ddd" stroke-width="1"/>
-    <text x="252" y="197" fill="#333" font-size="9">包含关系 ▾</text>
+    <text x="252" y="197" fill="#333" font-size="9">包含关系</text>
   </svg>
   <div class="diagram-caption">图 5-4 节点与关系编辑对话框示意</div>
 </div>
 
 <p><strong>节点编辑</strong>可修改：原文部件名称、中文对照、节点类型（部件/子系统/特征）</p>
 <p><strong>关系编辑</strong>可修改：原文关系词、中文关系词、关系类型（位置/动作/包含/逻辑）</p>
+
+<h3>手动添加节点和组合框</h3>
+<p>通过工具栏按钮可手动添加元素：</p>
+<ul>
+  <li><strong>"+ 节点"</strong> — 点击后弹出编辑对话框，填写信息后在画布中添加新节点</li>
+  <li><strong>"+ 组合框"</strong> — 点击后弹出编辑对话框，填写标签后在画布中添加新组合框</li>
+</ul>
 
 <h3>右键操作</h3>
 <p>右键点击节点可执行：编辑、删除、添加连接、添加到限定框</p>
@@ -1061,7 +1190,7 @@
   <tr><td>边框样式</td><td>实线 / 虚线</td><td>边框线条类型</td></tr>
   <tr><td>圆角</td><td>0 ~ 24</td><td>节点圆角半径，步进 2</td></tr>
   <tr><td>字体</td><td>系统默认/宋体/黑体/楷体/仿宋</td><td>节点内文字字体</td></tr>
-  <tr><td>字号</td><td>10 ~ 24 px</td><td>文字大小</td></tr>
+  <tr><td>字号</td><td>10 ~ 28 px</td><td>文字大小</td></tr>
   <tr><td>文字颜色</td><td>任意颜色</td><td>文字颜色</td></tr>
   <tr><td>粗体</td><td>开/关</td><td>文字是否加粗</td></tr>
   <tr><td>宽度</td><td>60 ~ 400</td><td>节点宽度，步进 10</td></tr>
@@ -1075,7 +1204,7 @@
   <tr><td>线条粗细</td><td>0.5 ~ 5</td><td>连线宽度，步进 0.5</td></tr>
   <tr><td>线条类型</td><td>实线/虚线/点线/点划线</td><td>连线线型</td></tr>
   <tr><td>箭头样式</td><td>实心三角/空心三角/菱形/圆形/无/双向</td><td>箭头形状</td></tr>
-  <tr><td>标签字号</td><td>10 ~ 24 px</td><td>关系标签文字大小</td></tr>
+  <tr><td>标签字号</td><td>10 ~ 28 px</td><td>关系标签文字大小</td></tr>
   <tr><td>标签文字颜色</td><td>任意颜色</td><td>标签文字颜色</td></tr>
   <tr><td>标签背景颜色</td><td>任意颜色</td><td>标签背景填充色</td></tr>
 </table>
@@ -1099,13 +1228,14 @@
 </div>
 
 <ul>
-  <li><strong>切换标签</strong> — 点击标签名称切换到对应的权利要求图形</li>
-  <li><strong>关闭标签</strong> — 点击标签右侧的"×"关闭该标签页（至少保留一个标签）</li>
+  <li><strong>切换标签</strong> — 点击标签名称切换到对应的权利要求图形，切换时左侧权利要求阅读区自动同步到对应权利要求</li>
+  <li><strong>关闭标签</strong> — 点击标签右侧的"×"关闭该标签页，关闭前可选择保存或直接关闭</li>
+  <li><strong>关闭最后一个标签</strong> — 当仅剩一个标签页时，关闭该标签将清空画布恢复到空白状态，而非删除标签</li>
 </ul>
 
 <div class="tip-box">
-  <div class="tip-title">💡 提示</div>
-  切换标签时，系统会自动保存当前标签的图形状态，切换回来时可恢复之前的编辑内容。
+  <div class="tip-title">提示</div>
+  切换标签时，系统会自动保存当前标签的图形状态，切换回来时可恢复之前的编辑内容。同时，左侧权利要求阅读区会自动切换到对应权利要求的对照阅读内容。
 </div>
 
 <h2>5.7 项目保存与加载</h2>
@@ -1116,6 +1246,7 @@
   <li>权利要求原文文本</li>
   <li>所有标签页的图形数据</li>
   <li>当前激活的标签页信息</li>
+  <li>翻译状态数据</li>
 </ul>
 
 <h3>打开项目</h3>
@@ -1130,7 +1261,7 @@
 </ul>
 
 <div class="tip-box success">
-  <div class="tip-title">✓ 保障</div>
+  <div class="tip-title">保障</div>
   自动保存功能确保您不会因意外关闭而丢失编辑内容。但建议重要项目仍手动保存为 .p2p 文件作为备份。
 </div>
 
@@ -1139,29 +1270,30 @@
 
 <table>
   <tr><th>格式</th><th>文件扩展名</th><th>适用场景</th></tr>
-  <tr><td>PNG</td><td>.png</td><td>位图图片，适合插入文档、演示文稿等</td></tr>
-  <tr><td>SVG</td><td>.svg</td><td>矢量图，适合高质量打印和进一步编辑</td></tr>
-  <tr><td>JSON</td><td>.json</td><td>结构化数据，适合程序处理和数据交换</td></tr>
+  <tr><td>PNG (3x 高清)</td><td>.png</td><td>高清位图图片，3 倍分辨率，适合插入文档、演示文稿等</td></tr>
+  <tr><td>SVG</td><td>.svg</td><td>矢量图，内容居中显示，适合高质量打印和进一步编辑</td></tr>
 </table>
 
+<p>此外，在权利要求对照阅读区翻译完成后，可点击"导出Excel"按钮，将原文与翻译导出为 Excel 对照表。</p>
+
 <div class="diagram">
-  <svg width="440" height="80" viewBox="0 0 440 80">
+  <svg width="480" height="80" viewBox="0 0 480 80">
     <rect x="10" y="18" width="100" height="40" rx="6" fill="#2d6aa6"/>
-    <text x="60" y="43" text-anchor="middle" fill="white" font-size="11" font-weight="bold">导出 ▾</text>
+    <text x="60" y="43" text-anchor="middle" fill="white" font-size="11" font-weight="bold">导出</text>
     <line x1="115" y1="25" x2="140" y2="25" stroke="#ccc" stroke-width="1"/>
     <line x1="115" y1="38" x2="140" y2="38" stroke="#ccc" stroke-width="1"/>
     <line x1="115" y1="51" x2="140" y2="51" stroke="#ccc" stroke-width="1"/>
 
-    <rect x="145" y="15" width="85" height="24" rx="4" fill="#e8f4fd" stroke="#1890FF" stroke-width="1"/>
-    <text x="187" y="32" text-anchor="middle" fill="#1890FF" font-size="9" font-weight="bold">导出 PNG</text>
-    <rect x="145" y="43" width="85" height="24" rx="4" fill="#f6ffed" stroke="#52c41a" stroke-width="1"/>
-    <text x="187" y="60" text-anchor="middle" fill="#52c41a" font-size="9" font-weight="bold">导出 SVG</text>
+    <rect x="145" y="15" width="100" height="24" rx="4" fill="#e8f4fd" stroke="#1890FF" stroke-width="1"/>
+    <text x="195" y="32" text-anchor="middle" fill="#1890FF" font-size="9" font-weight="bold">导出 PNG (3x)</text>
+    <rect x="145" y="43" width="100" height="24" rx="4" fill="#f6ffed" stroke="#52c41a" stroke-width="1"/>
+    <text x="195" y="60" text-anchor="middle" fill="#52c41a" font-size="9" font-weight="bold">导出 SVG</text>
 
-    <rect x="250" y="15" width="85" height="24" rx="4" fill="#fff7e6" stroke="#fa8c16" stroke-width="1"/>
-    <text x="292" y="32" text-anchor="middle" fill="#fa8c16" font-size="9" font-weight="bold">导出 JSON</text>
+    <rect x="265" y="15" width="100" height="24" rx="4" fill="#fff7e6" stroke="#fa8c16" stroke-width="1"/>
+    <text x="315" y="32" text-anchor="middle" fill="#fa8c16" font-size="9" font-weight="bold">导出 Excel</text>
 
-    <rect x="355" y="25" width="75" height="30" rx="6" fill="#f9f0ff" stroke="#722ed1" stroke-width="1.5"/>
-    <text x="392" y="44" text-anchor="middle" fill="#722ed1" font-size="9" font-weight="bold">保存项目</text>
+    <rect x="385" y="25" width="85" height="30" rx="6" fill="#f9f0ff" stroke="#722ed1" stroke-width="1.5"/>
+    <text x="427" y="44" text-anchor="middle" fill="#722ed1" font-size="9" font-weight="bold">保存项目</text>
   </svg>
   <div class="diagram-caption">图 5-6 导出与保存选项示意</div>
 </div>
@@ -1255,6 +1387,43 @@
   <tr><td>点划线</td><td>━·━·━</td><td>表示逻辑或条件关系</td></tr>
 </table>
 
+<h2>6.4 组合框说明</h2>
+<p>组合框（也称限定框）是画布中用于将相关节点归组的虚线框，具有以下特点：</p>
+
+<div class="diagram">
+  <svg width="440" height="160" viewBox="0 0 440 160">
+    <!-- 组合框 -->
+    <rect x="20" y="20" width="400" height="120" rx="8" fill="#fafafa" fill-opacity="0.5" stroke="#fa8c16" stroke-width="1.5" stroke-dasharray="6 3"/>
+    <text x="35" y="40" fill="#fa8c16" font-size="11" font-weight="bold">壳体 (housing)</text>
+
+    <!-- 内部节点 -->
+    <rect x="40" y="55" width="100" height="35" rx="6" fill="#e8f4fd" stroke="#1890FF" stroke-width="1.5"/>
+    <text x="90" y="77" text-anchor="middle" fill="#1890FF" font-size="10">传感器</text>
+
+    <rect x="160" y="55" width="100" height="35" rx="6" fill="#e8f4fd" stroke="#1890FF" stroke-width="1.5"/>
+    <text x="210" y="77" text-anchor="middle" fill="#1890FF" font-size="10">控制器</text>
+
+    <rect x="280" y="55" width="100" height="35" rx="6" fill="#e8f4fd" stroke="#1890FF" stroke-width="1.5"/>
+    <text x="330" y="77" text-anchor="middle" fill="#1890FF" font-size="10">电源</text>
+
+    <text x="220" y="130" text-anchor="middle" fill="#888" font-size="9">橙色虚线框 + 标签，内含相关节点</text>
+  </svg>
+  <div class="diagram-caption">图 6-3 组合框示意</div>
+</div>
+
+<ul>
+  <li><strong>自动生成</strong> — AI 抽取时，具有包含关系且无其他类型出边的最高层级节点（如层级 0 的根节点），其包含的子节点会自动归入组合框</li>
+  <li><strong>视觉特征</strong> — 橙色虚线边框，半透明浅色填充，左上角显示组合框标签</li>
+  <li><strong>自动跟踪</strong> — 拖动组合框内的节点时，组合框大小自动调整以包含所有成员节点</li>
+  <li><strong>显示/隐藏</strong> — 可通过工具栏"组合框"复选框一键显示或隐藏所有组合框</li>
+  <li><strong>手动添加</strong> — 可通过工具栏"+ 组合框"按钮手动添加新的组合框</li>
+</ul>
+
+<div class="tip-box">
+  <div class="tip-title">提示</div>
+  只有最高层级（层级 0）的节点才会自动转换为组合框。其他层级的包含关系仍以虚线边形式展示，不会转为组合框。
+</div>
+
 <!-- ==================== 第7章 常见问题 ==================== -->
 <h1 class="page-break">7 常见问题</h1>
 
@@ -1271,13 +1440,14 @@
   <li>可在 API 配置中点击"测试连接"验证</li>
 </ul>
 
-<h3>Q3：支持哪些 AI 服务商？</h3>
-<p>目前支持以下三种：</p>
-<ul>
-  <li><strong>智谱 AI (GLM)</strong> — 国产大模型，推荐使用</li>
-  <li><strong>DeepSeek</strong> — 深度求索大模型</li>
-  <li><strong>OpenAI 兼容</strong> — 支持所有兼容 OpenAI API 格式的服务，可自定义端点地址</li>
-</ul>
+<h3>Q3：支持哪些 AI 服务商和模型？</h3>
+<p>目前支持以下三种服务商：</p>
+<table>
+  <tr><th>服务商</th><th>推荐模型</th></tr>
+  <tr><td>智谱 AI (GLM)</td><td>glm-5.1、glm-5、glm-4-plus、glm-4-flash、glm-4-air、glm-4</td></tr>
+  <tr><td>DeepSeek</td><td>deepseek-v4-flash、deepseek-v4-pro</td></tr>
+  <tr><td>OpenAI 兼容</td><td>gpt-4o、gpt-4o-mini、gpt-4-turbo、gpt-3.5-turbo</td></tr>
+</table>
 
 <h3>Q4：如何添加自定义模型？</h3>
 <p>在 API 配置对话框中，点击"添加模型"按钮，输入模型名称（如 gpt-4o-2024-08-06），即可添加并选择使用。</p>
@@ -1286,7 +1456,7 @@
 <p>自动保存数据存储在浏览器本地存储（LocalStorage）中，仅在当前设备有效。建议重要项目手动保存为 .p2p 文件以便长期保存和跨设备使用。</p>
 
 <h3>Q6：导出的 PNG 图片不够清晰怎么办？</h3>
-<p>建议使用 SVG 格式导出，SVG 是矢量图格式，无论如何缩放都不会失真。如必须使用 PNG，可先放大画布再导出。</p>
+<p>PNG 导出默认使用 3 倍分辨率（3x 高清），通常已足够清晰。如需更高质量，建议使用 SVG 格式导出，SVG 是矢量图格式，无论如何缩放都不会失真。</p>
 
 <h3>Q7：如何恢复 API 配置的默认设置？</h3>
 <p>在设置对话框的"API 配置"标签页中，点击底部"恢复默认设置"按钮即可重置当前服务商的配置。如需恢复提示词默认值，可在"提示词设置"标签页中点击"恢复默认"或"全部恢复默认"。</p>
@@ -1303,13 +1473,22 @@
 <h3>Q11：翻译失败怎么办？</h3>
 <p>单句翻译失败时，该句会显示错误信息和"重试"按钮，点击即可重新翻译该句，不影响其他已完成的翻译。如全部翻译失败，请检查 API Key 是否正确、网络是否通畅、所选模型是否可用。</p>
 
+<h3>Q12：如何批量处理多条权利要求？</h3>
+<p>在文本输入框中粘贴包含多条独立权利要求的文本，系统会自动识别分段。点击"生成分解图"后，系统将逐条处理每条权利要求，为每条创建独立的画布标签页。处理过程中可查看各条进度，也可随时终止。</p>
+
+<h3>Q13：组合框可以手动编辑吗？</h3>
+<p>可以。通过工具栏"+ 组合框"按钮可手动添加组合框，也可通过右键菜单将节点添加到已有组合框中。组合框的显示/隐藏可通过工具栏"组合框"复选框控制。</p>
+
+<h3>Q14：切换画布标签页时，左侧阅读区没有同步怎么办？</h3>
+<p>正常情况下，切换画布标签页时，左侧权利要求阅读区会自动同步到对应权利要求。如果未同步，请确认该标签页是通过"生成分解图"功能创建的，而非手动添加的空画布。</p>
+
 <!-- ==================== 第8章 附录 ==================== -->
 <h1 class="page-break">8 附录</h1>
 
 <h2>8.1 完整操作流程图</h2>
 
 <div class="diagram">
-  <svg width="480" height="420" viewBox="0 0 480 420">
+  <svg width="480" height="460" viewBox="0 0 480 460">
     <!-- 开始 -->
     <rect x="180" y="10" width="120" height="36" rx="18" fill="#2d6aa6"/>
     <text x="240" y="33" text-anchor="middle" fill="white" font-size="11" font-weight="bold">启动软件</text>
@@ -1331,23 +1510,23 @@
     <line x1="240" y1="214" x2="240" y2="234" stroke="#2d6aa6" stroke-width="1.5" marker-end="url(#arr)"/>
 
     <!-- 生成 -->
-    <rect x="160" y="234" width="160" height="36" rx="6" fill="#f6ffed" stroke="#52c41a" stroke-width="1.5"/>
+    <rect x="145" y="234" width="190" height="36" rx="6" fill="#f6ffed" stroke="#52c41a" stroke-width="1.5"/>
     <text x="240" y="257" text-anchor="middle" fill="#52c41a" font-size="10" font-weight="bold">点击"生成分解图"</text>
     <line x1="240" y1="270" x2="240" y2="290" stroke="#2d6aa6" stroke-width="1.5" marker-end="url(#arr)"/>
 
     <!-- 编辑 -->
-    <rect x="140" y="290" width="200" height="36" rx="6" fill="#fff7e6" stroke="#fa8c16" stroke-width="1.5"/>
-    <text x="240" y="313" text-anchor="middle" fill="#fa8c16" font-size="10" font-weight="bold">编辑调整（拖拽/样式/布局）</text>
+    <rect x="120" y="290" width="240" height="36" rx="6" fill="#fff7e6" stroke="#fa8c16" stroke-width="1.5"/>
+    <text x="240" y="313" text-anchor="middle" fill="#fa8c16" font-size="10" font-weight="bold">编辑调整（拖拽/样式/字号/布局）</text>
     <line x1="240" y1="326" x2="240" y2="346" stroke="#2d6aa6" stroke-width="1.5" marker-end="url(#arr)"/>
 
     <!-- 导出 -->
-    <rect x="130" y="346" width="220" height="36" rx="6" fill="#f9f0ff" stroke="#722ed1" stroke-width="1.5"/>
-    <text x="240" y="369" text-anchor="middle" fill="#722ed1" font-size="10" font-weight="bold">导出图片 / 保存项目</text>
-    <line x1="240" y1="382" x2="240" y2="398" stroke="#2d6aa6" stroke-width="1.5" marker-end="url(#arr)"/>
+    <rect x="110" y="346" width="260" height="36" rx="6" fill="#f9f0ff" stroke="#722ed1" stroke-width="1.5"/>
+    <text x="240" y="369" text-anchor="middle" fill="#722ed1" font-size="10" font-weight="bold">导出图片/Excel / 保存项目</text>
+    <line x1="240" y1="382" x2="240" y2="402" stroke="#2d6aa6" stroke-width="1.5" marker-end="url(#arr)"/>
 
     <!-- 结束 -->
-    <rect x="180" y="398" width="120" height="18" rx="9" fill="#1a3a5c"/>
-    <text x="240" y="411" text-anchor="middle" fill="white" font-size="9" font-weight="bold">完成</text>
+    <rect x="180" y="402" width="120" height="18" rx="9" fill="#1a3a5c"/>
+    <text x="240" y="415" text-anchor="middle" fill="white" font-size="9" font-weight="bold">完成</text>
 
     <defs>
       <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
@@ -1361,18 +1540,39 @@
 <h2>8.2 AI 服务配置参考</h2>
 <table>
   <tr><th>服务商</th><th>默认端点</th><th>推荐模型</th><th>获取 API Key</th></tr>
-  <tr><td>智谱 AI (GLM)</td><td>https://open.bigmodel.cn/api/paas/v4</td><td>glm-4-flash</td><td>open.bigmodel.cn 注册</td></tr>
-  <tr><td>DeepSeek</td><td>https://api.deepseek.com</td><td>deepseek-chat</td><td>platform.deepseek.com 注册</td></tr>
-  <tr><td>OpenAI 兼容</td><td>https://api.openai.com/v1</td><td>gpt-4o</td><td>对应平台注册</td></tr>
+  <tr><td>智谱 AI (GLM)</td><td>https://open.bigmodel.cn/api/paas</td><td>glm-5.1、glm-4-plus、glm-4-flash</td><td>open.bigmodel.cn 注册</td></tr>
+  <tr><td>DeepSeek</td><td>https://api.deepseek.com</td><td>deepseek-v4-flash、deepseek-v4-pro</td><td>platform.deepseek.com 注册</td></tr>
+  <tr><td>OpenAI 兼容</td><td>https://api.openai.com</td><td>gpt-4o、gpt-4o-mini</td><td>对应平台注册</td></tr>
 </table>
 
 <h2>8.3 文件格式说明</h2>
 <table>
   <tr><th>扩展名</th><th>格式</th><th>说明</th></tr>
   <tr><td>.p2p</td><td>JSON</td><td>Patent2Pic 项目文件，包含完整的编辑状态，可重新打开编辑</td></tr>
-  <tr><td>.png</td><td>位图</td><td>导出的图片文件，适合插入文档</td></tr>
-  <tr><td>.svg</td><td>矢量图</td><td>导出的矢量图文件，适合高质量打印</td></tr>
+  <tr><td>.png</td><td>位图</td><td>导出的高清图片文件（3x 分辨率），适合插入文档</td></tr>
+  <tr><td>.svg</td><td>矢量图</td><td>导出的矢量图文件，内容居中，适合高质量打印</td></tr>
+  <tr><td>.xlsx</td><td>Excel</td><td>导出的原文与翻译对照表，适合进一步编辑和审阅</td></tr>
   <tr><td>.json</td><td>JSON</td><td>导出的结构化数据，包含节点、边、分组等信息</td></tr>
+</table>
+
+<h2>8.4 版本更新清单</h2>
+
+<h3>V0.3.0 (2026-06-05)</h3>
+<table>
+  <tr><th>字段</th><th>内容</th></tr>
+  <tr><td>变更类型</td><td>大版本更新</td></tr>
+  <tr><td>影响章节</td><td>1.2, 3.3, 3.4, 5.2, 5.3, 5.4, 5.5, 5.6, 5.8, 6.1, 6.4, 7, 8.2, 8.3</td></tr>
+  <tr><td>变更说明</td><td>新增并行处理模式、组合框说明、全局字号调节、边点击高亮、导出Excel、输入区折叠/展开、画布同步权利要求、关闭最后画布恢复空白、PNG 3x高清导出、SVG居中导出、重置图形功能；更新AI模型列表（GLM-5.1/5/4-plus、DeepSeek-v4-flash/v4-pro）；新增6.4组合框说明章节</td></tr>
+  <tr><td>图示更新</td><td>图 3-1、图 5-2d、图 5-6、图 6-3 新增/更新</td></tr>
+</table>
+
+<h3>V0.2.0 (2026-05-26)</h3>
+<table>
+  <tr><th>字段</th><th>内容</th></tr>
+  <tr><td>变更类型</td><td>大版本更新</td></tr>
+  <tr><td>影响章节</td><td>全部</td></tr>
+  <tr><td>变更说明</td><td>初始版本，建立说明书框架，覆盖核心功能说明</td></tr>
+  <tr><td>图示更新</td><td>全部图示首次绘制</td></tr>
 </table>
 
 </body>
