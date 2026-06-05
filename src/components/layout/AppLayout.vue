@@ -27,10 +27,12 @@ import TabBar from '../canvas/TabBar.vue'
 import StylePanel from '../panel/StylePanel.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
+import { useClaimStore } from '@/stores/claim'
 import { graphEngine } from '@/services/graph/engine'
 
 const editorStore = useEditorStore()
 const graphStore = useGraphStore()
+const claimStore = useClaimStore()
 const graphCanvasRef = ref<InstanceType<typeof GraphCanvas> | null>(null)
 
 const hasSelection = computed(() =>
@@ -50,6 +52,11 @@ watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
 
   const newTab = graphStore.tabs.find(t => t.id === newTabId)
   if (!newTab) return
+
+  // Sync the claim store's active claim with the new tab
+  if (newTab.claimId) {
+    claimStore.setActiveClaim(newTab.claimId)
+  }
 
   const graph = graphEngine.getGraph()
   if (!graph) return

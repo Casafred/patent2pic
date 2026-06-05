@@ -83,7 +83,7 @@ export function useParallelExtract() {
     task.progress = 10
 
     const isChinese = isChineseText(claim.rawText)
-    const tab = graphStore.addTab(undefined, isChinese, false)
+    const tab = graphStore.addTab(undefined, isChinese, false, claim.id)
     task.tabId = tab.id
     graphStore.updateTabName(tab.id, `权利要求 ${claim.index}`)
 

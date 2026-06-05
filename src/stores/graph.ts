@@ -9,6 +9,7 @@ export interface TabData {
   extractResult: ExtractResult | null
   serializedGraph: Record<string, unknown> | null
   isChinese: boolean
+  claimId: string | null
 }
 
 export const useGraphStore = defineStore('graph', () => {
@@ -28,7 +29,7 @@ export const useGraphStore = defineStore('graph', () => {
 
   let tabCounter = 0
 
-  function addTab(name?: string, isChinese: boolean = false, activate: boolean = true): TabData {
+  function addTab(name?: string, isChinese: boolean = false, activate: boolean = true, claimId: string | null = null): TabData {
     tabCounter++
     const tab: TabData = {
       id: `tab-${Date.now()}-${tabCounter}`,
@@ -36,6 +37,7 @@ export const useGraphStore = defineStore('graph', () => {
       extractResult: null,
       serializedGraph: null,
       isChinese,
+      claimId,
     }
     tabs.value.push(tab)
     if (activate) {

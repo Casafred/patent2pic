@@ -251,11 +251,11 @@ export class GraphEngine {
       style: getDefaultEdgeStyle(e.relationType),
     }))
 
-    // Find the maximum hierarchy level across all nodes
-    let maxHierarchyLevel = 0
+    // Find the minimum hierarchy level (level 0 = topmost/root level)
+    let minHierarchyLevel = Infinity
     for (const nodeData of nodeDataList) {
-      if ((nodeData.hierarchyLevel ?? 0) > maxHierarchyLevel) {
-        maxHierarchyLevel = nodeData.hierarchyLevel ?? 0
+      if ((nodeData.hierarchyLevel ?? 0) < minHierarchyLevel) {
+        minHierarchyLevel = nodeData.hierarchyLevel ?? 0
       }
     }
     const nodeHierarchyMap = new Map<string, number>()
@@ -292,8 +292,8 @@ export class GraphEngine {
     }
     for (const [nodeId, info] of outgoingInfoMap) {
       const nodeLevel = nodeHierarchyMap.get(nodeId) ?? 0
-      if (nodeLevel >= maxHierarchyLevel && info.containmentTargets.size >= 1) {
-        // Only the highest hierarchy level nodes can become group boxes
+      if (nodeLevel <= minHierarchyLevel && info.containmentTargets.size >= 1) {
+        // Only the topmost hierarchy level nodes (e.g. level 0) become group boxes
         autoGroupInfoMap.set(nodeId, {
           memberNodeIds: [...info.containmentTargets],
         })
