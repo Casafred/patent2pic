@@ -1,5 +1,5 @@
 !define PRODUCT_NAME "Patent2Pic"
-!define PRODUCT_VERSION "0.1.0"
+!define PRODUCT_VERSION "0.3.0"
 !define PRODUCT_PUBLISHER "Patent2Pic"
 !define PRODUCT_WEB_SITE "https://patent2pic.com"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\patent2pic.exe"
