@@ -131,6 +131,7 @@ export function useParallelExtract() {
     if (aborted) {
       task.status = 'aborted'
       task.errorMessage = '用户终止'
+      task.progress = 100
       task.durationMs = Date.now() - startTime
       graphStore.removeTab(tab.id)
       return
@@ -139,6 +140,7 @@ export function useParallelExtract() {
     if (streamError) {
       task.status = 'error'
       task.errorMessage = streamError
+      task.progress = 100
       task.durationMs = Date.now() - startTime
       graphStore.removeTab(tab.id)
       aiStore.addExtractLog({
@@ -162,6 +164,7 @@ export function useParallelExtract() {
     } catch (err) {
       task.status = 'error'
       task.errorMessage = (err as Error).message || '解析失败'
+      task.progress = 100
       task.durationMs = Date.now() - startTime
       graphStore.removeTab(tab.id)
       aiStore.addExtractLog({
