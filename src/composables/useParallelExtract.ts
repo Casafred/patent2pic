@@ -6,7 +6,6 @@ import { useTranslationStore } from '@/stores/translation'
 import { streamChat, getModelConcurrency } from '@/services/ai/client'
 import { buildMessages } from '@/services/ai/prompt'
 import { parseExtractResult } from '@/services/ai/extractor'
-import { graphEngine } from '@/services/graph/engine'
 import { alignTranslationToSentences } from '@/services/claim/translation-aligner'
 import type { ExtractResult, SentencePair } from '@/types/ai'
 import type { Claim } from '@/types/claim'
@@ -180,12 +179,12 @@ export function useParallelExtract() {
     task.progress = 90
     graphStore.updateTabExtractResult(tab.id, result)
 
-    // Build graph if this tab is currently active (e.g., user switched to it manually)
-    // Otherwise, extractResult is saved; AppLayout.vue watch will build on switch,
-    // or runParallel will build the first successful tab after all tasks complete.
-    if (graphStore.activeTabId === tab.id) {
-      await graphEngine.batchBuild(result, undefined, isChinese)
-    }
+    // In parallel mode, we don't build the graph here because:
+    // 1. The graph engine is a singleton - concurrent builds would conflict
+    // 2. Tabs are created with activate=false, so they aren't the active tab
+    // 3. runParallel will activate the first successful tab after all tasks complete
+    // 4. AppLayout.vue watch will build the graph when activeTabId changes
+    // 5. Other tabs will be built on-demand when the user switches to them
 
     // Apply translations
     if (result.sentencePairs && result.sentencePairs.length > 0) {
@@ -310,14 +309,11 @@ export function useParallelExtract() {
     // Wait for remaining tasks
     await Promise.all(executing)
 
-    // After all tasks complete, activate the first successful tab and build its graph
+    // After all tasks complete, activate the first successful tab
+    // AppLayout.vue watch will handle building the graph when activeTabId changes
     const firstSuccess = tasks.value.find(t => t.status === 'success' && t.tabId)
     if (firstSuccess && firstSuccess.tabId) {
       graphStore.setActiveTabId(firstSuccess.tabId)
-      const tab = graphStore.tabs.find(t => t.id === firstSuccess.tabId)
-      if (tab?.extractResult) {
-        await graphEngine.batchBuild(tab.extractResult, undefined, tab.isChinese)
-      }
     }
 
     isRunning.value = false

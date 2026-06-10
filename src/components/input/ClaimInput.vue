@@ -196,8 +196,17 @@ async function handleGenerate(): Promise<void> {
   if (!claimStore.rawText.trim()) return
   if (!aiStore.activeApiKey) return
 
+  // Ensure claims are parsed
   if (claimStore.claims.length === 0) {
     handleTextInput()
+  }
+
+  // Ensure activeClaimId points to an existing claim
+  if (claimStore.claims.length > 0) {
+    const activeExists = claimStore.claims.some(c => c.id === claimStore.activeClaimId)
+    if (!activeExists) {
+      claimStore.setActiveClaim(claimStore.claims[0].id)
+    }
   }
 
   const result = await extractActiveClaim()

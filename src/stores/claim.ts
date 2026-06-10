@@ -18,8 +18,12 @@ export const useClaimStore = defineStore('claim', () => {
 
   function setClaims(parsed: Claim[]): void {
     claims.value = parsed
-    if (parsed.length > 0 && !activeClaimId.value) {
-      activeClaimId.value = parsed[0].id
+    if (parsed.length > 0) {
+      // Always ensure activeClaimId points to an existing claim
+      const activeExists = parsed.some(c => c.id === activeClaimId.value)
+      if (!activeExists) {
+        activeClaimId.value = parsed[0].id
+      }
     }
   }
 
