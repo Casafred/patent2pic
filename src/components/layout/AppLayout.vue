@@ -75,27 +75,28 @@ watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
   } else if (newTab.extractResult) {
     await graphEngine.batchBuild(newTab.extractResult, undefined, newTab.isChinese)
   }
-  // If neither serializedGraph nor extractResult is available yet
-  // (e.g., parallel processing still in progress), the canvas stays empty.
-  // When extractResult becomes available, the watch below will build the graph.
+  // If extractResult is not available yet (parallel processing in progress),
+  // the canvas stays empty. The extractResult watcher below will build the graph
+  // when it becomes available.
 })
 
-// Watch for extractResult becoming available on the active tab
-// This handles the case where the user switches to a tab whose
-// parallel processing hasn't completed yet
-watch(() => graphStore.activeTab?.extractResult, async (newResult, oldResult) => {
-  if (!newResult || oldResult) return
-  // extractResult just became available on the active tab (was null before)
-  const tab = graphStore.activeTab
-  if (!tab) return
-  const graph = graphEngine.getGraph()
-  if (!graph) return
-
-  // Only build if the canvas is currently empty (no serializedGraph was loaded)
-  if (graph.getCells().length === 0) {
-    await graphEngine.batchBuild(newResult, undefined, tab.isChinese)
-  }
-})
+// Watch for extractResult becoming available on the active tab during parallel processing.
+// This handles the case where the user switches to a tab whose processing hasn't completed yet.
+watch(
+  () => graphStore.activeTab?.extractResult,
+  async (newResult) => {
+    if (!newResult) return
+    const graph = graphEngine.getGraph()
+    if (!graph) return
+    // Only build if the canvas is currently empty
+    if (graph.getCells().length === 0) {
+      const tab = graphStore.activeTab
+      if (tab) {
+        await graphEngine.batchBuild(newResult, undefined, tab.isChinese)
+      }
+    }
+  },
+)
 </script>
 
 <style scoped>

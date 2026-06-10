@@ -50,7 +50,7 @@
               :disabled="aiStore.isExtracting || !aiStore.activeApiKey"
               @click="handleParallelGenerate"
             >
-              并行处理全部 ({{ effectiveConc }} 并发)
+              并行处理全部 ({{ parallelExtract.maxConcurrency.value }} 并发)
             </el-button>
           </div>
           <div class="concurrency-hint">
@@ -174,8 +174,6 @@ const collapsedPreview = computed(() => {
   return preview.length > 40 ? preview.slice(0, 40) + '...' : preview
 })
 
-const effectiveConc = computed(() => parallelExtract.effectiveConcurrency.value)
-
 const parallelProgress = computed(() => {
   const total = parallelExtract.totalCount.value
   if (total === 0) return 0
@@ -209,6 +207,13 @@ async function handleGenerate(): Promise<void> {
     }
   }
 
+  // If multiple claims are detected, use parallel processing
+  if (claimStore.claims.length > 1) {
+    await parallelExtract.runParallel(claimStore.claims)
+    return
+  }
+
+  // Single claim: use single extraction
   const result = await extractActiveClaim()
   if (result) {
     claimStore.collapseInput()

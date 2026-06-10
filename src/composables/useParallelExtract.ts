@@ -313,15 +313,21 @@ export function useParallelExtract() {
     await Promise.all(executing)
 
     // After all tasks complete, activate the first successful tab
-    // AppLayout.vue watch will handle building the graph when activeTabId changes
+    // and build its graph
     const firstSuccess = tasks.value.find(t => t.status === 'success' && t.tabId)
     if (firstSuccess && firstSuccess.tabId) {
-      graphStore.setActiveTabId(firstSuccess.tabId)
-    }
+      // Set isExtracting to false first so the UI updates correctly
+      isRunning.value = false
+      aiStore.isExtracting = false
+      abortControllers = []
 
-    isRunning.value = false
-    aiStore.isExtracting = false
-    abortControllers = []
+      // Activate the first successful tab - AppLayout.vue watch will build the graph
+      graphStore.setActiveTabId(firstSuccess.tabId)
+    } else {
+      isRunning.value = false
+      aiStore.isExtracting = false
+      abortControllers = []
+    }
   }
 
   function abortAll(): void {
