@@ -12,7 +12,7 @@ import { buildNode, updateNodeStyle, calculateNodeSize } from './node-builder'
 import { buildEdge, buildTrunkEdge, buildBranchEdge, updateEdgeStyle } from './edge-builder'
 import { applyElkLayout, type ElkLayoutOptions } from './layout'
 import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle } from './style-registry'
-import { setupCustomEdge } from './custom-edge'
+import { setupCustomEdge, EdgeViewWithGap } from './custom-edge'
 import { timingStart, timingEnd } from '@/utils/timing'
 
 export class GraphEngine {
@@ -203,6 +203,9 @@ export class GraphEngine {
         allowReverse: false,
       },
     }))
+
+    // Create a shared labels layer so edge labels render above ALL edge lines
+    this.setupLabelsLayer()
   }
 
   destroy(): void {
@@ -210,6 +213,34 @@ export class GraphEngine {
       this.graph.dispose()
       this.graph = null
     }
+  }
+
+  /**
+   * Create a shared SVG group for edge labels, positioned after all edges
+   * but before nodes. This ensures all edge labels render above all edge
+   * lines, fixing the issue where one edge's line covers another edge's label.
+   */
+  private setupLabelsLayer(): void {
+    if (!this.graph) return
+    const container = this.graph.container
+    const viewport = container.querySelector('.x6-graph-svg-viewport') as SVGElement | null
+    if (!viewport) return
+
+    const labelsLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    labelsLayer.setAttribute('class', 'edge-labels-layer')
+    // Insert before the first node container, or at the end if no nodes
+    const firstNode = viewport.querySelector('.x6-node')
+    if (firstNode) {
+      viewport.insertBefore(labelsLayer, firstNode)
+    } else {
+      viewport.appendChild(labelsLayer)
+    }
+    EdgeViewWithGap.setLabelsLayer(labelsLayer)
+
+    // When edges are removed, reorganize labels to clean up
+    this.graph.on('edge:removed', () => {
+      EdgeViewWithGap.scheduleLabelsReorganize()
+    })
   }
 
   getGraph(): Graph | null {

@@ -448,6 +448,90 @@ interface GapRegion {
 }
 
 class EdgeViewWithGap extends EdgeView {
+  private static labelsLayer: SVGElement | null = null
+  private static reorganizeScheduled: boolean = false
+
+  static setLabelsLayer(layer: SVGElement): void {
+    EdgeViewWithGap.labelsLayer = layer
+  }
+
+  static getLabelsLayer(): SVGElement | null {
+    return EdgeViewWithGap.labelsLayer
+  }
+
+  /**
+   * Schedule a label reorganization on the next microtask.
+   * This batches multiple edge updates into a single reorganization pass.
+   */
+  static scheduleLabelsReorganize(): void {
+    if (EdgeViewWithGap.reorganizeScheduled) return
+    EdgeViewWithGap.reorganizeScheduled = true
+    queueMicrotask(() => {
+      EdgeViewWithGap.reorganizeScheduled = false
+      EdgeViewWithGap.reorganizeAllLabels()
+    })
+  }
+
+  /**
+   * Move all edge labels to a shared labels layer so they render
+   * above ALL edge lines, regardless of each edge's zIndex.
+   * This fixes the issue where one edge's line covers another edge's label.
+   */
+  static reorganizeAllLabels(): void {
+    const layer = EdgeViewWithGap.labelsLayer
+    if (!layer) return
+
+    const viewport = layer.parentNode as SVGElement | null
+    if (!viewport) return
+
+    // Collect all edge label elements from BOTH:
+    // 1. Edge containers (newly rendered labels that haven't been moved yet)
+    // 2. The labels layer itself (labels from previous reorganization)
+    const allEdgeContainers = viewport.querySelectorAll('.x6-edge')
+    const labelMap = new Map<string, SVGElement>() // edgeId -> label element
+
+    // Collect from edge containers first (these are the latest versions)
+    allEdgeContainers.forEach(edgeContainer => {
+      const labels = edgeContainer.querySelectorAll(':scope > .x6-edge-label')
+      labels.forEach(label => {
+        const el = label as SVGElement
+        const edgeId = (edgeContainer as SVGElement).getAttribute('data-cell-id') || ''
+        el.setAttribute('data-edge-id', edgeId)
+        labelMap.set(edgeId + '-' + labelMap.size, el)
+      })
+    })
+
+    // Also collect from the labels layer (previously moved labels)
+    const existingInLayer = layer.querySelectorAll('.x6-edge-label')
+    existingInLayer.forEach(existing => {
+      const el = existing as SVGElement
+      const edgeId = el.getAttribute('data-edge-id') || ''
+      // Only keep if we don't already have a newer version from the edge container
+      const alreadyHave = Array.from(labelMap.values()).some(
+        l => l.getAttribute('data-edge-id') === edgeId
+      )
+      if (!alreadyHave) {
+        labelMap.set(edgeId + '-' + labelMap.size, el)
+      }
+    })
+
+    // Clear the labels layer
+    layer.innerHTML = ''
+
+    // Append all labels
+    labelMap.forEach(label => {
+      layer.appendChild(label)
+    })
+
+    // Ensure the labels layer is positioned after edges but before nodes
+    const firstNode = viewport.querySelector('.x6-node')
+    if (firstNode && layer.nextSibling !== firstNode) {
+      viewport.insertBefore(layer, firstNode)
+    } else if (!firstNode) {
+      viewport.appendChild(layer)
+    }
+  }
+
   confirmUpdate(flag: number, options: KeyValue = {}): number {
     const hadUpdate = this.hasAction(flag, 'update')
     const ret = super.confirmUpdate(flag, options)
@@ -457,6 +541,8 @@ class EdgeViewWithGap extends EdgeView {
       } catch {
         // ignore gap update errors to not break the render cycle
       }
+      // Schedule label reorganization so labels are above all edge lines
+      EdgeViewWithGap.scheduleLabelsReorganize()
     }
     return ret
   }
