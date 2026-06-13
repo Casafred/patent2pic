@@ -143,13 +143,18 @@ function validateEdges(raw: unknown, nodes: ExtractNode[]): ExtractEdge[] {
     if (!nodeIds.has(source)) throw new Error(`edges[${index}] source "${source}" 不存在于节点中`)
     if (!nodeIds.has(target)) throw new Error(`edges[${index}] target "${target}" 不存在于节点中`)
 
-    if (!edge.originalText) throw new Error(`edges[${index}] 缺少 originalText`)
-    if (!edge.chineseText) throw new Error(`edges[${index}] 缺少 chineseText`)
-
-    const validTypes = ['position', 'action', 'containment', 'logical']
+    // Allow source === target only for attribute type edges
+    const validTypes = ['position', 'action', 'containment', 'logical', 'attribute']
     const relationType = validTypes.includes(edge.relationType as string)
       ? edge.relationType as ExtractEdge['relationType']
       : 'position'
+
+    if (source === target && relationType !== 'attribute') {
+      throw new Error(`edges[${index}] source 和 target 相同但不是 attribute 类型`)
+    }
+
+    if (!edge.originalText) throw new Error(`edges[${index}] 缺少 originalText`)
+    if (!edge.chineseText) throw new Error(`edges[${index}] 缺少 chineseText`)
 
     return {
       id: String(edge.id || `e${index + 1}`),

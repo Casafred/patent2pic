@@ -79,7 +79,7 @@ export interface ExtractEdge {
   target: string
   originalText: string
   chineseText: string
-  relationType: 'position' | 'action' | 'containment' | 'logical'
+  relationType: 'position' | 'action' | 'containment' | 'logical' | 'attribute'
 }
 
 export interface ExtractGroup {

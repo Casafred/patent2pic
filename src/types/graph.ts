@@ -1,4 +1,4 @@
-export type RelationType = 'position' | 'action' | 'containment' | 'logical'
+export type RelationType = 'position' | 'action' | 'containment' | 'logical' | 'attribute'
 export type NodeType = 'component' | 'subsystem' | 'feature'
 export type ArrowType = 'solid-triangle' | 'hollow-triangle' | 'diamond' | 'circle' | 'none' | 'both'
 export type LineStyle = 'solid' | 'dashed' | 'dotted' | 'dash-dot'

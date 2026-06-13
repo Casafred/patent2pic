@@ -32,6 +32,7 @@ const RELATION_TYPE_STYLES: Record<RelationType, Pick<EdgeStyle, 'stroke' | 'str
   action: { stroke: '#52c41a', strokeDasharray: null, arrowType: 'solid-triangle' },
   containment: { stroke: '#fa8c16', strokeDasharray: '5 5', arrowType: 'hollow-triangle' },
   logical: { stroke: '#722ed1', strokeDasharray: '2 4 2 4 5 4', arrowType: 'diamond' },
+  attribute: { stroke: '#13c2c2', strokeDasharray: '3 3', arrowType: 'none' },
 }
 
 export function getDefaultNodeStyle(nodeType: NodeType): NodeStyle {
@@ -98,6 +99,7 @@ export const RELATION_TYPE_OPTIONS: { value: RelationType; label: string; color:
   { value: 'action', label: '动作关系', color: '#52c41a' },
   { value: 'containment', label: '包含关系', color: '#fa8c16' },
   { value: 'logical', label: '逻辑关系', color: '#722ed1' },
+  { value: 'attribute', label: '属性关系', color: '#13c2c2' },
 ]
 
 export const FONT_FAMILY_OPTIONS = [

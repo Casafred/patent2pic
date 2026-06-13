@@ -272,15 +272,29 @@ export class GraphEngine {
       }
     })
 
-    const edgeDataList: EdgeData[] = result.edges.map(e => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      originalText: e.originalText,
-      chineseText: e.chineseText,
-      relationType: e.relationType,
-      style: getDefaultEdgeStyle(e.relationType),
-    }))
+    const edgeDataList: EdgeData[] = result.edges
+      .filter(e => e.relationType !== 'attribute' || e.source !== e.target)
+      .map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        originalText: e.originalText,
+        chineseText: e.chineseText,
+        relationType: e.relationType,
+        style: getDefaultEdgeStyle(e.relationType),
+      }))
+
+    const attributeEdgeList: EdgeData[] = result.edges
+      .filter(e => e.relationType === 'attribute' && e.source === e.target)
+      .map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        originalText: e.originalText,
+        chineseText: e.chineseText,
+        relationType: e.relationType,
+        style: getDefaultEdgeStyle(e.relationType),
+      }))
 
     // Find the minimum hierarchy level (level 0 = topmost/root level)
     let minHierarchyLevel = Infinity
@@ -448,6 +462,11 @@ export class GraphEngine {
     }
     timingEnd(`    │    添加节点和边`)
 
+    // Render attribute edges as property tags below nodes
+    if (attributeEdgeList.length > 0) {
+      this.renderAttributeTags(attributeEdgeList, isChinese)
+    }
+
     if (autoGroupInfoMap.size > 0) {
       this.convertAutoGroupNodes(autoGroupInfoMap, isChinese)
     }
@@ -556,6 +575,143 @@ export class GraphEngine {
     this.bindGroupTracking()
   }
 
+  private renderAttributeTags(attributeEdges: EdgeData[], isChinese: boolean): void {
+    if (!this.graph) return
+
+    // Group attribute edges by source node
+    const nodeAttributesMap = new Map<string, EdgeData[]>()
+    for (const attrEdge of attributeEdges) {
+      const existing = nodeAttributesMap.get(attrEdge.source)
+      if (existing) {
+        existing.push(attrEdge)
+      } else {
+        nodeAttributesMap.set(attrEdge.source, [attrEdge])
+      }
+    }
+
+    for (const [nodeId, attrs] of nodeAttributesMap) {
+      const sourceCell = this.graph.getCellById(nodeId)
+      if (!sourceCell || !sourceCell.isNode()) continue
+
+      const sourceNode = sourceCell as unknown as {
+        getPosition: () => { x: number; y: number }
+        getSize: () => { width: number; height: number }
+      }
+      const pos = sourceNode.getPosition()
+      const size = sourceNode.getSize()
+
+      const attrStyle = getDefaultEdgeStyle('attribute')
+      const tagFontSize = 12
+      const tagLineHeight = tagFontSize * 1.4
+      const tagPaddingH = 8
+      const tagPaddingV = 4
+      const tagGap = 6
+      const stemLength = 16
+
+      // Calculate starting Y position below the node
+      let currentY = pos.y + size.height + stemLength
+
+      for (let i = 0; i < attrs.length; i++) {
+        const attrEdge = attrs[i]
+        const labelText = isChinese
+          ? (attrEdge.chineseText || attrEdge.originalText)
+          : `${attrEdge.originalText}\n${attrEdge.chineseText}`
+
+        // Measure text to determine tag size
+        const lines = labelText.split('\n')
+        let maxTextWidth = 0
+        for (const line of lines) {
+          const width = this.measureTextWidth(line, tagFontSize, attrStyle.fontFamily)
+          if (width > maxTextWidth) maxTextWidth = width
+        }
+        const tagWidth = maxTextWidth + tagPaddingH * 2
+        const tagHeight = lines.length * tagLineHeight + tagPaddingV * 2
+
+        const tagX = pos.x + size.width / 2 - tagWidth / 2
+        const tagY = currentY
+
+        // Create a small stem line from node bottom to tag top
+        const stemX = pos.x + size.width / 2
+        const stemStartY = pos.y + size.height
+        const stemEndY = tagY
+
+        // Draw stem as a thin edge (no arrow, dashed)
+        this.graph.addEdge({
+          id: `attr-stem-${attrEdge.id}`,
+          shape: 'edge',
+          source: { x: stemX, y: stemStartY },
+          target: { x: stemX, y: stemEndY },
+          attrs: {
+            line: {
+              stroke: attrStyle.stroke,
+              strokeWidth: 2,
+              strokeDasharray: '3 3',
+              sourceMarker: '',
+              targetMarker: '',
+            },
+          },
+          data: {
+            isAttributeStem: true,
+            attributeEdgeId: attrEdge.id,
+            sourceNodeId: nodeId,
+          },
+          zIndex: 5,
+        })
+
+        // Create the tag label node
+        this.graph.addNode({
+          id: `attr-tag-${attrEdge.id}`,
+          x: tagX,
+          y: tagY,
+          width: tagWidth,
+          height: tagHeight,
+          shape: 'rect',
+          attrs: {
+            body: {
+              fill: '#e6fffb',
+              fillOpacity: 0.9,
+              stroke: attrStyle.stroke,
+              strokeWidth: 1.5,
+              strokeDasharray: '',
+              rx: 4,
+              ry: 4,
+            },
+            label: {
+              text: labelText,
+              fontSize: tagFontSize,
+              fontFamily: attrStyle.fontFamily,
+              fill: '#08979c',
+              fontWeight: 'normal',
+              textAnchor: 'middle',
+              textVerticalAnchor: 'middle',
+              lineHeight: tagLineHeight,
+            },
+          },
+          data: {
+            isAttributeTag: true,
+            attributeEdgeId: attrEdge.id,
+            sourceNodeId: nodeId,
+            originalText: attrEdge.originalText,
+            chineseText: attrEdge.chineseText,
+            relationType: 'attribute',
+            style: attrStyle,
+          },
+          zIndex: 5,
+        })
+
+        currentY = tagY + tagHeight + tagGap
+      }
+    }
+  }
+
+  private measureTextWidth(text: string, fontSize: number, fontFamily: string): number {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return text.length * fontSize * 0.6
+    ctx.font = `normal ${fontSize}px ${fontFamily}`
+    return ctx.measureText(text).width
+  }
+
   private getNodesBounds(nodes: unknown[]): { minX: number; minY: number; maxX: number; maxY: number } {
     let minX = Infinity
     let minY = Infinity
@@ -583,7 +739,7 @@ export class GraphEngine {
     this.graph.on('node:moved', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined; attr: (path: string, value?: unknown) => unknown } }) => {
       if (isUpdatingGroup) return
       const data = node.getData()
-      if (data?.isForkNode) return
+      if (data?.isForkNode || data?.isAttributeTag) return
       if (data?.isGroup) {
         this.restoreGroupVisibility(node)
         return
@@ -591,13 +747,14 @@ export class GraphEngine {
       isUpdatingGroup = true
       this.updateGroupBoundsForMember(node.id)
       this.updateForkNodePositions()
+      this.updateAttributeTagPositions(node.id)
       isUpdatingGroup = false
     })
 
     this.graph.on('node:change:position', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined; attr: (path: string, value?: unknown) => unknown } }) => {
       if (isUpdatingGroup) return
       const data = node.getData()
-      if (data?.isForkNode) return
+      if (data?.isForkNode || data?.isAttributeTag) return
       if (data?.isGroup) {
         this.restoreGroupVisibility(node)
         return
@@ -605,6 +762,7 @@ export class GraphEngine {
       isUpdatingGroup = true
       this.updateGroupBoundsForMember(node.id)
       this.updateForkNodePositions()
+      this.updateAttributeTagPositions(node.id)
       isUpdatingGroup = false
     })
   }
@@ -938,6 +1096,65 @@ export class GraphEngine {
       const newPos = this.calculateForkPosition(sourceId, targetIds)
       const fn = forkNode as unknown as { setPosition: (x: number, y: number) => void }
       fn.setPosition(newPos.x, newPos.y)
+    }
+  }
+
+  private updateAttributeTagPositions(nodeId: string): void {
+    if (!this.graph) return
+
+    // Find all attribute tags and stems belonging to this node
+    const attrTags = this.graph.getNodes().filter(n => {
+      const data = n.getData() as Record<string, unknown> | undefined
+      return data?.isAttributeTag && data?.sourceNodeId === nodeId
+    })
+
+    if (attrTags.length === 0) return
+
+    const sourceCell = this.graph.getCellById(nodeId)
+    if (!sourceCell || !sourceCell.isNode()) return
+
+    const sourceNode = sourceCell as unknown as {
+      getPosition: () => { x: number; y: number }
+      getSize: () => { width: number; height: number }
+    }
+    const pos = sourceNode.getPosition()
+    const size = sourceNode.getSize()
+
+    const stemLength = 16
+    const tagGap = 6
+    let currentY = pos.y + size.height + stemLength
+
+    // Sort tags by their current Y position to maintain order
+    const sortedTags = [...attrTags].sort((a, b) => {
+      const aNode = a as unknown as { getPosition: () => { x: number; y: number } }
+      const bNode = b as unknown as { getPosition: () => { x: number; y: number } }
+      return aNode.getPosition().y - bNode.getPosition().y
+    })
+
+    for (const tagNode of sortedTags) {
+      const tagData = tagNode.getData() as Record<string, unknown>
+      const tagN = tagNode as unknown as {
+        getPosition: () => { x: number; y: number }
+        getSize: () => { width: number; height: number }
+        setPosition: (x: number, y: number) => void
+      }
+      const tagSize = tagN.getSize()
+      const tagX = pos.x + size.width / 2 - tagSize.width / 2
+      tagN.setPosition(tagX, currentY)
+
+      // Update the corresponding stem edge
+      const attrEdgeId = tagData.attributeEdgeId as string
+      const stemEdge = this.graph.getEdges().find(e => {
+        const eData = e.getData() as Record<string, unknown> | undefined
+        return eData?.isAttributeStem && eData?.attributeEdgeId === attrEdgeId
+      })
+      if (stemEdge) {
+        const stemX = pos.x + size.width / 2
+        stemEdge.setSource({ x: stemX, y: pos.y + size.height })
+        stemEdge.setTarget({ x: stemX, y: currentY })
+      }
+
+      currentY = currentY + tagSize.height + tagGap
     }
   }
 
