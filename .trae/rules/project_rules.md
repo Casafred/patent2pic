@@ -15,27 +15,32 @@
 
 ### PDF 生成命令
 
-**前置条件**：系统需安装中文字体（如 `fonts-noto-cjk`），否则 PDF 中中文将无法正常显示。
+**前置条件**：
+1. 系统需安装中文字体（如 `fonts-noto-cjk`），否则 PDF 中中文将无法正常显示
+2. 使用 WeasyPrint（而非 wkhtmltopdf）生成 PDF，因为 WeasyPrint 支持中文文字可复制和 PDF 书签目录
 
 ```bash
 # 安装中文字体（Ubuntu/Debian）
 apt-get install -y fonts-noto-cjk fonts-noto-cjk-extra
 fc-cache -f -v
+
+# 安装 WeasyPrint
+pip3 install weasyprint
 ```
 
 ```bash
 cd /workspace/docs
-wkhtmltopdf \
-  --enable-local-file-access \
-  --page-size A4 \
-  --margin-top 25mm \
-  --margin-bottom 25mm \
-  --margin-left 20mm \
-  --margin-right 20mm \
-  --encoding UTF-8 \
-  user-manual.html \
-  Patent2Pic-用户使用说明书-VX.X.X.pdf
+python3 -c "
+from weasyprint import HTML
+HTML(filename='user-manual.html').write_pdf('Patent2Pic-用户使用说明书-VX.X.X.pdf')
+print('PDF generated successfully')
+"
 ```
+
+**重要说明**：
+- **禁止使用 wkhtmltopdf**：wkhtmltopdf 在无补丁 Qt 环境下不支持 PDF 书签目录，且中文字体渲染容易出现文字丢失问题
+- **WeasyPrint 优势**：自动将 HTML 的 `<h1>` `<h2>` `<h3>` 标签转为 PDF 书签（可在 PDF 阅读器的目录面板中查看），中文文字可复制，字体正确嵌入
+- 生成后务必验证 PDF：打开 PDF 确认中文文字可见且可复制、书签目录存在
 
 ### 检查清单
 
@@ -43,7 +48,11 @@ wkhtmltopdf \
 
 - [ ] HTML 文件版本号已更新
 - [ ] HTML 内容已根据最新功能修改
-- [ ] PDF 已重新生成
+- [ ] 中文字体已安装（`fonts-noto-cjk`）
+- [ ] WeasyPrint 已安装（`pip3 install weasyprint`）
+- [ ] PDF 已使用 WeasyPrint 重新生成（禁止使用 wkhtmltopdf）
+- [ ] PDF 中文文字可见且可复制（非图片/非空白）
+- [ ] PDF 书签目录存在且层级正确
 - [ ] 旧版本 PDF 已删除
 - [ ] 变更已提交到 main 分支
 
