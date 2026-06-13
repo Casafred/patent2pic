@@ -338,7 +338,7 @@
   <div class="subtitle">专利功能分解图生成工具 · 用户使用说明书</div>
   <div class="divider-line"></div>
   <div class="version-info">
-    版本 V0.3.0<br/>
+    版本 V0.3.1<br/>
     2026 年 6 月（更新）
   </div>
 </div>
@@ -385,6 +385,7 @@
     <li class="level2"><span>6.2 关系类型</span></li>
     <li class="level2"><span>6.3 线型说明</span></li>
     <li class="level2"><span>6.4 组合框说明</span></li>
+    <li class="level2"><span>6.5 属性标签说明</span></li>
     <li class="level1"><span>7 常见问题</span></li>
     <li class="level1"><span>8 附录</span></li>
   </ul>
@@ -468,6 +469,10 @@
 <div class="feature-card">
   <div class="card-title">并行处理</div>
   <div class="card-desc">支持同时处理多条权利要求，并行调用 AI 接口，为每条权利要求独立创建画布，大幅提升批量处理效率。</div>
+</div>
+<div class="feature-card">
+  <div class="card-title">属性标签</div>
+  <div class="card-desc">自动识别节点的独立属性（如"可在第一位置和第二位置之间移动"），以无箭头的青色标签形式呈现在节点下方，清晰区分属性与关系。</div>
 </div>
 
 <h2>1.3 系统要求</h2>
@@ -838,7 +843,8 @@
   <tr><td>动作关系</td><td>部件之间的功能动作关系</td></tr>
   <tr><td>包含关系</td><td>部件之间的层级包含关系</td></tr>
   <tr><td>逻辑关系</td><td>部件之间的条件/因果逻辑关系</td></tr>
-  <tr><td>限定框/组合框</td><td>将相关部件归入同一组合框中（最高层级节点自动转换为组合框）</td></tr>
+  <tr><td>属性关系</td><td>节点自身的特性、状态或能力（不指向其他节点）</td></tr>
+  <tr><td>限定框/组合框</td><td>将相关部件归入同一组合框中（最高层级节点自动转换为组合框，非最高层级节点通过连线连接到子组合框）</td></tr>
 </table>
 
 <h3>5.2.1 提示词设置</h3>
@@ -1165,7 +1171,7 @@
 </div>
 
 <p><strong>节点编辑</strong>可修改：原文部件名称、中文对照、节点类型（部件/子系统/特征）</p>
-<p><strong>关系编辑</strong>可修改：原文关系词、中文关系词、关系类型（位置/动作/包含/逻辑）</p>
+<p><strong>关系编辑</strong>可修改：原文关系词、中文关系词、关系类型（位置/动作/包含/逻辑/属性）</p>
 
 <h3>手动添加节点和组合框</h3>
 <p>通过工具栏按钮可手动添加元素：</p>
@@ -1342,7 +1348,7 @@
 
 <h2>6.2 关系类型</h2>
 <div class="diagram">
-  <svg width="460" height="160" viewBox="0 0 460 160">
+  <svg width="460" height="220" viewBox="0 0 460 220">
     <!-- 位置关系 -->
     <line x1="20" y1="25" x2="130" y2="25" stroke="#1890FF" stroke-width="2"/>
     <polygon points="126,21 134,25 126,29" fill="#1890FF"/>
@@ -1366,6 +1372,11 @@
     <polygon points="330,86 340,90 330,94 335,90" fill="#722ed1"/>
     <text x="295" y="80" text-anchor="middle" fill="#722ed1" font-size="10" font-weight="bold">逻辑关系</text>
     <text x="295" y="110" text-anchor="middle" fill="#888" font-size="9">点划线 + 菱形箭头</text>
+
+    <!-- 属性关系 -->
+    <line x1="20" y1="155" x2="130" y2="155" stroke="#13c2c2" stroke-width="2" stroke-dasharray="3 3"/>
+    <text x="75" y="145" text-anchor="middle" fill="#13c2c2" font-size="10" font-weight="bold">属性关系</text>
+    <text x="75" y="175" text-anchor="middle" fill="#888" font-size="9">点线 + 无箭头</text>
   </svg>
   <div class="diagram-caption">图 6-2 关系类型及线型</div>
 </div>
@@ -1376,6 +1387,7 @@
   <tr><td>动作关系</td><td>绿色</td><td>实线</td><td>实心三角</td><td>部件之间的功能动作关系（如"驱动""连接"）</td></tr>
   <tr><td>包含关系</td><td>橙色</td><td>虚线</td><td>空心三角</td><td>部件之间的层级包含关系（如"包括""包含"）</td></tr>
   <tr><td>逻辑关系</td><td>紫色</td><td>点划线</td><td>菱形</td><td>条件/因果逻辑关系（如"当...时""如果"）</td></tr>
+  <tr><td>属性关系</td><td>青色</td><td>点线</td><td>无箭头</td><td>节点自身的特性/状态/能力（如"可在...之间移动"）</td></tr>
 </table>
 
 <h2>6.3 线型说明</h2>
@@ -1412,7 +1424,12 @@
 </div>
 
 <ul>
-  <li><strong>自动生成</strong> — AI 抽取时，具有包含关系且无其他类型出边的最高层级节点（如层级 0 的根节点），其包含的子节点会自动归入组合框</li>
+  <li><strong>自动生成</strong> — AI 抽取时，具有包含关系的节点会自动生成组合框，分为两种情况：
+    <ul>
+      <li><strong>最高层级节点</strong>（如层级 0 的根节点）：节点本身转换为组合框，不再显示节点框，其包含的子节点直接归入组合框内</li>
+      <li><strong>非最高层级节点</strong>：保留原节点框，创建子组合框罩住被包含的子节点，原节点通过一条带"包含"标签的虚线连接到子组合框</li>
+    </ul>
+  </li>
   <li><strong>视觉特征</strong> — 橙色虚线边框，半透明浅色填充，左上角显示组合框标签</li>
   <li><strong>自动跟踪</strong> — 拖动组合框内的节点时，组合框大小自动调整以包含所有成员节点</li>
   <li><strong>显示/隐藏</strong> — 可通过工具栏"组合框"复选框一键显示或隐藏所有组合框</li>
@@ -1421,7 +1438,42 @@
 
 <div class="tip-box">
   <div class="tip-title">提示</div>
-  只有最高层级（层级 0）的节点才会自动转换为组合框。其他层级的包含关系仍以虚线边形式展示，不会转为组合框。
+  非最高层级节点的包含关系组合框与最高层级不同：最高层级节点自身变为组合框，而非最高层级节点保留节点框，通过一条连线连接到子组合框。例如，如果"致动器"包含"按钮"和"弹簧"两个子节点，则"致动器"节点框保留，下方出现一个罩住"按钮"和"弹簧"的组合框，两者之间用带"包含"标签的橙色虚线连接。
+</div>
+
+<h2>6.5 属性标签说明</h2>
+<p>属性标签是画布中用于展示节点自身特性、状态或能力的特殊元素，与关系边不同，属性标签不指向其他节点。</p>
+
+<div class="diagram">
+  <svg width="440" height="160" viewBox="0 0 440 160">
+    <!-- 节点 -->
+    <rect x="140" y="10" width="160" height="45" rx="8" fill="#e8f4fd" stroke="#1890FF" stroke-width="2"/>
+    <text x="220" y="38" text-anchor="middle" fill="#1890FF" font-size="12" font-weight="bold">致动器(260)</text>
+
+    <!-- 竖线 -->
+    <line x1="220" y1="55" x2="220" y2="78" stroke="#13c2c2" stroke-width="2" stroke-dasharray="3 3"/>
+
+    <!-- 属性标签 -->
+    <rect x="100" y="78" width="240" height="30" rx="4" fill="#e6fffb" stroke="#13c2c2" stroke-width="1.5"/>
+    <text x="220" y="98" text-anchor="middle" fill="#08979c" font-size="11">可在第一位置和第二位置之间移动</text>
+
+    <!-- 说明 -->
+    <text x="220" y="135" text-anchor="middle" fill="#888" font-size="9">青色点线竖线 + 圆角标签，无箭头</text>
+  </svg>
+  <div class="diagram-caption">图 6-4 属性标签示意</div>
+</div>
+
+<ul>
+  <li><strong>自动识别</strong> — AI 抽取时，会自动识别节点的独立属性（如"可在第一位置和第二位置之间移动""具有弹性恢复力"等），生成属性关系</li>
+  <li><strong>视觉特征</strong> — 从节点底部延伸出一条青色点线短竖线（无箭头），末端连接一个浅青色圆角矩形标签，标签内显示属性描述文本</li>
+  <li><strong>多属性堆叠</strong> — 同一节点有多个属性时，属性标签垂直堆叠排列在节点下方</li>
+  <li><strong>跟随移动</strong> — 拖动节点时，其下方的属性标签和竖线会自动跟随移动</li>
+  <li><strong>区分关系</strong> — 属性标签与关系边的区别：属性标签无箭头、使用青色点线、标签形式呈现，而关系边连接两个不同节点并带有箭头</li>
+</ul>
+
+<div class="tip-box">
+  <div class="tip-title">提示</div>
+  属性关系仅用于描述节点自身的特性，不涉及其他独立节点。如果描述涉及其他节点（如"致动器连接到控制器"），则应使用对应的关系类型（如动作关系），而非属性关系。
 </div>
 
 <!-- ==================== 第7章 常见问题 ==================== -->
@@ -1556,6 +1608,15 @@
 </table>
 
 <h2>8.4 版本更新清单</h2>
+
+<h3>V0.3.1 (2026-06-13)</h3>
+<table>
+  <tr><th>字段</th><th>内容</th></tr>
+  <tr><td>变更类型</td><td>功能更新</td></tr>
+  <tr><td>影响章节</td><td>1.2, 5.2, 5.4, 6.2, 6.4, 6.5(新增)</td></tr>
+  <tr><td>变更说明</td><td>新增属性关系(attribute)类型：AI 自动识别节点独立属性，以青色点线竖线+标签形式呈现在节点下方，无箭头，多属性垂直堆叠，拖动节点时自动跟随；非最高层级包含关系组合框：保留原节点框，创建子组合框罩住被包含节点，用一条带"包含"标签的虚线连接；图例新增属性关系和属性标签项</td></tr>
+  <tr><td>图示更新</td><td>图 6-2 更新（新增属性关系线型）、图 6-4 新增（属性标签示意）</td></tr>
+</table>
 
 <h3>V0.3.0 (2026-06-05)</h3>
 <table>
