@@ -11,7 +11,7 @@ import type { ExtractResult, ExtractGroup } from '@/types/ai'
 import { buildNode, updateNodeStyle, calculateNodeSize } from './node-builder'
 import { buildEdge, buildTrunkEdge, buildBranchEdge, updateEdgeStyle } from './edge-builder'
 import { applyElkLayout, type ElkLayoutOptions } from './layout'
-import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle } from './style-registry'
+import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle, arrowTypeToMarker } from './style-registry'
 import { setupCustomEdge, EdgeViewWithGap } from './custom-edge'
 import { timingStart, timingEnd } from '@/utils/timing'
 
@@ -294,7 +294,7 @@ export class GraphEngine {
       nodeHierarchyMap.set(nodeData.id, nodeData.hierarchyLevel ?? 0)
     }
 
-    const autoGroupInfoMap = new Map<string, { memberNodeIds: string[] }>()
+    const autoGroupInfoMap = new Map<string, { memberNodeIds: string[]; isContainmentGroup?: boolean }>()
     const outgoingInfoMap = new Map<string, {
       containmentTargets: Set<string>
       hasOtherOutgoing: boolean
@@ -324,12 +324,18 @@ export class GraphEngine {
     for (const [nodeId, info] of outgoingInfoMap) {
       const nodeLevel = nodeHierarchyMap.get(nodeId) ?? 0
       if (nodeLevel <= minHierarchyLevel && info.containmentTargets.size >= 1) {
-        // Only the topmost hierarchy level nodes (e.g. level 0) become group boxes
+        // Topmost hierarchy level nodes become group boxes themselves
         autoGroupInfoMap.set(nodeId, {
           memberNodeIds: [...info.containmentTargets],
         })
+      } else if (info.containmentTargets.size >= 1) {
+        // Non-topmost level nodes: keep the node, create a group box for children,
+        // and replace multiple containment edges with a single edge to the group box
+        autoGroupInfoMap.set(nodeId, {
+          memberNodeIds: [...info.containmentTargets],
+          isContainmentGroup: true,
+        })
       }
-      // Non-highest-level nodes always appear as normal nodes with containment edges
     }
 
     timingStart(`    │    布局计算 (ELK)`)
@@ -628,7 +634,7 @@ export class GraphEngine {
   }
 
   private convertAutoGroupNodes(
-    autoGroupInfoMap: Map<string, { memberNodeIds: string[] }>,
+    autoGroupInfoMap: Map<string, { memberNodeIds: string[]; isContainmentGroup?: boolean }>,
     isChinese: boolean,
   ): void {
     if (!this.graph) return
@@ -693,51 +699,177 @@ export class GraphEngine {
         ? ((nodeData?.chineseText as string) || (nodeData?.originalText as string) || '')
         : `${nodeData?.originalText || ''}\n${nodeData?.chineseText || ''}`
 
-      const node = cell as unknown as {
-        setPosition: (x: number, y: number) => void
-        resize: (width: number, height: number) => void
-        attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
-        setData: (data: Record<string, unknown>) => void
-        setZIndex: (z: number) => void
-      }
+      if (info.isContainmentGroup) {
+        // Non-topmost level: keep the original node, create a new group box for children,
+        // and add a single containment edge from the original node to the group box
+        const groupBoxId = `containment-group-${nodeId}`
 
-      node.setPosition(bounds.minX - padding, bounds.minY - padding - labelSpace)
-      node.resize(
-        bounds.maxX - bounds.minX + padding * 2,
-        bounds.maxY - bounds.minY + padding * 2 + labelSpace,
-      )
-      node.attr({
-        body: {
-          fill: '#fafafa',
-          fillOpacity: 0.5,
-          stroke: '#fa8c16',
-          strokeWidth: 1.5,
-          strokeDasharray: '6 3',
-          rx: 8,
-          ry: 8,
-          pointerEvents: 'stroke',
-        },
-        label: {
-          text: groupLabel,
-          fontSize: 20,
-          fill: '#fa8c16',
-          fontWeight: 'bold',
-          textAnchor: 'left',
-          textVerticalAnchor: 'top',
-          refX: 12,
-          refY: 8,
-          pointerEvents: 'none',
-        },
-      })
-      node.setData({
-        ...nodeData,
-        isGroup: true,
-        isAutoGroup: true,
-        label: { original: nodeData?.originalText || '', chinese: nodeData?.chineseText || '' },
-        memberNodeIds: info.memberNodeIds,
-        detached: false,
-      })
-      node.setZIndex(-1)
+        this.graph.addNode({
+          id: groupBoxId,
+          x: bounds.minX - padding,
+          y: bounds.minY - padding - labelSpace,
+          width: bounds.maxX - bounds.minX + padding * 2,
+          height: bounds.maxY - bounds.minY + padding * 2 + labelSpace,
+          shape: 'rect',
+          zIndex: -1,
+          attrs: {
+            body: {
+              fill: '#fafafa',
+              fillOpacity: 0.5,
+              stroke: '#fa8c16',
+              strokeWidth: 1.5,
+              strokeDasharray: '6 3',
+              rx: 8,
+              ry: 8,
+              pointerEvents: 'stroke',
+            },
+            label: {
+              text: groupLabel,
+              fontSize: 20,
+              fill: '#fa8c16',
+              fontWeight: 'bold',
+              textAnchor: 'left',
+              textVerticalAnchor: 'top',
+              refX: 12,
+              refY: 8,
+              pointerEvents: 'none',
+            },
+          },
+          data: {
+            isGroup: true,
+            isAutoGroup: true,
+            isContainmentGroup: true,
+            label: { original: nodeData?.originalText || '', chinese: nodeData?.chineseText || '' },
+            memberNodeIds: info.memberNodeIds,
+            sourceNodeId: nodeId,
+            detached: false,
+          },
+        })
+
+        // Create a single containment edge from the original node to the group box
+        const containmentStyle = getDefaultEdgeStyle('containment')
+        const containmentLabel = isChinese ? '包含' : '包含\ncontainment'
+
+        this.graph.addEdge({
+          id: `containment-edge-${nodeId}`,
+          shape: 'edge-with-gap',
+          view: 'edge-with-gap-view',
+          source: { cell: nodeId, connectionPoint: 'perpendicularBoundary' },
+          target: { cell: groupBoxId, connectionPoint: 'perpendicularBoundary' },
+          router: { name: 'perpendicularManhattan', args: { padding: 20, step: 10 } },
+          connector: { name: 'rounded', args: { radius: 8 } },
+          attrs: {
+            line: {
+              stroke: containmentStyle.stroke,
+              strokeWidth: containmentStyle.strokeWidth,
+              strokeDasharray: containmentStyle.strokeDasharray ?? '',
+              sourceMarker: undefined,
+              targetMarker: { name: arrowTypeToMarker(containmentStyle.arrowType) || '' },
+            },
+          },
+          labels: [
+            {
+              markup: [
+                { tagName: 'rect', selector: 'bg' },
+                { tagName: 'text', selector: 'labelText' },
+              ],
+              attrs: {
+                bg: {
+                  ref: 'labelText',
+                  refWidth: 1.2,
+                  refHeight: 1.4,
+                  refX: -0.1,
+                  refY: -0.2,
+                  fill: 'transparent',
+                  stroke: 'none',
+                  strokeWidth: 0,
+                  rx: 4,
+                  ry: 4,
+                  cursor: 'move',
+                  pointerEvents: 'all',
+                },
+                labelText: {
+                  text: containmentLabel,
+                  fontSize: containmentStyle.fontSize,
+                  fontFamily: containmentStyle.fontFamily,
+                  fill: containmentStyle.fontColor,
+                  fontWeight: 'bold',
+                  textAnchor: 'middle',
+                  textVerticalAnchor: 'middle',
+                  lineHeight: containmentStyle.fontSize * 1.6,
+                  stroke: '#ffffff',
+                  strokeWidth: 6,
+                  paintOrder: 'stroke fill',
+                  strokeLinejoin: 'round',
+                  pointerEvents: 'none',
+                },
+              },
+              position: {
+                distance: 0.5,
+                offset: { x: 0, y: 0 },
+              },
+            },
+          ],
+          data: {
+            originalText: '包含',
+            chineseText: 'containment',
+            relationType: 'containment',
+            style: containmentStyle,
+            labelDetached: false,
+            isContainmentGroupEdge: true,
+            sourceNodeId: nodeId,
+            groupBoxId,
+          },
+          zIndex: 10,
+        })
+      } else {
+        // Topmost level: transform the node itself into a group box
+        const node = cell as unknown as {
+          setPosition: (x: number, y: number) => void
+          resize: (width: number, height: number) => void
+          attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
+          setData: (data: Record<string, unknown>) => void
+          setZIndex: (z: number) => void
+        }
+
+        node.setPosition(bounds.minX - padding, bounds.minY - padding - labelSpace)
+        node.resize(
+          bounds.maxX - bounds.minX + padding * 2,
+          bounds.maxY - bounds.minY + padding * 2 + labelSpace,
+        )
+        node.attr({
+          body: {
+            fill: '#fafafa',
+            fillOpacity: 0.5,
+            stroke: '#fa8c16',
+            strokeWidth: 1.5,
+            strokeDasharray: '6 3',
+            rx: 8,
+            ry: 8,
+            pointerEvents: 'stroke',
+          },
+          label: {
+            text: groupLabel,
+            fontSize: 20,
+            fill: '#fa8c16',
+            fontWeight: 'bold',
+            textAnchor: 'left',
+            textVerticalAnchor: 'top',
+            refX: 12,
+            refY: 8,
+            pointerEvents: 'none',
+          },
+        })
+        node.setData({
+          ...nodeData,
+          isGroup: true,
+          isAutoGroup: true,
+          label: { original: nodeData?.originalText || '', chinese: nodeData?.chineseText || '' },
+          memberNodeIds: info.memberNodeIds,
+          detached: false,
+        })
+        node.setZIndex(-1)
+      }
     }
 
     this.updateGroupBoundsForMember('')
