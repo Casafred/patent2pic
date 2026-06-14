@@ -19,6 +19,13 @@ let cleanupBeforeUnload: (() => void) | null = null
 let cleanupInterval: (() => void) | null = null
 
 onMounted(() => {
+  // Hide splash screen after app is mounted
+  const splash = document.getElementById('splash-screen')
+  if (splash) {
+    splash.classList.add('fade-out')
+    setTimeout(() => splash.remove(), 600)
+  }
+
   cleanupBeforeUnload = registerBeforeUnload()
   cleanupInterval = startIntervalSave()
   setTimeout(() => {

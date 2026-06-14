@@ -2,12 +2,57 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="author" content="Alfred Shi" />
     <title>Patent2Pic</title>
+    <style>
+      #splash-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: linear-gradient(135deg, #1a3a5c 0%, #2d6aa6 50%, #4a90d9 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+        transition: opacity 0.5s ease-out;
+      }
+      #splash-screen.fade-out {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #splash-screen img {
+        max-width: 60vmin;
+        max-height: 60vmin;
+        object-fit: contain;
+      }
+      #splash-screen .splash-title {
+        color: white;
+        font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+        font-size: 24pt;
+        font-weight: bold;
+        letter-spacing: 4px;
+        margin-top: 24px;
+      }
+      #splash-screen .splash-subtitle {
+        color: rgba(255,255,255,0.7);
+        font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+        font-size: 11pt;
+        margin-top: 8px;
+        letter-spacing: 2px;
+      }
+    </style>
   </head>
   <body>
+    <div id="splash-screen">
+      <img src="/splash.gif" alt="Patent2Pic" />
+      <div class="splash-title">Patent2Pic</div>
+      <div class="splash-subtitle">专利功能分解图工具</div>
+    </div>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
