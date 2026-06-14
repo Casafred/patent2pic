@@ -19,11 +19,16 @@ let cleanupBeforeUnload: (() => void) | null = null
 let cleanupInterval: (() => void) | null = null
 
 onMounted(() => {
-  // Hide splash screen after app is mounted
+  // Hide splash screen after GIF completes at least one full cycle (~4.1s)
   const splash = document.getElementById('splash-screen')
   if (splash) {
-    splash.classList.add('fade-out')
-    setTimeout(() => splash.remove(), 600)
+    const elapsed = Date.now() - performance.timing.navigationStart
+    const gifCycleMs = 4200
+    const remaining = Math.max(0, gifCycleMs - elapsed)
+    setTimeout(() => {
+      splash.classList.add('fade-out')
+      setTimeout(() => splash.remove(), 700)
+    }, remaining)
   }
 
   cleanupBeforeUnload = registerBeforeUnload()
