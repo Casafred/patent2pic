@@ -10,7 +10,7 @@ import { graphEngine } from '@/services/graph/engine'
 import { useGraphStore } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
 import { useTranslationStore } from '@/stores/translation'
-import type { ExtractNode, ExtractEdge } from '@/types/ai'
+import type { ExtractNode } from '@/types/ai'
 
 interface CellData {
   id: string
@@ -21,7 +21,7 @@ interface CellData {
   data?: Record<string, unknown>
   source?: { cell: string; port?: string }
   target?: { cell: string; port?: string }
-  labels?: Array<{ position: number; attrs?: Record<string, unknown> }>
+  labels?: Array<{ position?: number | { x?: number; y?: number }; attrs?: Record<string, unknown> }>
   zIndex?: number
   parent?: string
 }
@@ -29,7 +29,6 @@ interface CellData {
 interface ExportData {
   cells: CellData[]
   nodes: ExtractNode[]
-  edges: ExtractEdge[]
   claim: {
     id: string
     index: number
@@ -44,6 +43,12 @@ interface ExportData {
   isChinese: boolean
 }
 
+interface SVGResult {
+  svg: string
+  width: number
+  height: number
+}
+
 function collectExportData(): ExportData {
   const graphStore = useGraphStore()
   const claimStore = useClaimStore()
@@ -54,7 +59,6 @@ function collectExportData(): ExportData {
   const cells = cellsRaw?.cells ?? []
 
   const nodes = tab?.extractResult?.nodes ?? []
-  const edges = tab?.extractResult?.edges ?? []
 
   const claim = claimStore.getActiveClaim() ?? null
   const sentences = claim?.sentences.map(s => ({ id: s.id, text: s.text })) ?? []
@@ -76,7 +80,6 @@ function collectExportData(): ExportData {
   return {
     cells,
     nodes,
-    edges,
     claim: claim ? { id: claim.id, index: claim.index, rawText: claim.rawText, sentences } : null,
     translations,
     isChinese: tab?.isChinese ?? false,
@@ -91,12 +94,17 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
-function escapeJs(text: string): string {
-  return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')
+function escapeAttr(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 /**
- * 从 X6 cell 的 attrs 中提取样式信息
+ * 从 X6 cell 的 attrs 中提取节点样式信息
  */
 function extractNodeStyle(cell: CellData) {
   const attrs = cell.attrs || {}
@@ -129,38 +137,78 @@ function extractEdgeStyle(cell: CellData) {
     strokeWidth: (line.strokeWidth as number) || (style.strokeWidth as number) || 2,
     strokeDasharray: (line.strokeDasharray as string) || (style.strokeDasharray as string) || null,
     targetMarker: line.targetMarker as Record<string, unknown> | string | null,
-    sourceMarker: line.sourceMarker as Record<string, unknown> | string | null,
   }
 }
 
-function extractEdgeLabels(cell: CellData): Array<{ x: number; y: number; text: string; fontSize: number; fill: string; bgColor: string }> {
+interface EdgeLabelInfo {
+  x: number
+  y: number
+  text: string
+  fontSize: number
+  fill: string
+  bgColor: string
+}
+
+function extractEdgeLabels(cell: CellData): EdgeLabelInfo[] {
   if (!cell.labels || cell.labels.length === 0) return []
   const data = cell.data || {}
   const style = (data.style as Record<string, unknown>) || {}
-  const fontSize = (style.fontSize as number) || 15
-  const fontColor = (style.fontColor as string) || '#4e5969'
-  const bgColor = (style.labelBgColor as string) || '#ffffff'
+  const defaultFontSize = (style.fontSize as number) || 15
+  const defaultFontColor = (style.fontColor as string) || '#4e5969'
+  const defaultBgColor = (style.labelBgColor as string) || '#ffffff'
 
   return cell.labels.map(label => {
     const attrs = label.attrs || {}
     const labelAttrs = (attrs.label as Record<string, unknown>) || {}
     const rectAttrs = (attrs.rect as Record<string, unknown>) || {}
-    const position = (attrs.position as Record<string, unknown>) || {}
+
+    // position 是 label 的顶层属性，不是 attrs 内的
+    let posX = 0.5
+    let posY = -10
+    if (label.position) {
+      if (typeof label.position === 'number') {
+        posX = label.position
+      } else if (typeof label.position === 'object') {
+        posX = label.position.x ?? 0.5
+        posY = label.position.y ?? -10
+      }
+    }
+
     return {
-      x: (position.x as number) || 0.5,
-      y: (position.y as number) || -10,
+      x: posX,
+      y: posY,
       text: (labelAttrs.text as string) || (data.chineseText as string) || (data.originalText as string) || '',
-      fontSize: (labelAttrs.fontSize as number) || fontSize,
-      fill: (labelAttrs.fill as string) || fontColor,
-      bgColor: (rectAttrs.fill as string) || bgColor,
+      fontSize: (labelAttrs.fontSize as number) || defaultFontSize,
+      fill: (labelAttrs.fill as string) || defaultFontColor,
+      bgColor: (rectAttrs.fill as string) || defaultBgColor,
     }
   })
 }
 
+function wrapText(text: string, maxWidth: number, fontSize: number): string[] {
+  const charWidth = fontSize * 0.6
+  const maxChars = Math.floor(maxWidth / charWidth)
+  if (maxChars < 1) return [text]
+  if (text.length <= maxChars) return [text]
+
+  const lines: string[] = []
+  let current = ''
+  for (const char of text) {
+    if (current.length >= maxChars) {
+      lines.push(current)
+      current = char
+    } else {
+      current += char
+    }
+  }
+  if (current) lines.push(current)
+  return lines.slice(0, 3) // 最多3行
+}
+
 /**
- * 生成 SVG 图形部分
+ * 生成 SVG 图形部分，返回 SVG 字符串和尺寸
  */
-function generateSVG(data: ExportData): string {
+function generateSVG(data: ExportData): SVGResult {
   const cells = data.cells
   const padding = 40
 
@@ -226,7 +274,7 @@ function generateSVG(data: ExportData): string {
     const w = cell.size.width
     const h = cell.size.height
 
-    svg += `<g class="group-box" data-id="${escapeHtml(cell.id)}">`
+    svg += `<g class="group-box" data-id="${escapeAttr(cell.id)}">`
     svg += `<rect x="${x}" y="${y}" width="${w}" height="${h}" `
     svg += `fill="${body.fill || '#fafafa'}" fill-opacity="${body.fillOpacity || 0.5}" `
     svg += `stroke="${body.stroke || '#fa8c16'}" stroke-width="${body.strokeWidth || 1.5}" `
@@ -243,9 +291,6 @@ function generateSVG(data: ExportData): string {
   for (const cell of edgeCells) {
     const d = cell.data || {}
     if (d.isAttributeStem) continue // 跳过属性 stem 边
-    if (d.isBranch) {
-      // branch 边仍然渲染，但较细
-    }
     const source = cell.source
     const target = cell.target
     if (!source || !target) continue
@@ -270,8 +315,8 @@ function generateSVG(data: ExportData): string {
 
     const edgeClass = isTrunk ? 'edge trunk-edge' : isBranch ? 'edge branch-edge' : 'edge'
 
-    svg += `<g class="${edgeClass}" data-id="${escapeHtml(cell.id)}" `
-    svg += `data-source="${escapeHtml(realSourceId)}" data-target="${escapeHtml(realTargetId)}">`
+    svg += `<g class="${edgeClass}" data-id="${escapeAttr(cell.id)}" `
+    svg += `data-source="${escapeAttr(realSourceId)}" data-target="${escapeAttr(realTargetId)}">`
 
     // 线条
     svg += `<line x1="${sx}" y1="${sy}" x2="${tx}" y2="${ty}" `
@@ -331,7 +376,7 @@ function generateSVG(data: ExportData): string {
     const h = cell.size.height
     const sourceNodeId = d.sourceNodeId as string
 
-    svg += `<g class="attr-tag" data-id="${escapeHtml(cell.id)}" data-source="${escapeHtml(sourceNodeId)}">`
+    svg += `<g class="attr-tag" data-id="${escapeAttr(cell.id)}" data-source="${escapeAttr(sourceNodeId)}">`
     svg += `<rect x="${x}" y="${y}" width="${w}" height="${h}" `
     svg += `fill="${body.fill || '#e6fffb'}" stroke="${body.stroke || '#13c2c2'}" `
     svg += `stroke-width="${body.strokeWidth || 1}" stroke-dasharray="${body.strokeDasharray || '3 3'}" `
@@ -356,16 +401,15 @@ function generateSVG(data: ExportData): string {
     const w = cell.size.width
     const h = cell.size.height
 
-    svg += `<g class="node" data-id="${escapeHtml(cell.id)}" `
-    svg += `data-original="${escapeJs(d.originalText as string || '')}" `
-    svg += `data-chinese="${escapeJs(d.chineseText as string || '')}" `
+    svg += `<g class="node" data-id="${escapeAttr(cell.id)}" `
+    svg += `data-original="${escapeAttr(d.originalText as string || '')}" `
+    svg += `data-chinese="${escapeAttr(d.chineseText as string || '')}" `
     svg += `transform="translate(0,0)">`
     svg += `<rect x="${x}" y="${y}" width="${w}" height="${h}" `
     svg += `fill="${ns.fill}" stroke="${ns.stroke}" stroke-width="${ns.strokeWidth}" `
     if (ns.strokeDasharray) svg += `stroke-dasharray="${ns.strokeDasharray}" `
     svg += `rx="${ns.borderRadius}" ry="${ns.borderRadius}" class="node-body" />`
     if (ns.text) {
-      // 文本换行处理
       const lines = wrapText(ns.text, w - 16, ns.fontSize)
       const lineHeight = ns.fontSize * 1.3
       const startY = y + h / 2 - (lines.length - 1) * lineHeight / 2 + ns.fontSize * 0.35
@@ -378,26 +422,7 @@ function generateSVG(data: ExportData): string {
     svg += `</g>`
   }
 
-  return { svg, width, height, offsetX, offsetY } as unknown as string
-}
-
-function wrapText(text: string, maxWidth: number, fontSize: number): string[] {
-  const charWidth = fontSize * 0.6
-  const maxChars = Math.floor(maxWidth / charWidth)
-  if (text.length <= maxChars) return [text]
-
-  const lines: string[] = []
-  let current = ''
-  for (const char of text) {
-    if (current.length >= maxChars) {
-      lines.push(current)
-      current = char
-    } else {
-      current += char
-    }
-  }
-  if (current) lines.push(current)
-  return lines.slice(0, 3) // 最多3行
+  return { svg, width, height }
 }
 
 /**
@@ -405,27 +430,7 @@ function wrapText(text: string, maxWidth: number, fontSize: number): string[] {
  */
 export function exportInteractiveHTML(): string {
   const data = collectExportData()
-
-  // 计算 SVG 边界
-  const cells = data.cells
-  const padding = 40
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-
-  for (const cell of cells) {
-    const d = cell.data || {}
-    if (d.isForkNode) continue
-    if (cell.position && cell.size) {
-      minX = Math.min(minX, cell.position.x)
-      minY = Math.min(minY, cell.position.y)
-      maxX = Math.max(maxX, cell.position.x + cell.size.width)
-      maxY = Math.max(maxY, cell.position.y + cell.size.height)
-    }
-  }
-  if (minX === Infinity) { minX = 0; minY = 0; maxX = 800; maxY = 600 }
-  const svgWidth = maxX - minX + padding * 2
-  const svgHeight = maxY - minY + padding * 2
-
-  const svgContent = generateSVG(data)
+  const svgResult = generateSVG(data)
 
   // 构建节点信息映射
   const nodesInfo = data.nodes.map(n => ({
@@ -446,6 +451,9 @@ export function exportInteractiveHTML(): string {
   const nodesJson = JSON.stringify(nodesInfo)
 
   const claimTitle = data.claim ? `权利要求 ${data.claim.index}` : '权利要求'
+  const svgWidth = svgResult.width
+  const svgHeight = svgResult.height
+  const svgContent = svgResult.svg
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -569,7 +577,7 @@ function highlightTextInSentence(text, mode) {
     if (!node) return;
     var t = mode === 'translation' ? (node.chineseText || node.originalText) : (node.originalText || node.chineseText);
     if (t && (t.length >= 2 || /[\\u4e00-\\u9fff\\u3400-\\u4dbf]/.test(t))) {
-      nodeTexts.push({text: t, info: {color: HIGHLIGHT_PALETTE[idx % HIGHLIGHT_PALETTE.length], label: node.chineseText || node.originalText}});
+      nodeTexts.push({text: t, nodeId: nodeId, color: HIGHLIGHT_PALETTE[idx % HIGHLIGHT_PALETTE.length], label: node.chineseText || node.originalText});
     }
   });
   nodeTexts.sort(function(a, b) { return b.text.length - a.text.length; });
@@ -580,10 +588,10 @@ function highlightTextInSentence(text, mode) {
     html = html.replace(regex, function(match) {
       if (!found) {
         found = true;
-        if (!highlights.some(function(h) { return h.border === item.info.color.border; })) {
-          highlights.push({bg: item.info.color.bg, border: item.info.color.border, nodeLabel: item.info.label, nodeId: highlightedNodeIds[nodeTexts.indexOf(item)]});
+        if (!highlights.some(function(h) { return h.border === item.color.border; })) {
+          highlights.push({bg: item.color.bg, border: item.color.border, nodeLabel: item.label, nodeId: item.nodeId});
         }
-        return '<mark class="text-highlight" data-node-id="' + highlightedNodeIds[nodeTexts.indexOf(item)] + '" style="background-color:' + item.info.color.bg + ';color:' + item.info.color.border + '" onclick="textNodeClick(\\'' + highlightedNodeIds[nodeTexts.indexOf(item)] + '\\')">' + match + '</mark>';
+        return '<mark class="text-highlight" data-node-id="' + item.nodeId + '" style="background-color:' + item.color.bg + ';color:' + item.color.border + '" onclick="textNodeClick(\\'' + item.nodeId + '\\')">' + match + '</mark>';
       }
       return match;
     });
@@ -630,26 +638,20 @@ function updateLegend() {
 
 // === 节点高亮 ===
 function highlightNodes(ids) {
-  // 清除旧高亮
   document.querySelectorAll('.node.highlighted').forEach(function(el) { el.classList.remove('highlighted'); });
   highlightedNodeIds = ids;
-  // 设置新高亮
   ids.forEach(function(id) {
     var el = document.querySelector('.node[data-id="' + id + '"]');
     if (el) el.classList.add('highlighted');
   });
   updateAllSentences();
-  // 滚动到第一个高亮句子
   if (ids.length > 0) {
-    var firstNode = NODES.find(function(n) { return n.id === ids[0]; });
-    if (firstNode) {
-      var blocks = sidebarBody.querySelectorAll('.sentence-block');
-      for (var i = 0; i < blocks.length; i++) {
-        var origEl = blocks[i].querySelector('.sentence-original');
-        if (origEl && origEl.innerHTML.indexOf('<mark') !== -1) {
-          blocks[i].scrollIntoView({behavior: 'smooth', block: 'center'});
-          break;
-        }
+    var blocks = sidebarBody.querySelectorAll('.sentence-block');
+    for (var i = 0; i < blocks.length; i++) {
+      var origEl = blocks[i].querySelector('.sentence-original');
+      if (origEl && origEl.innerHTML.indexOf('<mark') !== -1) {
+        blocks[i].scrollIntoView({behavior: 'smooth', block: 'center'});
+        break;
       }
     }
   }
@@ -677,18 +679,14 @@ function highlightEdge(edgeId) {
   var sourceId = edgeEl.dataset.source;
   var targetId = edgeEl.dataset.target;
   edgeEl.classList.add('highlighted-edge');
-  // 高亮 trunk 的 branch 边
   var isTrunk = edgeEl.classList.contains('trunk-edge');
   if (isTrunk) {
     document.querySelectorAll('.branch-edge').forEach(function(be) {
-      var bEl = be;
-      var bSource = bEl.dataset.source;
-      if (bSource === sourceId) {
-        bEl.classList.add('highlighted-branch');
+      if (be.dataset.source === sourceId) {
+        be.classList.add('highlighted-branch');
       }
     });
   }
-  // 高亮节点
   var nodeIds = [];
   if (isTrunk) {
     nodeIds.push(sourceId);
@@ -713,7 +711,6 @@ function clearHighlight() {
 }
 
 // === 事件绑定 ===
-// 节点点击
 svg.addEventListener('click', function(e) {
   var nodeEl = e.target.closest('.node');
   if (nodeEl) {
@@ -738,7 +735,6 @@ svg.addEventListener('click', function(e) {
     e.stopPropagation();
     return;
   }
-  // 点击空白
   clearHighlight();
 });
 
@@ -803,7 +799,6 @@ function resetView() {
   applyView();
 }
 
-// 滚轮缩放
 svg.addEventListener('wheel', function(e) {
   e.preventDefault();
   var delta = e.deltaY > 0 ? 0.9 : 1.1;
