@@ -1,7 +1,7 @@
 /**
  * 可交互 HTML 导出器
  * 生成自包含的 HTML 文件，包含：
- * - SVG 图形（节点、边、分组框、属性标签）
+ * - SVG 图形（节点、边、分组框、属性标签+连线）
  * - 左侧权利要求文本+翻译对照
  * - 交互：拖拽节点、点击高亮、缩放平移、双向文本高亮
  */
@@ -12,16 +12,29 @@ import { useClaimStore } from '@/stores/claim'
 import { useTranslationStore } from '@/stores/translation'
 import type { ExtractNode } from '@/types/ai'
 
+/**
+ * X6 v2 toJSON 输出的 cell 格式：
+ * - 节点：{ id, shape, x, y, width, height, attrs, data, zIndex }
+ * - 边：{ id, shape, source: {cell, port?}, target: {cell, port?}, attrs, data, labels, zIndex }
+ * - 属性stem边：{ id, shape:'edge', source: {x, y}, target: {x, y}, attrs, data:{isAttributeStem} }
+ */
 interface CellData {
   id: string
   shape: string
-  position?: { x: number; y: number }
-  size?: { width: number; height: number }
+  // X6 v2 节点使用顶层 x/y/width/height
+  x?: number
+  y?: number
+  width?: number
+  height?: number
   attrs?: Record<string, unknown>
   data?: Record<string, unknown>
-  source?: { cell: string; port?: string }
-  target?: { cell: string; port?: string }
-  labels?: Array<{ position?: number | { x?: number; y?: number }; attrs?: Record<string, unknown> }>
+  source?: { cell?: string; port?: string; x?: number; y?: number }
+  target?: { cell?: string; port?: string; x?: number; y?: number }
+  labels?: Array<{
+    position?: number | { distance?: number; x?: number; y?: number; offset?: number }
+    markup?: Array<{ tagName: string; selector?: string }>
+    attrs?: Record<string, unknown>
+  }>
   zIndex?: number
   parent?: string
 }
@@ -47,6 +60,18 @@ interface SVGResult {
   svg: string
   width: number
   height: number
+}
+
+/** 获取 cell 的位置信息（兼容 X6 v2 格式） */
+function getCellPos(cell: CellData): { x: number; y: number; w: number; h: number } | null {
+  const x = cell.x
+  const y = cell.y
+  const w = cell.width
+  const h = cell.height
+  if (x !== undefined && y !== undefined && w !== undefined && h !== undefined) {
+    return { x, y, w, h }
+  }
+  return null
 }
 
 function collectExportData(): ExportData {
@@ -141,14 +166,17 @@ function extractEdgeStyle(cell: CellData) {
 }
 
 interface EdgeLabelInfo {
-  x: number
-  y: number
+  distance: number
   text: string
   fontSize: number
   fill: string
   bgColor: string
 }
 
+/**
+ * 从 X6 边的 labels 中提取标签信息
+ * X6 v2 labels 格式：{ markup, attrs: { bg: {...}, labelText: {...} }, position: { distance } }
+ */
 function extractEdgeLabels(cell: CellData): EdgeLabelInfo[] {
   if (!cell.labels || cell.labels.length === 0) return []
   const data = cell.data || {}
@@ -159,28 +187,26 @@ function extractEdgeLabels(cell: CellData): EdgeLabelInfo[] {
 
   return cell.labels.map(label => {
     const attrs = label.attrs || {}
-    const labelAttrs = (attrs.label as Record<string, unknown>) || {}
-    const rectAttrs = (attrs.rect as Record<string, unknown>) || {}
+    // X6 v2 边标签使用 labelText 选择器（而非 label）
+    const labelTextAttrs = (attrs.labelText as Record<string, unknown>) || (attrs.label as Record<string, unknown>) || {}
+    const bgAttrs = (attrs.bg as Record<string, unknown>) || (attrs.rect as Record<string, unknown>) || {}
 
-    // position 是 label 的顶层属性，不是 attrs 内的
-    let posX = 0.5
-    let posY = -10
+    // position.distance 是标签在边上的位置比例 (0~1)
+    let distance = 0.5
     if (label.position) {
       if (typeof label.position === 'number') {
-        posX = label.position
+        distance = label.position
       } else if (typeof label.position === 'object') {
-        posX = label.position.x ?? 0.5
-        posY = label.position.y ?? -10
+        distance = label.position.distance ?? 0.5
       }
     }
 
     return {
-      x: posX,
-      y: posY,
-      text: (labelAttrs.text as string) || (data.chineseText as string) || (data.originalText as string) || '',
-      fontSize: (labelAttrs.fontSize as number) || defaultFontSize,
-      fill: (labelAttrs.fill as string) || defaultFontColor,
-      bgColor: (rectAttrs.fill as string) || defaultBgColor,
+      distance,
+      text: (labelTextAttrs.text as string) || (data.chineseText as string) || (data.originalText as string) || '',
+      fontSize: (labelTextAttrs.fontSize as number) || defaultFontSize,
+      fill: (labelTextAttrs.fill as string) || defaultFontColor,
+      bgColor: (bgAttrs.fill as string) || defaultBgColor,
     }
   })
 }
@@ -202,7 +228,14 @@ function wrapText(text: string, maxWidth: number, fontSize: number): string[] {
     }
   }
   if (current) lines.push(current)
-  return lines.slice(0, 3) // 最多3行
+  return lines.slice(0, 3)
+}
+
+/**
+ * 判断 cell 是否为边（包括 edge 和 edge-with-gap）
+ */
+function isEdgeCell(cell: CellData): boolean {
+  return cell.shape === 'edge' || cell.shape === 'edge-with-gap'
 }
 
 /**
@@ -212,12 +245,13 @@ function generateSVG(data: ExportData): SVGResult {
   const cells = data.cells
   const padding = 40
 
-  // 计算边界
+  // 分类 cells
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   const nodeCells: CellData[] = []
   const edgeCells: CellData[] = []
   const groupCells: CellData[] = []
   const attrTagCells: CellData[] = []
+  const attrStemCells: CellData[] = []
 
   for (const cell of cells) {
     const d = cell.data || {}
@@ -225,30 +259,24 @@ function generateSVG(data: ExportData): SVGResult {
       groupCells.push(cell)
     } else if (d.isAttributeTag) {
       attrTagCells.push(cell)
-    } else if (cell.shape === 'rect' || cell.shape === 'path') {
-      if (cell.position && cell.size) {
-        nodeCells.push(cell)
-        const x = cell.position.x
-        const y = cell.position.y
-        const w = cell.size.width
-        const h = cell.size.height
-        minX = Math.min(minX, x)
-        minY = Math.min(minY, y)
-        maxX = Math.max(maxX, x + w)
-        maxY = Math.max(maxY, y + h)
-      }
-    } else if (cell.shape && cell.shape.includes('edge')) {
+    } else if (d.isAttributeStem) {
+      attrStemCells.push(cell)
+    } else if (isEdgeCell(cell)) {
       edgeCells.push(cell)
+    } else if (cell.shape === 'rect') {
+      nodeCells.push(cell)
     }
   }
 
-  // 包含分组框和属性标签到边界
-  for (const cell of [...groupCells, ...attrTagCells]) {
-    if (cell.position && cell.size) {
-      minX = Math.min(minX, cell.position.x)
-      minY = Math.min(minY, cell.position.y)
-      maxX = Math.max(maxX, cell.position.x + cell.size.width)
-      maxY = Math.max(maxY, cell.position.y + cell.size.height)
+  // 计算边界（包含所有有位置的 cell）
+  const allPositionedCells = [...nodeCells, ...groupCells, ...attrTagCells]
+  for (const cell of allPositionedCells) {
+    const pos = getCellPos(cell)
+    if (pos) {
+      minX = Math.min(minX, pos.x)
+      minY = Math.min(minY, pos.y)
+      maxX = Math.max(maxX, pos.x + pos.w)
+      maxY = Math.max(maxY, pos.y + pos.h)
     }
   }
 
@@ -261,21 +289,29 @@ function generateSVG(data: ExportData): SVGResult {
   const offsetX = -minX + padding
   const offsetY = -minY + padding
 
+  // 构建节点位置查找表
+  const nodePosMap = new Map<string, { cx: number; cy: number; w: number; h: number }>()
+  for (const cell of [...nodeCells, ...groupCells, ...attrTagCells]) {
+    const pos = getCellPos(cell)
+    if (pos) {
+      nodePosMap.set(cell.id, { cx: pos.x + pos.w / 2 + offsetX, cy: pos.y + pos.h / 2 + offsetY, w: pos.w, h: pos.h })
+    }
+  }
+
   let svg = ''
 
-  // 分组框（最底层）
+  // === 分组框（最底层）===
   for (const cell of groupCells) {
-    if (!cell.position || !cell.size) continue
+    const pos = getCellPos(cell)
+    if (!pos) continue
     const attrs = cell.attrs || {}
     const body = (attrs.body as Record<string, unknown>) || {}
     const label = (attrs.label as Record<string, unknown>) || {}
-    const x = cell.position.x + offsetX
-    const y = cell.position.y + offsetY
-    const w = cell.size.width
-    const h = cell.size.height
+    const x = pos.x + offsetX
+    const y = pos.y + offsetY
 
     svg += `<g class="group-box" data-id="${escapeAttr(cell.id)}">`
-    svg += `<rect x="${x}" y="${y}" width="${w}" height="${h}" `
+    svg += `<rect x="${x}" y="${y}" width="${pos.w}" height="${pos.h}" `
     svg += `fill="${body.fill || '#fafafa'}" fill-opacity="${body.fillOpacity || 0.5}" `
     svg += `stroke="${body.stroke || '#fa8c16'}" stroke-width="${body.strokeWidth || 1.5}" `
     svg += `stroke-dasharray="${body.strokeDasharray || '6 3'}" rx="${body.rx || 8}" ry="${body.ry || 8}" />`
@@ -287,27 +323,48 @@ function generateSVG(data: ExportData): SVGResult {
     svg += `</g>`
   }
 
-  // 边
+  // === 属性标签到节点的连线（无箭头虚线）===
+  for (const cell of attrTagCells) {
+    const d = cell.data || {}
+    const sourceNodeId = d.sourceNodeId as string
+    if (!sourceNodeId) continue
+    const tagPos = getCellPos(cell)
+    if (!tagPos) continue
+    const nodeInfo = nodePosMap.get(sourceNodeId)
+    if (!nodeInfo) continue
+
+    // 从节点底部中心到属性标签顶部中心
+    const sx = nodeInfo.cx
+    const sy = nodeInfo.cy + nodeInfo.h / 2  // 节点底边
+    const tx = tagPos.x + tagPos.w / 2 + offsetX
+    const ty = tagPos.y + offsetY  // 标签顶边
+
+    svg += `<line x1="${sx}" y1="${sy}" x2="${tx}" y2="${ty}" `
+    svg += `stroke="#13c2c2" stroke-width="2" stroke-dasharray="3 3" `
+    svg += `class="attr-stem-line" />`
+  }
+
+  // === 边 ===
   for (const cell of edgeCells) {
     const d = cell.data || {}
-    if (d.isAttributeStem) continue // 跳过属性 stem 边
+    if (d.isAttributeStem) continue
     const source = cell.source
     const target = cell.target
     if (!source || !target) continue
 
-    const sourceNode = nodeCells.find(n => n.id === source.cell)
-    const targetNode = nodeCells.find(n => n.id === target.cell)
-    if (!sourceNode || !targetNode) continue
+    // 查找源/目标节点位置
+    const sourceInfo = source.cell ? nodePosMap.get(source.cell) : null
+    const targetInfo = target.cell ? nodePosMap.get(target.cell) : null
+    if (!sourceInfo || !targetInfo) continue
 
-    const sx = sourceNode.position!.x + sourceNode.size!.width / 2 + offsetX
-    const sy = sourceNode.position!.y + sourceNode.size!.height / 2 + offsetY
-    const tx = targetNode.position!.x + targetNode.size!.width / 2 + offsetX
-    const ty = targetNode.position!.y + targetNode.size!.height / 2 + offsetY
+    const sx = sourceInfo.cx
+    const sy = sourceInfo.cy
+    const tx = targetInfo.cx
+    const ty = targetInfo.cy
 
     const style = extractEdgeStyle(cell)
     const labels = extractEdgeLabels(cell)
 
-    // 获取真实端点（处理 trunk/branch）
     const realSourceId = (d.realSourceId as string) || source.cell
     const realTargetId = (d.realTargetId as string) || target.cell
     const isTrunk = d.isTrunk as boolean
@@ -316,15 +373,14 @@ function generateSVG(data: ExportData): SVGResult {
     const edgeClass = isTrunk ? 'edge trunk-edge' : isBranch ? 'edge branch-edge' : 'edge'
 
     svg += `<g class="${edgeClass}" data-id="${escapeAttr(cell.id)}" `
-    svg += `data-source="${escapeAttr(realSourceId)}" data-target="${escapeAttr(realTargetId)}">`
+    svg += `data-source="${escapeAttr(realSourceId || '')}" data-target="${escapeAttr(realTargetId || '')}">`
 
-    // 线条
     svg += `<line x1="${sx}" y1="${sy}" x2="${tx}" y2="${ty}" `
     svg += `stroke="${style.stroke}" stroke-width="${style.strokeWidth}" `
     if (style.strokeDasharray) svg += `stroke-dasharray="${style.strokeDasharray}" `
     svg += `class="edge-line" />`
 
-    // 箭头标记
+    // 箭头
     if (style.targetMarker) {
       const angle = Math.atan2(ty - sy, tx - sx)
       const arrowSize = 10
@@ -348,8 +404,8 @@ function generateSVG(data: ExportData): SVGResult {
     // 边标签
     for (const label of labels) {
       if (!label.text) continue
-      const lx = sx + (tx - sx) * label.x
-      const ly = sy + (ty - sy) * label.x + label.y
+      const lx = sx + (tx - sx) * label.distance
+      const ly = sy + (ty - sy) * label.distance
       const textW = label.text.length * label.fontSize * 0.6 + 8
       const textH = label.fontSize + 6
       svg += `<g class="edge-label-group">`
@@ -363,58 +419,55 @@ function generateSVG(data: ExportData): SVGResult {
     svg += `</g>`
   }
 
-  // 属性标签
+  // === 属性标签 ===
   for (const cell of attrTagCells) {
-    if (!cell.position || !cell.size) continue
+    const pos = getCellPos(cell)
+    if (!pos) continue
     const attrs = cell.attrs || {}
     const body = (attrs.body as Record<string, unknown>) || {}
     const label = (attrs.label as Record<string, unknown>) || {}
     const d = cell.data || {}
-    const x = cell.position.x + offsetX
-    const y = cell.position.y + offsetY
-    const w = cell.size.width
-    const h = cell.size.height
-    const sourceNodeId = d.sourceNodeId as string
+    const x = pos.x + offsetX
+    const y = pos.y + offsetY
 
-    svg += `<g class="attr-tag" data-id="${escapeAttr(cell.id)}" data-source="${escapeAttr(sourceNodeId)}">`
-    svg += `<rect x="${x}" y="${y}" width="${w}" height="${h}" `
+    svg += `<g class="attr-tag" data-id="${escapeAttr(cell.id)}" data-source="${escapeAttr(d.sourceNodeId as string || '')}">`
+    svg += `<rect x="${x}" y="${y}" width="${pos.w}" height="${pos.h}" `
     svg += `fill="${body.fill || '#e6fffb'}" stroke="${body.stroke || '#13c2c2'}" `
     svg += `stroke-width="${body.strokeWidth || 1}" stroke-dasharray="${body.strokeDasharray || '3 3'}" `
     svg += `rx="${body.rx || 4}" ry="${body.ry || 4}" />`
     if (label.text) {
-      svg += `<text x="${x + w / 2}" y="${y + h / 2 + (label.fontSize as number || 12) * 0.35}" `
+      svg += `<text x="${x + pos.w / 2}" y="${y + pos.h / 2 + (label.fontSize as number || 12) * 0.35}" `
       svg += `font-size="${label.fontSize || 12}" fill="${label.fill || '#13c2c2'}" `
       svg += `text-anchor="middle">${escapeHtml(label.text as string)}</text>`
     }
     svg += `</g>`
   }
 
-  // 节点（最顶层）
+  // === 节点（最顶层）===
   for (const cell of nodeCells) {
-    if (!cell.position || !cell.size) continue
+    const pos = getCellPos(cell)
+    if (!pos) continue
     const d = cell.data || {}
-    if (d.isForkNode) continue // 跳过 fork 节点（1x1 透明）
+    if (d.isForkNode) continue
 
     const ns = extractNodeStyle(cell)
-    const x = cell.position.x + offsetX
-    const y = cell.position.y + offsetY
-    const w = cell.size.width
-    const h = cell.size.height
+    const x = pos.x + offsetX
+    const y = pos.y + offsetY
 
     svg += `<g class="node" data-id="${escapeAttr(cell.id)}" `
     svg += `data-original="${escapeAttr(d.originalText as string || '')}" `
     svg += `data-chinese="${escapeAttr(d.chineseText as string || '')}" `
     svg += `transform="translate(0,0)">`
-    svg += `<rect x="${x}" y="${y}" width="${w}" height="${h}" `
+    svg += `<rect x="${x}" y="${y}" width="${pos.w}" height="${pos.h}" `
     svg += `fill="${ns.fill}" stroke="${ns.stroke}" stroke-width="${ns.strokeWidth}" `
     if (ns.strokeDasharray) svg += `stroke-dasharray="${ns.strokeDasharray}" `
     svg += `rx="${ns.borderRadius}" ry="${ns.borderRadius}" class="node-body" />`
     if (ns.text) {
-      const lines = wrapText(ns.text, w - 16, ns.fontSize)
+      const lines = wrapText(ns.text, pos.w - 16, ns.fontSize)
       const lineHeight = ns.fontSize * 1.3
-      const startY = y + h / 2 - (lines.length - 1) * lineHeight / 2 + ns.fontSize * 0.35
+      const startY = y + pos.h / 2 - (lines.length - 1) * lineHeight / 2 + ns.fontSize * 0.35
       for (let i = 0; i < lines.length; i++) {
-        svg += `<text x="${x + w / 2}" y="${startY + i * lineHeight}" `
+        svg += `<text x="${x + pos.w / 2}" y="${startY + i * lineHeight}" `
         svg += `font-size="${ns.fontSize}" fill="${ns.fontColor}" `
         svg += `font-weight="${ns.fontWeight}" text-anchor="middle" class="node-label">${escapeHtml(lines[i])}</text>`
       }
@@ -432,14 +485,12 @@ export function exportInteractiveHTML(): string {
   const data = collectExportData()
   const svgResult = generateSVG(data)
 
-  // 构建节点信息映射
   const nodesInfo = data.nodes.map(n => ({
     id: n.id,
     originalText: n.originalText,
     chineseText: n.chineseText,
   }))
 
-  // 构建句子和翻译
   const sentences = data.claim?.sentences || []
   const transMap = new Map(data.translations.map(t => [t.sentenceId, t.translatedText]))
 
@@ -451,9 +502,6 @@ export function exportInteractiveHTML(): string {
   const nodesJson = JSON.stringify(nodesInfo)
 
   const claimTitle = data.claim ? `权利要求 ${data.claim.index}` : '权利要求'
-  const svgWidth = svgResult.width
-  const svgHeight = svgResult.height
-  const svgContent = svgResult.svg
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -492,6 +540,7 @@ mark.text-highlight { padding: 1px 3px; border-radius: 3px; font-weight: 600; cu
 .edge:hover .edge-line { stroke-width: 6; }
 .edge-label-group { pointer-events: none; }
 .attr-tag { cursor: pointer; }
+.attr-stem-line { pointer-events: none; }
 .highlighted .node-body { stroke: #e63946 !important; stroke-width: 4 !important; }
 .highlighted-edge .edge-line { stroke: #e63946 !important; stroke-width: 6 !important; }
 .highlighted-branch .edge-line { stroke: #e63946 !important; stroke-width: 6 !important; }
@@ -515,9 +564,9 @@ mark.text-highlight { padding: 1px 3px; border-radius: 3px; font-weight: 600; cu
       <button onclick="resetView()">重置视图</button>
       <button onclick="clearHighlight()">清除高亮</button>
     </div>
-    <svg id="graphSvg" viewBox="0 0 ${svgWidth} ${svgHeight}" xmlns="http://www.w3.org/2000/svg">
+    <svg id="graphSvg" viewBox="0 0 ${svgResult.width} ${svgResult.height}" xmlns="http://www.w3.org/2000/svg">
       <g id="viewportGroup">
-        ${svgContent}
+        ${svgResult.svg}
       </g>
     </svg>
     <div class="info-bar" id="infoBar">拖拽节点移动 · 点击边/节点高亮 · 滚轮缩放 · 右键平移</div>
@@ -542,7 +591,6 @@ var viewportGroup = document.getElementById('viewportGroup');
 var sidebarBody = document.getElementById('sidebarBody');
 var legendBar = document.getElementById('legendBar');
 
-// === 渲染句子 ===
 function renderSentences() {
   sidebarBody.innerHTML = '';
   SENTENCES.forEach(function(sent) {
@@ -636,7 +684,6 @@ function updateLegend() {
   });
 }
 
-// === 节点高亮 ===
 function highlightNodes(ids) {
   document.querySelectorAll('.node.highlighted').forEach(function(el) { el.classList.remove('highlighted'); });
   highlightedNodeIds = ids;
@@ -659,19 +706,13 @@ function highlightNodes(ids) {
 
 function toggleNodeHighlight(nodeId) {
   var idx = highlightedNodeIds.indexOf(nodeId);
-  if (idx >= 0) {
-    highlightedNodeIds.splice(idx, 1);
-  } else {
-    highlightedNodeIds.push(nodeId);
-  }
+  if (idx >= 0) { highlightedNodeIds.splice(idx, 1); }
+  else { highlightedNodeIds.push(nodeId); }
   highlightNodes(highlightedNodeIds);
 }
 
-function textNodeClick(nodeId) {
-  toggleNodeHighlight(nodeId);
-}
+function textNodeClick(nodeId) { toggleNodeHighlight(nodeId); }
 
-// === 边高亮 ===
 function highlightEdge(edgeId) {
   clearEdgeHighlight();
   var edgeEl = document.querySelector('.edge[data-id="' + edgeId + '"]');
@@ -682,9 +723,7 @@ function highlightEdge(edgeId) {
   var isTrunk = edgeEl.classList.contains('trunk-edge');
   if (isTrunk) {
     document.querySelectorAll('.branch-edge').forEach(function(be) {
-      if (be.dataset.source === sourceId) {
-        be.classList.add('highlighted-branch');
-      }
+      if (be.dataset.source === sourceId) be.classList.add('highlighted-branch');
     });
   }
   var nodeIds = [];
@@ -705,109 +744,58 @@ function clearEdgeHighlight() {
   document.querySelectorAll('.highlighted-branch').forEach(function(el) { el.classList.remove('highlighted-branch'); });
 }
 
-function clearHighlight() {
-  clearEdgeHighlight();
-  highlightNodes([]);
-}
+function clearHighlight() { clearEdgeHighlight(); highlightNodes([]); }
 
-// === 事件绑定 ===
 svg.addEventListener('click', function(e) {
   var nodeEl = e.target.closest('.node');
   if (nodeEl) {
-    if (e.ctrlKey || e.metaKey) {
-      toggleNodeHighlight(nodeEl.dataset.id);
-    } else {
-      highlightNodes([nodeEl.dataset.id]);
-    }
-    e.stopPropagation();
-    return;
+    if (e.ctrlKey || e.metaKey) toggleNodeHighlight(nodeEl.dataset.id);
+    else highlightNodes([nodeEl.dataset.id]);
+    e.stopPropagation(); return;
   }
   var edgeEl = e.target.closest('.edge');
-  if (edgeEl) {
-    highlightEdge(edgeEl.dataset.id);
-    e.stopPropagation();
-    return;
-  }
+  if (edgeEl) { highlightEdge(edgeEl.dataset.id); e.stopPropagation(); return; }
   var attrEl = e.target.closest('.attr-tag');
-  if (attrEl) {
-    var srcId = attrEl.dataset.source;
-    if (srcId) highlightNodes([srcId]);
-    e.stopPropagation();
-    return;
-  }
+  if (attrEl) { var srcId = attrEl.dataset.source; if (srcId) highlightNodes([srcId]); e.stopPropagation(); return; }
   clearHighlight();
 });
 
 // === 节点拖拽 ===
-var dragging = null;
-var dragStart = null;
-var nodeStartPos = null;
-
+var dragging = null, dragStart = null, nodeStartPos = null;
 svg.addEventListener('mousedown', function(e) {
   var nodeEl = e.target.closest('.node');
-  if (!nodeEl) return;
-  if (e.button !== 0) return;
-  e.preventDefault();
-  e.stopPropagation();
+  if (!nodeEl || e.button !== 0) return;
+  e.preventDefault(); e.stopPropagation();
   dragging = nodeEl;
   dragStart = {x: e.clientX, y: e.clientY};
   var transform = nodeEl.getAttribute('transform') || '';
   var match = transform.match(/translate\\(([-\\d.]+),\\s*([-\\d.]+)\\)/);
   nodeStartPos = match ? {x: parseFloat(match[1]), y: parseFloat(match[2])} : {x: 0, y: 0};
 });
-
 document.addEventListener('mousemove', function(e) {
   if (!dragging) return;
-  var pt = svg.createSVGPoint();
-  pt.x = e.clientX;
-  pt.y = e.clientY;
-  var ctm = svg.getScreenCTM();
-  if (!ctm) return;
+  var pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  var ctm = svg.getScreenCTM(); if (!ctm) return;
   var svgPt = pt.matrixTransform(ctm.inverse());
-  var startPt = svg.createSVGPoint();
-  startPt.x = dragStart.x;
-  startPt.y = dragStart.y;
+  var startPt = svg.createSVGPoint(); startPt.x = dragStart.x; startPt.y = dragStart.y;
   var svgStart = startPt.matrixTransform(ctm.inverse());
-  var dx = svgPt.x - svgStart.x;
-  var dy = svgPt.y - svgStart.y;
-  dragging.setAttribute('transform', 'translate(' + (nodeStartPos.x + dx) + ',' + (nodeStartPos.y + dy) + ')');
+  dragging.setAttribute('transform', 'translate(' + (nodeStartPos.x + svgPt.x - svgStart.x) + ',' + (nodeStartPos.y + svgPt.y - svgStart.y) + ')');
 });
-
-document.addEventListener('mouseup', function() {
-  dragging = null;
-});
+document.addEventListener('mouseup', function() { dragging = null; });
 
 // === 缩放和平移 ===
 var viewState = {x: 0, y: 0, scale: 1};
-
-function applyView() {
-  viewportGroup.setAttribute('transform', 'translate(' + viewState.x + ',' + viewState.y + ') scale(' + viewState.scale + ')');
-}
-
-function zoomIn() {
-  viewState.scale = Math.min(3, viewState.scale * 1.2);
-  applyView();
-}
-
-function zoomOut() {
-  viewState.scale = Math.max(0.1, viewState.scale / 1.2);
-  applyView();
-}
-
-function resetView() {
-  viewState = {x: 0, y: 0, scale: 1};
-  applyView();
-}
+function applyView() { viewportGroup.setAttribute('transform', 'translate(' + viewState.x + ',' + viewState.y + ') scale(' + viewState.scale + ')'); }
+function zoomIn() { viewState.scale = Math.min(3, viewState.scale * 1.2); applyView(); }
+function zoomOut() { viewState.scale = Math.max(0.1, viewState.scale / 1.2); applyView(); }
+function resetView() { viewState = {x: 0, y: 0, scale: 1}; applyView(); }
 
 svg.addEventListener('wheel', function(e) {
   e.preventDefault();
   var delta = e.deltaY > 0 ? 0.9 : 1.1;
   var newScale = Math.max(0.1, Math.min(3, viewState.scale * delta));
-  var pt = svg.createSVGPoint();
-  pt.x = e.clientX;
-  pt.y = e.clientY;
-  var ctm = svg.getScreenCTM();
-  if (!ctm) return;
+  var pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  var ctm = svg.getScreenCTM(); if (!ctm) return;
   var svgPt = pt.matrixTransform(ctm.inverse());
   viewState.x = svgPt.x - (svgPt.x - viewState.x) * (newScale / viewState.scale);
   viewState.y = svgPt.y - (svgPt.y - viewState.y) * (newScale / viewState.scale);
@@ -815,27 +803,14 @@ svg.addEventListener('wheel', function(e) {
   applyView();
 }, {passive: false});
 
-// 右键平移
-var panning = false;
-var panStart = null;
+var panning = false, panStart = null;
 svg.addEventListener('contextmenu', function(e) { e.preventDefault(); });
 svg.addEventListener('mousedown', function(e) {
-  if (e.button === 2) {
-    panning = true;
-    panStart = {x: e.clientX - viewState.x, y: e.clientY - viewState.y};
-    e.preventDefault();
-  }
+  if (e.button === 2) { panning = true; panStart = {x: e.clientX - viewState.x, y: e.clientY - viewState.y}; e.preventDefault(); }
 });
-document.addEventListener('mousemove', function(e) {
-  if (panning) {
-    viewState.x = e.clientX - panStart.x;
-    viewState.y = e.clientY - panStart.y;
-    applyView();
-  }
-});
+document.addEventListener('mousemove', function(e) { if (panning) { viewState.x = e.clientX - panStart.x; viewState.y = e.clientY - panStart.y; applyView(); } });
 document.addEventListener('mouseup', function() { panning = false; });
 
-// 初始化
 renderSentences();
 </script>
 </body>
