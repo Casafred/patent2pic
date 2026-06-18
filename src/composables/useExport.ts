@@ -1,5 +1,6 @@
 import { graphEngine } from '@/services/graph/engine'
 import type { ExportFormat } from '@/types/app'
+import { exportInteractiveHTML } from '@/composables/useExportHTML'
 
 function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -13,6 +14,10 @@ export function useExport() {
 
   function exportSVG(): string {
     return graphEngine.toSVG()
+  }
+
+  function exportHTML(): string {
+    return exportInteractiveHTML()
   }
 
   async function downloadFile(format: ExportFormat): Promise<void> {
@@ -31,12 +36,14 @@ export function useExport() {
       const extensions: Record<ExportFormat, string[]> = {
         png: ['png'],
         svg: ['svg'],
+        html: ['html'],
         p2p: ['p2p'],
       }
 
       const defaultNames: Record<ExportFormat, string> = {
         png: 'patent2pic-graph.png',
         svg: 'patent2pic-graph.svg',
+        html: 'patent2pic-graph.html',
         p2p: 'patent2pic-graph.p2p',
       }
 
@@ -66,6 +73,12 @@ export function useExport() {
           await writeFile(path, encoder.encode(svg))
           break
         }
+        case 'html': {
+          const html = exportHTML()
+          const encoder = new TextEncoder()
+          await writeFile(path, encoder.encode(html))
+          break
+        }
       }
     } catch (err) {
       console.error('Tauri 导出失败，回退到浏览器下载:', err)
@@ -86,6 +99,12 @@ export function useExport() {
         downloadBlob(blob, 'patent2pic-graph.svg')
         break
       }
+      case 'html': {
+        const html = exportHTML()
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+        downloadBlob(blob, 'patent2pic-graph.html')
+        break
+      }
     }
   }
 
@@ -103,6 +122,7 @@ export function useExport() {
   return {
     exportPNG,
     exportSVG,
+    exportHTML,
     downloadFile,
   }
 }

@@ -90,6 +90,7 @@
           <el-dropdown-menu>
             <el-dropdown-item command="png">导出 PNG (3x 高清)</el-dropdown-item>
             <el-dropdown-item command="svg">导出 SVG</el-dropdown-item>
+            <el-dropdown-item command="html">导出可交互 HTML</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
