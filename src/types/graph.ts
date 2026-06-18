@@ -1,5 +1,18 @@
-export type RelationType = 'position' | 'action' | 'containment' | 'logical' | 'attribute'
-export type NodeType = 'component' | 'subsystem' | 'feature'
+export type ClaimType = 'structure' | 'method'
+
+export type RelationType =
+  // 结构类专属
+  | 'position' | 'action' | 'containment'
+  // 方法类专属
+  | 'sequence' | 'branch_true' | 'branch_false' | 'trigger' | 'feedback' | 'parallel'
+  // 共用
+  | 'logical' | 'attribute'
+
+export type NodeType =
+  // 结构类
+  | 'component' | 'subsystem' | 'feature'
+  // 方法类
+  | 'step' | 'decision' | 'condition'
 export type ArrowType = 'solid-triangle' | 'hollow-triangle' | 'diamond' | 'circle' | 'none' | 'both'
 export type LineStyle = 'solid' | 'dashed' | 'dotted' | 'dash-dot'
 
@@ -69,6 +82,7 @@ export interface GroupData {
 export interface GraphJSON {
   version: string
   claimId: string
+  claimType?: ClaimType
   nodes: NodeData[]
   edges: EdgeData[]
   groups: GroupData[]

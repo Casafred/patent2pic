@@ -71,21 +71,33 @@ export function buildNode(data: NodeData, isChinese: boolean = false): Record<st
     style.height,
   )
 
+  // 方法类节点使用自定义 shape
+  const shape = data.nodeType === 'decision' ? 'decision'
+    : data.nodeType === 'condition' ? 'condition'
+    : 'rect'
+
+  // decision 节点需要更大的尺寸以容纳菱形
+  const nodeWidth = data.nodeType === 'decision' ? Math.max(size.width, 140) : size.width
+  const nodeHeight = data.nodeType === 'decision' ? Math.max(size.height, 100) : size.height
+
+  // step 节点使用更大的圆角
+  const borderRadius = data.nodeType === 'step' ? 16 : style.borderRadius
+
   return {
     id: data.id,
     x: data.x ?? 0,
     y: data.y ?? 0,
-    width: size.width,
-    height: size.height,
-    shape: 'rect',
+    width: nodeWidth,
+    height: nodeHeight,
+    shape,
     attrs: {
       body: {
         fill: style.fill,
         stroke: style.stroke,
         strokeWidth: style.strokeWidth,
         strokeDasharray: style.strokeDasharray ?? undefined,
-        rx: style.borderRadius,
-        ry: style.borderRadius,
+        rx: shape === 'rect' ? borderRadius : undefined,
+        ry: shape === 'rect' ? borderRadius : undefined,
       },
       label: {
         text: getLabelText(data, isChinese),
@@ -98,10 +110,10 @@ export function buildNode(data: NodeData, isChinese: boolean = false): Record<st
     },
     ports: {
       groups: {
-        top: { position: 'top', attrs: { circle: { r: 4, magnet: true, stroke: '#1890FF', strokeWidth: 1, fill: '#fff' } } },
-        bottom: { position: 'bottom', attrs: { circle: { r: 4, magnet: true, stroke: '#1890FF', strokeWidth: 1, fill: '#fff' } } },
-        left: { position: 'left', attrs: { circle: { r: 4, magnet: true, stroke: '#1890FF', strokeWidth: 1, fill: '#fff' } } },
-        right: { position: 'right', attrs: { circle: { r: 4, magnet: true, stroke: '#1890FF', strokeWidth: 1, fill: '#fff' } } },
+        top: { position: 'top', attrs: { circle: { r: 4, magnet: true, stroke: style.stroke, strokeWidth: 1, fill: '#fff' } } },
+        bottom: { position: 'bottom', attrs: { circle: { r: 4, magnet: true, stroke: style.stroke, strokeWidth: 1, fill: '#fff' } } },
+        left: { position: 'left', attrs: { circle: { r: 4, magnet: true, stroke: style.stroke, strokeWidth: 1, fill: '#fff' } } },
+        right: { position: 'right', attrs: { circle: { r: 4, magnet: true, stroke: style.stroke, strokeWidth: 1, fill: '#fff' } } },
       },
       items: [
         { group: 'top', id: `${data.id}-top` },

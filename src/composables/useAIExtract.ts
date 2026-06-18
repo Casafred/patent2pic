@@ -5,6 +5,7 @@ import { useGraphStore } from '@/stores/graph'
 import { useTranslationStore } from '@/stores/translation'
 import { streamChat } from '@/services/ai/client'
 import { buildMessages } from '@/services/ai/prompt'
+import { predictClaimType } from '@/utils/claim-type'
 import { parseExtractResult } from '@/services/ai/extractor'
 import { graphEngine } from '@/services/graph/engine'
 import { alignTranslationToSentences } from '@/services/claim/translation-aligner'
@@ -58,7 +59,8 @@ export function useAIExtract() {
 
     try {
       timingStart(`  │ 构建提示词`)
-      const messages = buildMessages(claimText, providerType)
+      const claimType = predictClaimType(claimText)
+      const messages = buildMessages(claimText, providerType, claimType)
       timingEnd(`  │ 构建提示词`)
 
       const isDeepSeek = aiStore.activeProviderType === 'deepseek'

@@ -85,11 +85,13 @@ function validateExtractResult(data: unknown): ExtractResult {
 
   const result = data as Record<string, unknown>
 
-  const nodes = validateNodes(result.nodes)
-  const edges = validateEdges(result.edges, nodes)
+  const claimType = result.claimType === 'method' ? 'method' as const : 'structure' as const
+  const nodes = validateNodes(result.nodes, claimType)
+  const edges = validateEdges(result.edges, nodes, claimType)
   const groups = validateGroups(result.groups, nodes)
 
   return {
+    claimType,
     claimId: '',
     nodes,
     edges,
@@ -99,9 +101,13 @@ function validateExtractResult(data: unknown): ExtractResult {
   }
 }
 
-function validateNodes(raw: unknown): ExtractNode[] {
+function validateNodes(raw: unknown, claimType: 'structure' | 'method'): ExtractNode[] {
   if (!Array.isArray(raw)) throw new Error('nodes 必须是数组')
   const ids = new Set<string>()
+
+  const structureTypes = ['component', 'subsystem', 'feature']
+  const methodTypes = ['step', 'decision', 'condition']
+  const validTypes = claimType === 'method' ? methodTypes : structureTypes
 
   return raw.map((item: unknown, index: number) => {
     if (!item || typeof item !== 'object') throw new Error(`nodes[${index}] 不是有效对象`)
@@ -114,10 +120,9 @@ function validateNodes(raw: unknown): ExtractNode[] {
     if (!node.originalText) throw new Error(`nodes[${index}] 缺少 originalText`)
     if (!node.chineseText) throw new Error(`nodes[${index}] 缺少 chineseText`)
 
-    const validTypes = ['component', 'subsystem', 'feature']
     const nodeType = validTypes.includes(node.nodeType as string)
       ? node.nodeType as ExtractNode['nodeType']
-      : 'component'
+      : (claimType === 'method' ? 'step' : 'component')
 
     return {
       id,
@@ -130,9 +135,13 @@ function validateNodes(raw: unknown): ExtractNode[] {
   })
 }
 
-function validateEdges(raw: unknown, nodes: ExtractNode[]): ExtractEdge[] {
+function validateEdges(raw: unknown, nodes: ExtractNode[], claimType: 'structure' | 'method'): ExtractEdge[] {
   if (!Array.isArray(raw)) throw new Error('edges 必须是数组')
   const nodeIds = new Set(nodes.map(n => n.id))
+
+  const structureTypes = ['position', 'action', 'containment', 'logical', 'attribute']
+  const methodTypes = ['sequence', 'branch_true', 'branch_false', 'trigger', 'feedback', 'parallel', 'attribute']
+  const validTypes = claimType === 'method' ? methodTypes : structureTypes
 
   return raw.map((item: unknown, index: number) => {
     if (!item || typeof item !== 'object') throw new Error(`edges[${index}] 不是有效对象`)
@@ -143,11 +152,9 @@ function validateEdges(raw: unknown, nodes: ExtractNode[]): ExtractEdge[] {
     if (!nodeIds.has(source)) throw new Error(`edges[${index}] source "${source}" 不存在于节点中`)
     if (!nodeIds.has(target)) throw new Error(`edges[${index}] target "${target}" 不存在于节点中`)
 
-    // Allow source === target only for attribute type edges
-    const validTypes = ['position', 'action', 'containment', 'logical', 'attribute']
     const relationType = validTypes.includes(edge.relationType as string)
       ? edge.relationType as ExtractEdge['relationType']
-      : 'position'
+      : (claimType === 'method' ? 'sequence' : 'position')
 
     if (source === target && relationType !== 'attribute') {
       throw new Error(`edges[${index}] source 和 target 相同但不是 attribute 类型`)

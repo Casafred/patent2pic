@@ -4,6 +4,9 @@ const NODE_TYPE_STYLES: Record<NodeType, Pick<NodeStyle, 'fill' | 'stroke'>> = {
   component: { fill: '#e8f4fd', stroke: '#1890FF' },
   subsystem: { fill: '#fff7e6', stroke: '#fa8c16' },
   feature: { fill: '#f6ffed', stroke: '#52c41a' },
+  step: { fill: '#e8f4fd', stroke: '#1890FF' },
+  decision: { fill: '#f3e8ff', stroke: '#722ed1' },
+  condition: { fill: '#fff7e6', stroke: '#fa8c16' },
 }
 
 const HIERARCHY_LEVEL_COLORS: { fill: string; stroke: string }[] = [
@@ -33,6 +36,12 @@ const RELATION_TYPE_STYLES: Record<RelationType, Pick<EdgeStyle, 'stroke' | 'str
   containment: { stroke: '#fa8c16', strokeDasharray: '5 5', arrowType: 'hollow-triangle' },
   logical: { stroke: '#722ed1', strokeDasharray: '2 4 2 4 5 4', arrowType: 'diamond' },
   attribute: { stroke: '#13c2c2', strokeDasharray: '3 3', arrowType: 'none' },
+  sequence: { stroke: '#1890FF', strokeDasharray: null, arrowType: 'solid-triangle' },
+  branch_true: { stroke: '#52c41a', strokeDasharray: null, arrowType: 'solid-triangle' },
+  branch_false: { stroke: '#e63946', strokeDasharray: '6 3', arrowType: 'solid-triangle' },
+  trigger: { stroke: '#fa8c16', strokeDasharray: '6 3 2 3', arrowType: 'hollow-triangle' },
+  feedback: { stroke: '#722ed1', strokeDasharray: '4 4', arrowType: 'circle' },
+  parallel: { stroke: '#13c2c2', strokeDasharray: null, arrowType: 'solid-triangle' },
 }
 
 export function getDefaultNodeStyle(nodeType: NodeType): NodeStyle {
@@ -92,6 +101,9 @@ export const NODE_TYPE_OPTIONS: { value: NodeType; label: string; color: string 
   { value: 'component', label: '部件', color: '#1890FF' },
   { value: 'subsystem', label: '子系统', color: '#fa8c16' },
   { value: 'feature', label: '特征', color: '#52c41a' },
+  { value: 'step', label: '步骤', color: '#1890FF' },
+  { value: 'decision', label: '判断', color: '#722ed1' },
+  { value: 'condition', label: '条件', color: '#fa8c16' },
 ]
 
 export const RELATION_TYPE_OPTIONS: { value: RelationType; label: string; color: string }[] = [
@@ -100,6 +112,12 @@ export const RELATION_TYPE_OPTIONS: { value: RelationType; label: string; color:
   { value: 'containment', label: '包含关系', color: '#fa8c16' },
   { value: 'logical', label: '逻辑关系', color: '#722ed1' },
   { value: 'attribute', label: '属性关系', color: '#13c2c2' },
+  { value: 'sequence', label: '先后顺序', color: '#1890FF' },
+  { value: 'branch_true', label: '是(分支)', color: '#52c41a' },
+  { value: 'branch_false', label: '否(分支)', color: '#e63946' },
+  { value: 'trigger', label: '触发关系', color: '#fa8c16' },
+  { value: 'feedback', label: '反馈回路', color: '#722ed1' },
+  { value: 'parallel', label: '并行执行', color: '#13c2c2' },
 ]
 
 export const FONT_FAMILY_OPTIONS = [

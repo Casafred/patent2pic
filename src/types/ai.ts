@@ -51,6 +51,7 @@ export interface ChatUsage {
 }
 
 export interface ExtractResult {
+  claimType: 'structure' | 'method'
   claimId: string
   nodes: ExtractNode[]
   edges: ExtractEdge[]
@@ -68,7 +69,7 @@ export interface ExtractNode {
   id: string
   originalText: string
   chineseText: string
-  nodeType: 'component' | 'subsystem' | 'feature'
+  nodeType: 'component' | 'subsystem' | 'feature' | 'step' | 'decision' | 'condition'
   hierarchyLevel: number
   sourceSentence: string
 }
@@ -80,6 +81,7 @@ export interface ExtractEdge {
   originalText: string
   chineseText: string
   relationType: 'position' | 'action' | 'containment' | 'logical' | 'attribute'
+    | 'sequence' | 'branch_true' | 'branch_false' | 'trigger' | 'feedback' | 'parallel'
 }
 
 export interface ExtractGroup {

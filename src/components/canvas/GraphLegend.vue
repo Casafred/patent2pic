@@ -13,17 +13,23 @@
     <transition name="legend-expand">
       <div v-if="isExpanded" class="legend-panel">
         <div class="legend-section">
-          <div class="section-title">节点类型</div>
+          <div class="section-title">{{ isMethod ? '流程节点' : '节点类型' }}</div>
           <div class="legend-items">
             <div v-for="item in nodeTypes" :key="item.label" class="legend-item">
-              <span class="node-sample" :style="{ background: item.fill, borderColor: item.stroke }"></span>
+              <svg v-if="item.shape === 'diamond'" class="node-shape-sample" width="28" height="20" viewBox="0 0 28 20">
+                <polygon points="14,1 27,10 14,19 1,10" :fill="item.fill" :stroke="item.stroke" stroke-width="1.5"/>
+              </svg>
+              <svg v-else-if="item.shape === 'hexagon'" class="node-shape-sample" width="28" height="20" viewBox="0 0 28 20">
+                <polygon points="7,1 21,1 27,10 21,19 7,19 1,10" :fill="item.fill" :stroke="item.stroke" stroke-width="1.5"/>
+              </svg>
+              <span v-else class="node-sample" :style="{ background: item.fill, borderColor: item.stroke }"></span>
               <span class="legend-label">{{ item.label }}</span>
             </div>
           </div>
         </div>
 
         <div class="legend-section">
-          <div class="section-title">关系类型</div>
+          <div class="section-title">{{ isMethod ? '流程关系' : '关系类型' }}</div>
           <div class="legend-items">
             <div v-for="item in relationTypes" :key="item.label" class="legend-item">
               <svg class="edge-sample" width="40" height="16" viewBox="0 0 40 16">
@@ -48,6 +54,11 @@
                 <polygon
                   v-if="item.arrowType === 'diamond'"
                   points="30,8 35,4 40,8 35,12"
+                  :fill="item.stroke"
+                />
+                <circle
+                  v-if="item.arrowType === 'circle'"
+                  cx="36" cy="8" r="4"
                   :fill="item.stroke"
                 />
               </svg>
@@ -112,23 +123,52 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useGraphStore } from '@/stores/graph'
 
 const isExpanded = ref(false)
+const graphStore = useGraphStore()
 
-const nodeTypes = [
-  { label: '部件', fill: '#e8f4fd', stroke: '#1890FF' },
-  { label: '子系统', fill: '#fff7e6', stroke: '#fa8c16' },
-  { label: '特征', fill: '#f6ffed', stroke: '#52c41a' },
+const claimType = computed(() => {
+  const activeTab = graphStore.tabs.find(t => t.id === graphStore.activeTabId)
+  return activeTab?.extractResult?.claimType || 'structure'
+})
+
+const isMethod = computed(() => claimType.value === 'method')
+
+const structureNodeTypes = [
+  { label: '部件', fill: '#e8f4fd', stroke: '#1890FF', shape: 'rect' as const },
+  { label: '子系统', fill: '#fff7e6', stroke: '#fa8c16', shape: 'rect' as const },
+  { label: '特征', fill: '#f6ffed', stroke: '#52c41a', shape: 'rect' as const },
 ]
 
-const relationTypes = [
+const methodNodeTypes = [
+  { label: '步骤 (step)', fill: '#e8f4fd', stroke: '#1890FF', shape: 'rect' as const },
+  { label: '判断 (decision)', fill: '#f3e8ff', stroke: '#722ed1', shape: 'diamond' as const },
+  { label: '条件 (condition)', fill: '#fff7e6', stroke: '#fa8c16', shape: 'hexagon' as const },
+]
+
+const nodeTypes = computed(() => isMethod.value ? methodNodeTypes : structureNodeTypes)
+
+const structureRelationTypes = [
   { label: '位置关系', stroke: '#1890FF', dasharray: '', arrowType: 'solid-triangle' },
   { label: '动作关系', stroke: '#52c41a', dasharray: '', arrowType: 'solid-triangle' },
   { label: '包含关系', stroke: '#fa8c16', dasharray: '5 5', arrowType: 'hollow-triangle' },
   { label: '逻辑关系', stroke: '#722ed1', dasharray: '2 4 2 4 5 4', arrowType: 'diamond' },
   { label: '属性关系', stroke: '#13c2c2', dasharray: '3 3', arrowType: 'none' },
 ]
+
+const methodRelationTypes = [
+  { label: '先后顺序', stroke: '#1890FF', dasharray: '', arrowType: 'solid-triangle' },
+  { label: '是 (branch_true)', stroke: '#52c41a', dasharray: '', arrowType: 'solid-triangle' },
+  { label: '否 (branch_false)', stroke: '#e63946', dasharray: '6 3', arrowType: 'solid-triangle' },
+  { label: '触发关系', stroke: '#fa8c16', dasharray: '6 3 2 3', arrowType: 'hollow-triangle' },
+  { label: '反馈回路', stroke: '#722ed1', dasharray: '4 4', arrowType: 'circle' },
+  { label: '并行执行', stroke: '#13c2c2', dasharray: '', arrowType: 'solid-triangle' },
+  { label: '参数/阈值', stroke: '#13c2c2', dasharray: '3 3', arrowType: 'none' },
+]
+
+const relationTypes = computed(() => isMethod.value ? methodRelationTypes : structureRelationTypes)
 
 const lineStyles = [
   { label: '实线', dasharray: '' },
@@ -233,6 +273,10 @@ const hierarchyLevels = [
 }
 
 .edge-sample {
+  flex-shrink: 0;
+}
+
+.node-shape-sample {
   flex-shrink: 0;
 }
 

@@ -6,13 +6,14 @@ import { Clipboard } from '@antv/x6-plugin-clipboard'
 import { MiniMap } from '@antv/x6-plugin-minimap'
 import { Export } from '@antv/x6-plugin-export'
 import { Transform } from '@antv/x6-plugin-transform'
-import type { NodeData, EdgeData } from '@/types/graph'
+import type { NodeData, EdgeData, ClaimType } from '@/types/graph'
 import type { ExtractResult, ExtractGroup } from '@/types/ai'
 import { buildNode, updateNodeStyle, calculateNodeSize } from './node-builder'
 import { buildEdge, buildTrunkEdge, buildBranchEdge, updateEdgeStyle } from './edge-builder'
 import { applyElkLayout, type ElkLayoutOptions } from './layout'
 import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle, arrowTypeToMarker } from './style-registry'
 import { setupCustomEdge, EdgeViewWithGap } from './custom-edge'
+import { registerMethodShapes } from './shapes'
 import { timingStart, timingEnd } from '@/utils/timing'
 
 export class GraphEngine {
@@ -21,6 +22,7 @@ export class GraphEngine {
 
   init(container: HTMLElement): void {
     setupCustomEdge()
+    registerMethodShapes()
 
     this.graph = new Graph({
       container,
@@ -250,7 +252,8 @@ export class GraphEngine {
   async batchBuild(result: ExtractResult, layoutOptions?: ElkLayoutOptions, isChinese: boolean = false): Promise<void> {
     if (!this.graph) return
 
-    const timingKey = `    │  图谱 batchBuild`
+    const claimType = result.claimType || 'structure'
+    const timingKey = `    │  图谱 batchBuild (${claimType})`
     timingStart(timingKey)
 
     this.graph.startBatch('build')
@@ -273,7 +276,12 @@ export class GraphEngine {
     })
 
     const edgeDataList: EdgeData[] = result.edges
-      .filter(e => e.relationType !== 'attribute' || e.source !== e.target)
+      .filter(e => {
+        if (e.relationType === 'attribute' && e.source === e.target) return false
+        // 方法类：feedback 边布局时单独处理
+        if (claimType === 'method' && e.relationType === 'feedback') return false
+        return true
+      })
       .map(e => ({
         id: e.id,
         source: e.source,
@@ -283,6 +291,21 @@ export class GraphEngine {
         relationType: e.relationType,
         style: getDefaultEdgeStyle(e.relationType),
       }))
+
+    // 方法类 feedback 边（布局后手动添加）
+    const feedbackEdgeList: EdgeData[] = claimType === 'method'
+      ? result.edges
+        .filter(e => e.relationType === 'feedback')
+        .map(e => ({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          originalText: e.originalText,
+          chineseText: e.chineseText,
+          relationType: e.relationType,
+          style: getDefaultEdgeStyle(e.relationType),
+        }))
+      : []
 
     const attributeEdgeList: EdgeData[] = result.edges
       .filter(e => e.relationType === 'attribute' && e.source === e.target)
@@ -353,7 +376,10 @@ export class GraphEngine {
     }
 
     timingStart(`    │    布局计算 (ELK)`)
-    const positions = await applyElkLayout(nodeDataList, edgeDataList, layoutOptions)
+    const methodLayoutOptions: ElkLayoutOptions | undefined = claimType === 'method'
+      ? { rankdir: 'LR', nodesep: 60, ranksep: 100 }
+      : layoutOptions
+    const positions = await applyElkLayout(nodeDataList, edgeDataList, methodLayoutOptions)
     timingEnd(`    │    布局计算 (ELK)`)
     for (const nodeData of nodeDataList) {
       const pos = positions.get(nodeData.id)
@@ -369,7 +395,38 @@ export class GraphEngine {
       this.graph.addNode(config)
     }
 
-    const mergeGroupMap = new Map<string, EdgeData[]>()
+    if (claimType === 'method') {
+      // 方法类：直接添加所有边，不使用 fork/trunk/branch 合并
+      for (const edgeData of edgeDataList) {
+        const config = buildEdge(edgeData, isChinese)
+        this.graph.addEdge(config)
+      }
+
+      // 方法类：添加 feedback 边（带手动路由 vertices）
+      for (const feedbackEdge of feedbackEdgeList) {
+        const config = buildEdge(feedbackEdge, isChinese)
+        // 添加 feedback 边的绕行 vertices
+        const sourceCell = this.graph.getCellById(feedbackEdge.source)
+        const targetCell = this.graph.getCellById(feedbackEdge.target)
+        if (sourceCell && targetCell && sourceCell.isNode() && targetCell.isNode()) {
+          const sourceNode = sourceCell as unknown as { getPosition: () => { x: number; y: number }; getSize: () => { width: number; height: number } }
+          const targetNode = targetCell as unknown as { getPosition: () => { x: number; y: number }; getSize: () => { width: number; height: number } }
+          const sPos = sourceNode.getPosition()
+          const sSize = sourceNode.getSize()
+          const tPos = targetNode.getPosition()
+          const tSize = targetNode.getSize()
+
+          const bottomY = Math.max(sPos.y + sSize.height, tPos.y + tSize.height) + 60
+          config.vertices = [
+            { x: sPos.x + sSize.width / 2, y: bottomY },
+            { x: tPos.x + tSize.width / 2, y: bottomY },
+          ]
+        }
+        this.graph.addEdge(config)
+      }
+    } else {
+      // 结构类：使用 fork/trunk/branch 合并同源多目标边
+      const mergeGroupMap = new Map<string, EdgeData[]>()
     for (const edgeData of edgeDataList) {
       const key = `${edgeData.source}||${edgeData.originalText}`
       if (!mergeGroupMap.has(key)) {
@@ -460,11 +517,13 @@ export class GraphEngine {
       }
       this.graph.addEdge(config)
     }
+    } // end of else (structure type)
+
     timingEnd(`    │    添加节点和边`)
 
-    // Render attribute edges as property tags below nodes
+    // Render attribute edges as property tags
     if (attributeEdgeList.length > 0) {
-      this.renderAttributeTags(attributeEdgeList, isChinese)
+      this.renderAttributeTags(attributeEdgeList, isChinese, claimType)
     }
 
     if (autoGroupInfoMap.size > 0) {
@@ -480,6 +539,7 @@ export class GraphEngine {
       }
 
       const filteredGroups = result.groups.filter(group => {
+        if (claimType === 'method') return true  // 方法类直接渲染所有 group
         const groupMemberSet = new Set(group.memberNodeIds)
 
         for (const autoMemberSet of autoGroupMemberSets) {
@@ -498,7 +558,7 @@ export class GraphEngine {
 
       if (filteredGroups.length > 0) {
         timingStart(`    │    渲染分组`)
-        this.renderGroups(filteredGroups, isChinese)
+        this.renderGroups(filteredGroups, isChinese, claimType)
         timingEnd(`    │    渲染分组`)
       }
     }
@@ -512,7 +572,7 @@ export class GraphEngine {
     timingEnd(timingKey)
   }
 
-  private renderGroups(groups: ExtractGroup[], isChinese: boolean = false): void {
+  private renderGroups(groups: ExtractGroup[], isChinese: boolean = false, claimType: ClaimType = 'structure'): void {
     if (!this.graph) return
 
     for (const group of groups) {
@@ -532,6 +592,11 @@ export class GraphEngine {
         ? (group.label.chinese || group.label.original)
         : `${group.label.original}\n${group.label.chinese}`
 
+      // 方法类组合框使用蓝色样式，结构类使用橙色样式
+      const groupStroke = claimType === 'method' ? '#1890FF' : '#fa8c16'
+      const groupFill = claimType === 'method' ? '#f0f5ff' : '#fafafa'
+      const groupFontColor = claimType === 'method' ? '#1890FF' : '#fa8c16'
+
       this.graph.addNode({
         id: group.id,
         x: bounds.minX - padding,
@@ -542,9 +607,9 @@ export class GraphEngine {
         zIndex: -1,
         attrs: {
           body: {
-            fill: '#fafafa',
+            fill: groupFill,
             fillOpacity: 0.5,
-            stroke: '#fa8c16',
+            stroke: groupStroke,
             strokeWidth: 1.5,
             strokeDasharray: '6 3',
             rx: 8,
@@ -554,7 +619,7 @@ export class GraphEngine {
           label: {
             text: groupLabel,
             fontSize: 20,
-            fill: '#fa8c16',
+            fill: groupFontColor,
             fontWeight: 'bold',
             textAnchor: 'left',
             textVerticalAnchor: 'top',
@@ -575,7 +640,7 @@ export class GraphEngine {
     this.bindGroupTracking()
   }
 
-  private renderAttributeTags(attributeEdges: EdgeData[], isChinese: boolean): void {
+  private renderAttributeTags(attributeEdges: EdgeData[], isChinese: boolean, claimType: ClaimType = 'structure'): void {
     if (!this.graph) return
 
     // Group attribute edges by source node
@@ -608,8 +673,13 @@ export class GraphEngine {
       const tagGap = 6
       const stemLength = 16
 
-      // Calculate starting Y position below the node
-      let currentY = pos.y + size.height + stemLength
+      // 方法类：标签在节点上方；结构类：标签在节点下方
+      const isAbove = claimType === 'method'
+
+      // Calculate starting Y position
+      let currentY = isAbove
+        ? pos.y - stemLength  // 上方：从节点顶部向上
+        : pos.y + size.height + stemLength  // 下方：从节点底部向下
 
       for (let i = 0; i < attrs.length; i++) {
         const attrEdge = attrs[i]
@@ -628,7 +698,7 @@ export class GraphEngine {
         const tagHeight = lines.length * tagLineHeight + tagPaddingV * 2
 
         const tagX = pos.x + size.width / 2 - tagWidth / 2
-        const tagY = currentY
+        const tagY = isAbove ? currentY - tagHeight : currentY
 
         // Create the tag label node FIRST (stem edge references it as target)
         this.graph.addNode({
@@ -675,8 +745,8 @@ export class GraphEngine {
         this.graph.addEdge({
           id: `attr-stem-${attrEdge.id}`,
           shape: 'edge',
-          source: { cell: nodeId, anchor: { name: 'bottom' } },
-          target: { cell: `attr-tag-${attrEdge.id}`, anchor: { name: 'top' } },
+          source: { cell: nodeId, anchor: { name: isAbove ? 'top' : 'bottom' } },
+          target: { cell: `attr-tag-${attrEdge.id}`, anchor: { name: isAbove ? 'bottom' : 'top' } },
           connector: { name: 'normal' },
           attrs: {
             line: {
@@ -695,7 +765,7 @@ export class GraphEngine {
           zIndex: 5,
         })
 
-        currentY = tagY + tagHeight + tagGap
+        currentY = isAbove ? tagY - tagGap : tagY + tagHeight + tagGap
       }
     }
   }
