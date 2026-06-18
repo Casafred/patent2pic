@@ -525,8 +525,8 @@ export function buildMessages(claimText: string, providerType?: AIProviderType, 
 
   if (isMethod) {
     return [
-      { role: 'system', content: METHOD_SYSTEM_PROMPT },
-      { role: 'user', content: METHOD_USER_PROMPT_TEMPLATE.replace('{claimText}', claimText) },
+      { role: 'system', content: _methodSystemPrompt },
+      { role: 'user', content: _methodUserPromptTemplate.replace('{claimText}', claimText) },
     ]
   }
 
@@ -560,4 +560,58 @@ export function getDefaultSystemPrompt(): string {
 
 export function getDefaultUserPromptTemplate(): string {
   return DEFAULT_USER_PROMPT_TEMPLATE
+}
+
+// ==================== 方法类提示词 getter/setter ====================
+
+let _methodSystemPrompt = METHOD_SYSTEM_PROMPT
+let _methodUserPromptTemplate = METHOD_USER_PROMPT_TEMPLATE
+
+function loadMethodPromptFromStorage(): void {
+  try {
+    const saved = localStorage.getItem('patent2pic-method-prompt')
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (parsed.system) _methodSystemPrompt = parsed.system
+      if (parsed.user) _methodUserPromptTemplate = parsed.user
+    }
+  } catch { /* ignore */ }
+}
+
+function saveMethodPromptToStorage(): void {
+  try {
+    localStorage.setItem('patent2pic-method-prompt', JSON.stringify({
+      system: _methodSystemPrompt,
+      user: _methodUserPromptTemplate,
+    }))
+  } catch { /* ignore */ }
+}
+
+// Load method prompts from storage on module init
+loadMethodPromptFromStorage()
+
+export function getMethodSystemPrompt(): string {
+  return _methodSystemPrompt
+}
+
+export function getMethodUserPromptTemplate(): string {
+  return _methodUserPromptTemplate
+}
+
+export function setMethodSystemPrompt(prompt: string): void {
+  _methodSystemPrompt = prompt
+  saveMethodPromptToStorage()
+}
+
+export function setMethodUserPromptTemplate(template: string): void {
+  _methodUserPromptTemplate = template
+  saveMethodPromptToStorage()
+}
+
+export function getDefaultMethodSystemPrompt(): string {
+  return METHOD_SYSTEM_PROMPT
+}
+
+export function getDefaultMethodUserPromptTemplate(): string {
+  return METHOD_USER_PROMPT_TEMPLATE
 }

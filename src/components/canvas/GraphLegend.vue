@@ -95,25 +95,30 @@
         </div>
 
         <div class="legend-section">
-          <div class="section-title">限定框</div>
+          <div class="section-title">{{ isMethod ? '子流程框' : '限定框' }}</div>
           <div class="legend-items">
             <div class="legend-item">
-              <span class="group-sample"></span>
-              <span class="legend-label">组合/限定框（虚线边框）</span>
+              <span class="group-sample" :style="isMethod ? { borderColor: '#1890FF', background: '#f0f5ff' } : {}"></span>
+              <span class="legend-label">{{ isMethod ? '子流程框（蓝色虚线边框）' : '组合/限定框（橙色虚线边框）' }}</span>
             </div>
           </div>
         </div>
 
         <div class="legend-section">
-          <div class="section-title">属性标签</div>
+          <div class="section-title">{{ isMethod ? '参数标签' : '属性标签' }}</div>
           <div class="legend-items">
             <div class="legend-item">
-              <svg class="edge-sample" width="40" height="28" viewBox="0 0 40 28">
+              <svg v-if="isMethod" class="edge-sample" width="40" height="28" viewBox="0 0 40 28">
+                <line x1="20" y1="28" x2="20" y2="16" stroke="#13c2c2" stroke-width="1.5" stroke-dasharray="3 3"/>
+                <rect x="4" y="0" width="32" height="14" rx="3" fill="#e6fffb" stroke="#13c2c2" stroke-width="1"/>
+                <text x="20" y="10" text-anchor="middle" font-size="7" fill="#08979c">参数</text>
+              </svg>
+              <svg v-else class="edge-sample" width="40" height="28" viewBox="0 0 40 28">
                 <line x1="20" y1="0" x2="20" y2="12" stroke="#13c2c2" stroke-width="1.5" stroke-dasharray="3 3"/>
                 <rect x="4" y="12" width="32" height="14" rx="3" fill="#e6fffb" stroke="#13c2c2" stroke-width="1"/>
                 <text x="20" y="23" text-anchor="middle" font-size="7" fill="#08979c">属性</text>
               </svg>
-              <span class="legend-label">节点属性（无箭头标签）</span>
+              <span class="legend-label">{{ isMethod ? '节点参数（上方标签）' : '节点属性（下方标签）' }}</span>
             </div>
           </div>
         </div>
