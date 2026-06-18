@@ -3,7 +3,7 @@ import { useAIStore } from '@/stores/ai'
 import { useClaimStore } from '@/stores/claim'
 import { useGraphStore } from '@/stores/graph'
 import { useTranslationStore } from '@/stores/translation'
-import { streamChat, getModelConcurrency } from '@/services/ai/client'
+import { streamChat } from '@/services/ai/client'
 import { buildMessages } from '@/services/ai/prompt'
 import { parseExtractResult } from '@/services/ai/extractor'
 import { alignTranslationToSentences } from '@/services/claim/translation-aligner'
@@ -40,7 +40,8 @@ export function useParallelExtract() {
   let aborted = false
 
   const maxConcurrency = computed(() => {
-    return getModelConcurrency(aiStore.activeProviderType, aiStore.activeModel)
+    // 默认并发数 3，可根据 provider 类型调整
+    return 3
   })
 
   const effectiveConcurrency = computed(() => {
@@ -82,7 +83,7 @@ export function useParallelExtract() {
     task.progress = 10
 
     const isChinese = isChineseText(claim.rawText)
-    const tab = graphStore.addTab(undefined, isChinese, false, claim.id)
+    const tab = graphStore.addTab(undefined, isChinese)
     task.tabId = tab.id
     graphStore.updateTabName(tab.id, `权利要求 ${claim.index}`)
 

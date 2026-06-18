@@ -263,6 +263,7 @@ function buildGraphModel() {
  * 1. 根据 data-cell-id 添加交互属性
  * 2. 移除 fork 节点
  * 3. 清理可能导致 file:// 安全问题的外部引用
+ * 4. 强制设置 pointer-events（覆盖 X6 copyStyles 内联的 style）
  */
 function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string {
   const parser = new DOMParser()
@@ -272,6 +273,26 @@ function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string 
   if (parseError) {
     console.error('SVG 解析失败，返回原始 SVG')
     return svgStr
+  }
+
+  // 辅助函数：设置元素的 pointer-events（同时修改 XML 属性和内联 style）
+  const setPointerEvents = (el: Element, value: string) => {
+    el.setAttribute('pointer-events', value)
+    // 同时修改内联 style，覆盖 X6 copyStyles 复制的计算样式
+    const existingStyle = el.getAttribute('style') || ''
+    if (existingStyle) {
+      // 移除已有的 pointer-events 声明，再添加新的
+      const cleanedStyle = existingStyle.replace(/pointer-events\s*:\s*[^;]+;?\s*/gi, '')
+      el.setAttribute('style', cleanedStyle + ';pointer-events:' + value + '!important')
+    } else {
+      el.setAttribute('style', 'pointer-events:' + value + '!important')
+    }
+  }
+
+  // 辅助函数：递归设置子元素的 pointer-events
+  const setPointerEventsRecursive = (el: Element, value: string) => {
+    setPointerEvents(el, value)
+    Array.from(el.children).forEach(child => setPointerEventsRecursive(child, value))
   }
 
   const cellElements = doc.querySelectorAll('[data-cell-id]')
@@ -291,14 +312,13 @@ function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string 
 
     if (!info) return
 
-    // 强制所有元素可接收鼠标事件（覆盖 X6 的 pointerEvents 设置）
-    el.setAttribute('pointer-events', 'all')
-
     switch (info.type) {
       case 'node':
         el.classList.add('p2p-node')
         if (info.originalText) el.setAttribute('data-original', info.originalText)
         if (info.chineseText) el.setAttribute('data-chinese', info.chineseText)
+        // 节点及其子元素都设置为 all，确保点击和拖拽能工作
+        setPointerEventsRecursive(el, 'all')
         break
       case 'edge':
         el.classList.add('p2p-edge')
@@ -308,21 +328,22 @@ function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string 
         // data-source/target：优先使用 realSourceId/realTargetId（trunk/branch），回退到 edgeSourceId/edgeTargetId
         el.setAttribute('data-source', info.realSourceId || info.edgeSourceId || '')
         el.setAttribute('data-target', info.realTargetId || info.edgeTargetId || '')
-        // 边线只响应线条点击
-        el.setAttribute('pointer-events', 'stroke')
+        // 边线只响应线条点击（stroke），子元素也设置为 stroke
+        setPointerEventsRecursive(el, 'stroke')
         break
       case 'group':
         el.classList.add('p2p-group')
         // 组合框覆盖 pointer-events: stroke，改为 all 以支持内部点击拖拽
-        el.setAttribute('pointer-events', 'all')
+        setPointerEventsRecursive(el, 'all')
         break
       case 'attr-tag':
         el.classList.add('p2p-attr-tag')
         if (info.sourceNodeId) el.setAttribute('data-source', info.sourceNodeId)
+        setPointerEventsRecursive(el, 'all')
         break
       case 'attr-stem':
         el.classList.add('p2p-attr-stem')
-        el.setAttribute('pointer-events', 'none')
+        setPointerEventsRecursive(el, 'none')
         break
     }
   })
