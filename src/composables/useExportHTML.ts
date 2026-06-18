@@ -1,6 +1,6 @@
 /**
  * 可交互 HTML 导出器
- * 使用 graphEngine.toSVG() 获取已渲染的 SVG（与 SVG 导出相同，保证图形可见），
+ * 使用 graphEngine.toSVG() 获取已渲染的 SVG，
  * 然后通过 data-cell-id 属性添加交互功能。
  *
  * 支持节点拖拽 + 边线避障重路由（移植自 custom-edge.ts 的 perpendicularManhattan 路由算法）。
@@ -19,10 +19,15 @@ interface CellInfo {
   originalText?: string
   chineseText?: string
   sourceNodeId?: string
+  /** 边的源节点 ID（所有边类型） */
+  edgeSourceId?: string
+  /** 边的目标节点 ID（所有边类型） */
+  edgeTargetId?: string
   realSourceId?: string
   realTargetId?: string
   isTrunk?: boolean
   isBranch?: boolean
+  isContainment?: boolean
   forkNodeId?: string
 }
 
@@ -49,6 +54,11 @@ interface EdgeConn {
   forkNodeId?: string
   realSourceId?: string
   realTargetId?: string
+  /** stem 边的坐标点（source/target 不是 cell 引用而是坐标） */
+  stemSourceX?: number
+  stemSourceY?: number
+  stemTargetX?: number
+  stemTargetY?: number
 }
 
 /** 组合框信息 */
@@ -114,6 +124,7 @@ function getEdgeConn(cell: Record<string, unknown>): EdgeConn | null {
     targetPort: target.port as string | undefined,
     isTrunk: d.isTrunk as boolean | undefined,
     isBranch: d.isBranch as boolean | undefined,
+    isContainment: (d.isContainmentGroupEdge as boolean) || (id.startsWith('containment-edge-')),
     forkNodeId: d.forkNodeId as string | undefined,
     realSourceId: d.realSourceId as string | undefined,
     realTargetId: d.realTargetId as string | undefined,
@@ -147,16 +158,25 @@ function buildGraphModel() {
     else if (d.isForkNode) type = 'fork'
     else if (shape === 'edge' || shape === 'edge-with-gap') type = 'edge'
 
+    // 边的源/目标节点 ID
+    const source = cell.source as Record<string, unknown> | undefined
+    const target = cell.target as Record<string, unknown> | undefined
+    const edgeSourceId = (source?.cell as string) || undefined
+    const edgeTargetId = (target?.cell as string) || undefined
+
     cellInfoMap.set(id, {
       id,
       type,
       originalText: d.originalText as string,
       chineseText: d.chineseText as string,
       sourceNodeId: d.sourceNodeId as string,
+      edgeSourceId,
+      edgeTargetId,
       realSourceId: d.realSourceId as string,
       realTargetId: d.realTargetId as string,
       isTrunk: d.isTrunk as boolean,
       isBranch: d.isBranch as boolean,
+      isContainment: (d.isContainmentGroupEdge as boolean) || (id.startsWith('containment-edge-')),
       forkNodeId: d.forkNodeId as string,
     })
 
@@ -170,9 +190,25 @@ function buildGraphModel() {
     if (type === 'edge') {
       const conn = getEdgeConn(cell)
       if (conn) {
-        // 判断是否包含关系边
-        if (id.startsWith('containment-edge-')) conn.isContainment = true
         edgeConns.push(conn)
+      }
+    }
+
+    // 收集属性 stem 边（source/target 是坐标点而非 cell 引用）
+    if (type === 'attr-stem') {
+      const source = cell.source as Record<string, unknown> | undefined
+      const target = cell.target as Record<string, unknown> | undefined
+      if (source && target && typeof source.x === 'number' && typeof target.x === 'number') {
+        edgeConns.push({
+          id,
+          sourceId: '',
+          targetId: '',
+          isAttributeStem: true,
+          stemSourceX: source.x as number,
+          stemSourceY: source.y as number,
+          stemTargetX: target.x as number,
+          stemTargetY: target.y as number,
+        })
       }
     }
 
@@ -231,17 +267,18 @@ function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string 
 
   cellElements.forEach(el => {
     const cellId = el.getAttribute('data-cell-id') || ''
-    const info = cellInfoMap.get(cellId)
+
+    // 始终设置 data-id（即使 info 未找到，也用 data-cell-id 作为标识）
+    el.setAttribute('data-id', cellId)
 
     // 移除 fork 节点（1x1 透明，不需要显示）
+    const info = cellInfoMap.get(cellId)
     if (info?.type === 'fork') {
       el.remove()
       return
     }
 
     if (!info) return
-
-    el.setAttribute('data-id', cellId)
 
     switch (info.type) {
       case 'node':
@@ -253,8 +290,10 @@ function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string 
         el.classList.add('p2p-edge')
         if (info.isTrunk) el.classList.add('p2p-trunk')
         if (info.isBranch) el.classList.add('p2p-branch')
-        if (info.realSourceId) el.setAttribute('data-source', info.realSourceId)
-        if (info.realTargetId) el.setAttribute('data-target', info.realTargetId)
+        if (info.isContainment) el.classList.add('p2p-containment')
+        // data-source/target：优先使用 realSourceId/realTargetId（trunk/branch），回退到 edgeSourceId/edgeTargetId
+        el.setAttribute('data-source', info.realSourceId || info.edgeSourceId || '')
+        el.setAttribute('data-target', info.realTargetId || info.edgeTargetId || '')
         break
       case 'group':
         el.classList.add('p2p-group')
@@ -268,6 +307,15 @@ function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string 
         break
     }
   })
+
+  // 添加 pan/zoom wrapper，保留初始 viewport transform
+  const viewport = doc.querySelector('.x6-graph-svg-viewport')
+  if (viewport && viewport.parentNode) {
+    const wrapper = doc.createElementNS('http://www.w3.org/2000/svg', 'g')
+    wrapper.setAttribute('class', 'p2p-pan-zoom-wrapper')
+    viewport.parentNode.insertBefore(wrapper, viewport)
+    wrapper.appendChild(viewport)
+  }
 
   // 清理可能导致 file:// 安全问题的元素
   const images = doc.querySelectorAll('image')
@@ -378,14 +426,13 @@ mark.text-highlight { padding: 1px 3px; border-radius: 3px; font-weight: 600; cu
 .legend-item { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: 10px; cursor: pointer; }
 .legend-item .dot { width: 10px; height: 10px; border-radius: 50%; }
 .canvas-area { flex: 1; position: relative; overflow: hidden; background: #fff; }
-.canvas-area svg { width: 100%; height: 100%; cursor: grab; }
-.canvas-area svg:active { cursor: grabbing; }
+.canvas-area svg { width: 100%; height: 100%; }
 .toolbar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 10; }
 .toolbar button { padding: 6px 12px; border: 1px solid #d9d9d9; background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; color: #4e5969; transition: all 0.2s; }
 .toolbar button:hover { border-color: #1890ff; color: #1890ff; }
 .toolbar button.active { background: #1890ff; color: #fff; border-color: #1890ff; }
 /* 交互样式 */
-.p2p-node { cursor: move; transition: opacity 0.15s; }
+.p2p-node { cursor: move; }
 .p2p-node:hover { opacity: 0.85; }
 .p2p-group { cursor: move; }
 .p2p-attr-tag { cursor: move; }
@@ -407,7 +454,7 @@ mark.text-highlight { padding: 1px 3px; border-radius: 3px; font-weight: 600; cu
   <div class="sidebar">
     <div class="sidebar-header">
       <span class="title">${escapeHtml(claimTitle)}</span>
-      <span style="font-size:12px;color:#86909c">点击节点高亮文本</span>
+      <span style="font-size:12px;color:#86909c">点击高亮 · Ctrl多选 · 拖拽移动</span>
     </div>
     <div class="legend-bar" id="legendBar"></div>
     <div class="sidebar-body" id="sidebarBody"></div>
@@ -418,21 +465,20 @@ mark.text-highlight { padding: 1px 3px; border-radius: 3px; font-weight: 600; cu
       <button onclick="zoomOut()">缩小</button>
       <button onclick="resetView()">重置视图</button>
       <button onclick="clearHighlight()">清除高亮</button>
-      <button id="dragToggleBtn" onclick="toggleDragMode()">拖拽模式: 开</button>
     </div>
     <div id="svgContainer" style="width:100%;height:100%">${processedSvg}</div>
-    <div class="info-bar">点击节点/边高亮 · 滚轮缩放 · 拖拽平移 · 节点可拖拽移动</div>
+    <div class="info-bar">点击节点/边高亮 · Ctrl多选 · 滚轮缩放 · 拖拽节点移动 · 空白区拖拽平移</div>
   </div>
 </div>
 <script>
 // === 图模型数据 ===
 var NODES = ${nodesJson};
 var SENTENCES = ${sentencesJson};
-var NODE_GEOMS = ${nodeGeomsJson};  // [{id,x,y,width,height}]
-var EDGE_CONNS = ${edgeConnsJson};   // [{id,sourceId,targetId,sourcePort,targetPort,...}]
-var GROUPS = ${groupsJson};          // [{id,memberNodeIds,sourceNodeId,detached}]
-var FORKS = ${forksJson};            // [{id,sourceId,targetIds}]
-var ATTR_TAGS = ${attrTagsJson};     // [{id,sourceNodeId,attributeEdgeId,width,height}]
+var NODE_GEOMS = ${nodeGeomsJson};
+var EDGE_CONNS = ${edgeConnsJson};
+var GROUPS = ${groupsJson};
+var FORKS = ${forksJson};
+var ATTR_TAGS = ${attrTagsJson};
 
 // 构建 id -> geom 映射（运行时可变）
 var nodeGeomMap = {};
@@ -442,22 +488,21 @@ NODE_GEOMS.forEach(function(g) { nodeGeomMap[g.id] = JSON.parse(JSON.stringify(g
 var edgeConnMap = {};
 EDGE_CONNS.forEach(function(e) { edgeConnMap[e.id] = e; });
 
+// 构建 groupId -> group 映射
+var groupMap = {};
+GROUPS.forEach(function(g) { groupMap[g.id] = g; });
+
 var HIGHLIGHT_PALETTE = [
-  {bg:'#e6f7ff',border:'#1890ff'},
-  {bg:'#fff7e6',border:'#fa8c16'},
-  {bg:'#f6ffed',border:'#52c41a'},
-  {bg:'#fff1f0',border:'#f5222d'},
-  {bg:'#f9f0ff',border:'#722ed1'},
-  {bg:'#e6fffb',border:'#13c2c2'},
-  {bg:'#fff0f6',border:'#eb2f96'},
-  {bg:'#fcffe6',border:'#a0d911'}
+  {bg:'#e6f7ff',border:'#1890ff'},{bg:'#fff7e6',border:'#fa8c16'},
+  {bg:'#f6ffed',border:'#52c41a'},{bg:'#fff1f0',border:'#f5222d'},
+  {bg:'#f9f0ff',border:'#722ed1'},{bg:'#e6fffb',border:'#13c2c2'},
+  {bg:'#fff0f6',border:'#eb2f96'},{bg:'#fcffe6',border:'#a0d911'}
 ];
 var highlightedNodeIds = [];
 var svgContainer = document.getElementById('svgContainer');
 var svgEl = svgContainer.querySelector('svg');
 var sidebarBody = document.getElementById('sidebarBody');
 var legendBar = document.getElementById('legendBar');
-var dragModeEnabled = true;
 
 if (!svgEl) {
   svgContainer.innerHTML = '<div style="padding:40px;text-align:center;color:#86909c">SVG 图形加载失败</div>';
@@ -465,7 +510,6 @@ if (!svgEl) {
 
 // ============================================================
 // 路由算法（移植自 src/services/graph/custom-edge.ts）
-// 这些都是纯函数，不依赖任何外部库
 // ============================================================
 
 function getConnectionSide(nodeCenterX, nodeCenterY, otherCenterX, otherCenterY, nodeWidth, nodeHeight) {
@@ -476,11 +520,8 @@ function getConnectionSide(nodeCenterX, nodeCenterY, otherCenterX, otherCenterY,
   var halfHeight = nodeHeight / 2;
   var tx = dx !== 0 ? halfWidth / Math.abs(dx) : Infinity;
   var ty = dy !== 0 ? halfHeight / Math.abs(dy) : Infinity;
-  if (tx <= ty) {
-    return dx > 0 ? 'right' : 'left';
-  } else {
-    return dy > 0 ? 'bottom' : 'top';
-  }
+  if (tx <= ty) { return dx > 0 ? 'right' : 'left'; }
+  else { return dy > 0 ? 'bottom' : 'top'; }
 }
 
 function sideFromPortId(portId) {
@@ -492,9 +533,7 @@ function sideFromPortId(portId) {
   return null;
 }
 
-function isHorizontal(side) {
-  return side === 'left' || side === 'right';
-}
+function isHorizontal(side) { return side === 'left' || side === 'right'; }
 
 function getOutsidePoint(bbox, side, jetty) {
   var cx = bbox.x + bbox.width / 2;
@@ -509,16 +548,12 @@ function getOutsidePoint(bbox, side, jetty) {
 
 function segmentCrossesBBox(x1, y1, x2, y2, bbox) {
   if (y1 === y2) {
-    var minX = Math.min(x1, x2);
-    var maxX = Math.max(x1, x2);
-    return minX < bbox.x + bbox.width && maxX > bbox.x &&
-           y1 > bbox.y && y1 < bbox.y + bbox.height;
+    var minX = Math.min(x1, x2); var maxX = Math.max(x1, x2);
+    return minX < bbox.x + bbox.width && maxX > bbox.x && y1 > bbox.y && y1 < bbox.y + bbox.height;
   }
   if (x1 === x2) {
-    var minY = Math.min(y1, y2);
-    var maxY = Math.max(y1, y2);
-    return x1 > bbox.x && x1 < bbox.x + bbox.width &&
-           minY < bbox.y + bbox.height && maxY > bbox.y;
+    var minY = Math.min(y1, y2); var maxY = Math.max(y1, y2);
+    return x1 > bbox.x && x1 < bbox.x + bbox.width && minY < bbox.y + bbox.height && maxY > bbox.y;
   }
   return false;
 }
@@ -529,269 +564,71 @@ function orthRouter(sourceBBox, targetBBox, startSide, endSide, jetty) {
   var startHoriz = isHorizontal(startSide);
   var endHoriz = isHorizontal(endSide);
   var points = [{ x: s.x, y: s.y }];
-
-  var sameNode = sourceBBox.x === targetBBox.x && sourceBBox.y === targetBBox.y
-    && sourceBBox.width === targetBBox.width && sourceBBox.height === targetBBox.height;
-
+  var sameNode = sourceBBox.x === targetBBox.x && sourceBBox.y === targetBBox.y && sourceBBox.width === targetBBox.width && sourceBBox.height === targetBBox.height;
   if (sameNode) {
     if (startSide === endSide) {
-      if (startHoriz) {
-        var topY = sourceBBox.y - jetty;
-        var bottomY = sourceBBox.y + sourceBBox.height + jetty;
-        var topDist = Math.abs(s.y - topY) + Math.abs(e.y - topY);
-        var bottomDist = Math.abs(s.y - bottomY) + Math.abs(e.y - bottomY);
-        var outerY = topDist <= bottomDist ? topY : bottomY;
-        points.push({ x: s.x, y: outerY });
-        points.push({ x: e.x, y: outerY });
-      } else {
-        var leftX = sourceBBox.x - jetty;
-        var rightX = sourceBBox.x + sourceBBox.width + jetty;
-        var leftDist = Math.abs(s.x - leftX) + Math.abs(e.x - leftX);
-        var rightDist = Math.abs(s.x - rightX) + Math.abs(e.x - rightX);
-        var outerX = leftDist <= rightDist ? leftX : rightX;
-        points.push({ x: outerX, y: s.y });
-        points.push({ x: outerX, y: e.y });
-      }
+      if (startHoriz) { var tY = sourceBBox.y - jetty; var bY = sourceBBox.y + sourceBBox.height + jetty; var oY = Math.abs(s.y-tY)<=Math.abs(s.y-bY)?tY:bY; points.push({x:s.x,y:oY},{x:e.x,y:oY}); }
+      else { var lX = sourceBBox.x - jetty; var rX = sourceBBox.x + sourceBBox.width + jetty; var oX = Math.abs(s.x-lX)<=Math.abs(s.x-rX)?lX:rX; points.push({x:oX,y:s.y},{x:oX,y:e.y}); }
     } else if (startHoriz && !endHoriz) {
-      if (startSide === 'right') {
-        if (endSide === 'top') {
-          var oxr = sourceBBox.x + sourceBBox.width + jetty;
-          var oyr = sourceBBox.y - jetty;
-          points.push({ x: oxr, y: s.y });
-          points.push({ x: oxr, y: oyr });
-          points.push({ x: e.x, y: oyr });
-        } else {
-          var oxr2 = sourceBBox.x + sourceBBox.width + jetty;
-          var oyr2 = sourceBBox.y + sourceBBox.height + jetty;
-          points.push({ x: oxr2, y: s.y });
-          points.push({ x: oxr2, y: oyr2 });
-          points.push({ x: e.x, y: oyr2 });
-        }
-      } else {
-        if (endSide === 'top') {
-          var oxl = sourceBBox.x - jetty;
-          var oyl = sourceBBox.y - jetty;
-          points.push({ x: oxl, y: s.y });
-          points.push({ x: oxl, y: oyl });
-          points.push({ x: e.x, y: oyl });
-        } else {
-          var oxl2 = sourceBBox.x - jetty;
-          var oyl2 = sourceBBox.y + sourceBBox.height + jetty;
-          points.push({ x: oxl2, y: s.y });
-          points.push({ x: oxl2, y: oyl2 });
-          points.push({ x: e.x, y: oyl2 });
-        }
-      }
+      var ox = startSide==='right' ? sourceBBox.x+sourceBBox.width+jetty : sourceBBox.x-jetty;
+      var oy = endSide==='top' ? sourceBBox.y-jetty : sourceBBox.y+sourceBBox.height+jetty;
+      points.push({x:ox,y:s.y},{x:ox,y:oy},{x:e.x,y:oy});
     } else if (!startHoriz && endHoriz) {
-      if (startSide === 'top') {
-        if (endSide === 'right') {
-          var oyt = sourceBBox.y - jetty;
-          var oxt = sourceBBox.x + sourceBBox.width + jetty;
-          points.push({ x: s.x, y: oyt });
-          points.push({ x: oxt, y: oyt });
-          points.push({ x: oxt, y: e.y });
-        } else {
-          var oyt2 = sourceBBox.y - jetty;
-          var oxt2 = sourceBBox.x - jetty;
-          points.push({ x: s.x, y: oyt2 });
-          points.push({ x: oxt2, y: oyt2 });
-          points.push({ x: oxt2, y: e.y });
-        }
-      } else {
-        if (endSide === 'right') {
-          var oyb = sourceBBox.y + sourceBBox.height + jetty;
-          var oxb = sourceBBox.x + sourceBBox.width + jetty;
-          points.push({ x: s.x, y: oyb });
-          points.push({ x: oxb, y: oyb });
-          points.push({ x: oxb, y: e.y });
-        } else {
-          var oyb2 = sourceBBox.y + sourceBBox.height + jetty;
-          var oxb2 = sourceBBox.x - jetty;
-          points.push({ x: s.x, y: oyb2 });
-          points.push({ x: oxb2, y: oyb2 });
-          points.push({ x: oxb2, y: e.y });
-        }
-      }
+      var oy2 = startSide==='top' ? sourceBBox.y-jetty : sourceBBox.y+sourceBBox.height+jetty;
+      var ox2 = endSide==='right' ? sourceBBox.x+sourceBBox.width+jetty : sourceBBox.x-jetty;
+      points.push({x:s.x,y:oy2},{x:ox2,y:oy2},{x:ox2,y:e.y});
     } else {
-      if ((startSide === 'top' && endSide === 'bottom') || (startSide === 'bottom' && endSide === 'top')) {
-        var leftX2 = sourceBBox.x - jetty;
-        var rightX2 = sourceBBox.x + sourceBBox.width + jetty;
-        var leftDist2 = Math.abs(s.x - leftX2) + Math.abs(e.x - leftX2);
-        var rightDist2 = Math.abs(s.x - rightX2) + Math.abs(e.x - rightX2);
-        var outerX2 = leftDist2 <= rightDist2 ? leftX2 : rightX2;
-        points.push({ x: outerX2, y: s.y });
-        points.push({ x: outerX2, y: e.y });
+      if ((startSide==='top'&&endSide==='bottom')||(startSide==='bottom'&&endSide==='top')) {
+        var lX2=sourceBBox.x-jetty; var rX2=sourceBBox.x+sourceBBox.width+jetty;
+        var oX2=Math.abs(s.x-lX2)<=Math.abs(s.x-rX2)?lX2:rX2; points.push({x:oX2,y:s.y},{x:oX2,y:e.y});
       } else {
-        var topY2 = sourceBBox.y - jetty;
-        var bottomY2 = sourceBBox.y + sourceBBox.height + jetty;
-        var topDist2 = Math.abs(s.y - topY2) + Math.abs(e.y - topY2);
-        var bottomDist2 = Math.abs(s.y - bottomY2) + Math.abs(e.y - bottomY2);
-        var outerY2 = topDist2 <= bottomDist2 ? topY2 : bottomY2;
-        points.push({ x: s.x, y: outerY2 });
-        points.push({ x: e.x, y: outerY2 });
+        var tY2=sourceBBox.y-jetty; var bY2=sourceBBox.y+sourceBBox.height+jetty;
+        var oY2=Math.abs(s.y-tY2)<=Math.abs(s.y-bY2)?tY2:bY2; points.push({x:s.x,y:oY2},{x:e.x,y:oY2});
       }
     }
-    points.push({ x: e.x, y: e.y });
-    return points;
+    points.push({x:e.x,y:e.y}); return points;
   }
-
-  // 不同节点：标准路由
   if (startHoriz && endHoriz) {
-    if (startSide === endSide) {
-      var midX = startSide === 'right' ? Math.max(s.x, e.x) : Math.min(s.x, e.x);
-      points.push({ x: midX, y: s.y });
-      points.push({ x: midX, y: e.y });
-    } else {
-      var midX2 = (s.x + e.x) / 2;
-      var midXCrossesBBox = segmentCrossesBBox(midX2, s.y, midX2, e.y, sourceBBox) ||
-        segmentCrossesBBox(midX2, s.y, midX2, e.y, targetBBox);
-      if (midXCrossesBBox) {
-        var topY3 = Math.min(sourceBBox.y, targetBBox.y) - jetty;
-        var bottomY3 = Math.max(sourceBBox.y + sourceBBox.height, targetBBox.y + targetBBox.height) + jetty;
-        var topDist3 = Math.abs(s.y - topY3) + Math.abs(e.y - topY3);
-        var bottomDist3 = Math.abs(s.y - bottomY3) + Math.abs(e.y - bottomY3);
-        var outerY3 = topDist3 <= bottomDist3 ? topY3 : bottomY3;
-        points.push({ x: s.x, y: outerY3 });
-        points.push({ x: e.x, y: outerY3 });
-      } else {
-        points.push({ x: midX2, y: s.y });
-        points.push({ x: midX2, y: e.y });
-      }
-    }
+    if (startSide === endSide) { var mX=startSide==='right'?Math.max(s.x,e.x):Math.min(s.x,e.x); points.push({x:mX,y:s.y},{x:mX,y:e.y}); }
+    else { var mX2=(s.x+e.x)/2; if(segmentCrossesBBox(mX2,s.y,mX2,e.y,sourceBBox)||segmentCrossesBBox(mX2,s.y,mX2,e.y,targetBBox)){var tY3=Math.min(sourceBBox.y,targetBBox.y)-jetty;var bY3=Math.max(sourceBBox.y+sourceBBox.height,targetBBox.y+targetBBox.height)+jetty;var oY3=Math.abs(s.y-tY3)<=Math.abs(s.y-bY3)?tY3:bY3;points.push({x:s.x,y:oY3},{x:e.x,y:oY3});}else{points.push({x:mX2,y:s.y},{x:mX2,y:e.y});} }
   } else if (!startHoriz && !endHoriz) {
-    if (startSide === endSide) {
-      var midY = startSide === 'bottom' ? Math.max(s.y, e.y) : Math.min(s.y, e.y);
-      points.push({ x: s.x, y: midY });
-      points.push({ x: e.x, y: midY });
-    } else {
-      var midY2 = (s.y + e.y) / 2;
-      var midYCrossesBBox = segmentCrossesBBox(s.x, midY2, e.x, midY2, sourceBBox) ||
-        segmentCrossesBBox(s.x, midY2, e.x, midY2, targetBBox);
-      if (midYCrossesBBox) {
-        var leftX3 = Math.min(sourceBBox.x, targetBBox.x) - jetty;
-        var rightX3 = Math.max(sourceBBox.x + sourceBBox.width, targetBBox.x + targetBBox.width) + jetty;
-        var leftDist3 = Math.abs(s.x - leftX3) + Math.abs(e.x - leftX3);
-        var rightDist3 = Math.abs(s.x - rightX3) + Math.abs(e.x - rightX3);
-        var outerX3 = leftDist3 <= rightDist3 ? leftX3 : rightX3;
-        points.push({ x: outerX3, y: s.y });
-        points.push({ x: outerX3, y: e.y });
-      } else {
-        points.push({ x: s.x, y: midY2 });
-        points.push({ x: e.x, y: midY2 });
-      }
-    }
+    if (startSide === endSide) { var mY=startSide==='bottom'?Math.max(s.y,e.y):Math.min(s.y,e.y); points.push({x:s.x,y:mY},{x:e.x,y:mY}); }
+    else { var mY2=(s.y+e.y)/2; if(segmentCrossesBBox(s.x,mY2,e.x,mY2,sourceBBox)||segmentCrossesBBox(s.x,mY2,e.x,mY2,targetBBox)){var lX3=Math.min(sourceBBox.x,targetBBox.x)-jetty;var rX3=Math.max(sourceBBox.x+sourceBBox.width,targetBBox.x+targetBBox.width)+jetty;var oX3=Math.abs(s.x-lX3)<=Math.abs(s.x-rX3)?lX3:rX3;points.push({x:oX3,y:s.y},{x:oX3,y:e.y});}else{points.push({x:s.x,y:mY2},{x:e.x,y:mY2});} }
   } else if (startHoriz && !endHoriz) {
-    var lShapeCrossesTarget = segmentCrossesBBox(s.x, s.y, e.x, s.y, targetBBox);
-    if (lShapeCrossesTarget) {
-      var reverseCrossesSource = segmentCrossesBBox(s.x, s.y, s.x, e.y, sourceBBox);
-      if (reverseCrossesSource) {
-        var outerX4 = startSide === 'right'
-          ? Math.max(sourceBBox.x + sourceBBox.width, targetBBox.x + targetBBox.width) + jetty
-          : Math.min(sourceBBox.x, targetBBox.x) - jetty;
-        points.push({ x: outerX4, y: s.y });
-        points.push({ x: outerX4, y: e.y });
-      } else {
-        points.push({ x: s.x, y: e.y });
-      }
-    } else {
-      points.push({ x: e.x, y: s.y });
-    }
+    if(segmentCrossesBBox(s.x,s.y,e.x,s.y,targetBBox)){if(segmentCrossesBBox(s.x,s.y,s.x,e.y,sourceBBox)){var oX4=startSide==='right'?Math.max(sourceBBox.x+sourceBBox.width,targetBBox.x+targetBBox.width)+jetty:Math.min(sourceBBox.x,targetBBox.x)-jetty;points.push({x:oX4,y:s.y},{x:oX4,y:e.y});}else{points.push({x:s.x,y:e.y});}}else{points.push({x:e.x,y:s.y});}
   } else {
-    var lShapeCrossesTarget2 = segmentCrossesBBox(s.x, s.y, s.x, e.y, targetBBox);
-    if (lShapeCrossesTarget2) {
-      var reverseCrossesSource2 = segmentCrossesBBox(s.x, s.y, e.x, s.y, sourceBBox);
-      if (reverseCrossesSource2) {
-        var outerY4 = startSide === 'bottom'
-          ? Math.max(sourceBBox.y + sourceBBox.height, targetBBox.y + targetBBox.height) + jetty
-          : Math.min(sourceBBox.y, targetBBox.y) - jetty;
-        points.push({ x: s.x, y: outerY4 });
-        points.push({ x: e.x, y: outerY4 });
-      } else {
-        points.push({ x: e.x, y: s.y });
-      }
-    } else {
-      points.push({ x: s.x, y: e.y });
-    }
+    if(segmentCrossesBBox(s.x,s.y,s.x,e.y,targetBBox)){if(segmentCrossesBBox(s.x,s.y,e.x,s.y,sourceBBox)){var oY4=startSide==='bottom'?Math.max(sourceBBox.y+sourceBBox.height,targetBBox.y+targetBBox.height)+jetty:Math.min(sourceBBox.y,targetBBox.y)-jetty;points.push({x:s.x,y:oY4},{x:e.x,y:oY4});}else{points.push({x:e.x,y:s.y});}}else{points.push({x:s.x,y:e.y});}
   }
-
-  points.push({ x: e.x, y: e.y });
-  return points;
+  points.push({x:e.x,y:e.y}); return points;
 }
 
-/**
- * 计算边的路由路径点（移植自 perpendicularManhattanRouter）
- * 输入：边连接信息 + 当前节点几何
- * 输出：路径点数组
- */
 function routeEdge(conn) {
   var sourceGeom = nodeGeomMap[conn.sourceId];
   var targetGeom = nodeGeomMap[conn.targetId];
   if (!sourceGeom || !targetGeom) return null;
-
-  var sourceBBox = { x: sourceGeom.x, y: sourceGeom.y, width: sourceGeom.width, height: sourceGeom.height };
-  var targetBBox = { x: targetGeom.x, y: targetGeom.y, width: targetGeom.width, height: targetGeom.height };
-  var sourceCenterX = sourceBBox.x + sourceBBox.width / 2;
-  var sourceCenterY = sourceBBox.y + sourceBBox.height / 2;
-  var targetCenterX = targetBBox.x + targetBBox.width / 2;
-  var targetCenterY = targetBBox.y + targetBBox.height / 2;
-
-  var startSideFromPort = sideFromPortId(conn.sourcePort);
-  var endSideFromPort = sideFromPortId(conn.targetPort);
-
-  var startSide = startSideFromPort || getConnectionSide(
-    sourceCenterX, sourceCenterY, targetCenterX, targetCenterY,
-    sourceBBox.width, sourceBBox.height
-  );
-  var endSide = endSideFromPort || getConnectionSide(
-    targetCenterX, targetCenterY, sourceCenterX, sourceCenterY,
-    targetBBox.width, targetBBox.height
-  );
-
-  var jetty = 20;
-  return orthRouter(sourceBBox, targetBBox, startSide, endSide, jetty);
+  var sourceBBox = {x:sourceGeom.x,y:sourceGeom.y,width:sourceGeom.width,height:sourceGeom.height};
+  var targetBBox = {x:targetGeom.x,y:targetGeom.y,width:targetGeom.width,height:targetGeom.height};
+  var scX=sourceBBox.x+sourceBBox.width/2, scY=sourceBBox.y+sourceBBox.height/2;
+  var tcX=targetBBox.x+targetBBox.width/2, tcY=targetBBox.y+targetBBox.height/2;
+  var startSide = sideFromPortId(conn.sourcePort) || getConnectionSide(scX,scY,tcX,tcY,sourceBBox.width,sourceBBox.height);
+  var endSide = sideFromPortId(conn.targetPort) || getConnectionSide(tcX,tcY,scX,scY,targetBBox.width,targetBBox.height);
+  return orthRouter(sourceBBox, targetBBox, startSide, endSide, 20);
 }
 
-/**
- * 将路径点数组转为 SVG path 的 d 属性（带圆角拐角，模拟 X6 rounded connector）
- */
 function pointsToPathD(points, radius) {
   if (!points || points.length === 0) return '';
   if (points.length === 1) return 'M ' + points[0].x + ' ' + points[0].y;
   radius = radius || 8;
-
   var d = 'M ' + points[0].x + ' ' + points[0].y;
   for (var i = 1; i < points.length; i++) {
     if (i < points.length - 1 && radius > 0) {
-      // 当前点 points[i] 是拐角，用圆角连接到下一段
-      var prev = points[i - 1];
-      var curr = points[i];
-      var next = points[i + 1];
-
-      // 计算拐角两侧的截断点
-      var dx1 = curr.x - prev.x;
-      var dy1 = curr.y - prev.y;
-      var dx2 = next.x - curr.x;
-      var dy2 = next.y - curr.y;
-      var len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
-      var len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-      var r = Math.min(radius, len1 / 2, len2 / 2);
-
-      if (r < 1) {
-        d += ' L ' + curr.x + ' ' + curr.y;
-      } else {
-        var p1x = curr.x - (dx1 / len1) * r;
-        var p1y = curr.y - (dy1 / len1) * r;
-        var p2x = curr.x + (dx2 / len2) * r;
-        var p2y = curr.y + (dy2 / len2) * r;
-        // 判断圆弧方向（顺时针/逆时针）
-        var cross = dx1 * dy2 - dy1 * dx2;
-        var sweep = cross > 0 ? 1 : 0;
-        d += ' L ' + p1x + ' ' + p1y;
-        d += ' A ' + r + ' ' + r + ' 0 0 ' + sweep + ' ' + p2x + ' ' + p2y;
-      }
-    } else {
-      d += ' L ' + points[i].x + ' ' + points[i].y;
-    }
+      var prev=points[i-1], curr=points[i], next=points[i+1];
+      var dx1=curr.x-prev.x, dy1=curr.y-prev.y, dx2=next.x-curr.x, dy2=next.y-curr.y;
+      var len1=Math.sqrt(dx1*dx1+dy1*dy1), len2=Math.sqrt(dx2*dx2+dy2*dy2);
+      var r=Math.min(radius,len1/2,len2/2);
+      if(r<1){d+=' L '+curr.x+' '+curr.y;}
+      else{var p1x=curr.x-(dx1/len1)*r,p1y=curr.y-(dy1/len1)*r,p2x=curr.x+(dx2/len2)*r,p2y=curr.y+(dy2/len2)*r;var cross=dx1*dy2-dy1*dx2;var sweep=cross>0?1:0;d+=' L '+p1x+' '+p1y;d+=' A '+r+' '+r+' 0 0 '+sweep+' '+p2x+' '+p2y;}
+    } else { d += ' L ' + points[i].x + ' ' + points[i].y; }
   }
   return d;
 }
@@ -800,193 +637,44 @@ function pointsToPathD(points, radius) {
 // 联动更新算法（移植自 engine.ts）
 // ============================================================
 
-/** 计算 fork 节点位置（移植自 calculateForkPosition） */
 function calculateForkPosition(sourceId, targetIds) {
-  var sourceGeom = nodeGeomMap[sourceId];
-  if (!sourceGeom) return { x: 0, y: 0 };
-  var sourceCenterX = sourceGeom.x + sourceGeom.width / 2;
-  var sourceCenterY = sourceGeom.y + sourceGeom.height / 2;
-
-  var targetCenterSumX = 0;
-  var targetCenterSumY = 0;
-  var targetCount = 0;
-  for (var i = 0; i < targetIds.length; i++) {
-    var tg = nodeGeomMap[targetIds[i]];
-    if (!tg) continue;
-    targetCenterSumX += tg.x + tg.width / 2;
-    targetCenterSumY += tg.y + tg.height / 2;
-    targetCount++;
-  }
-  if (targetCount === 0) return { x: sourceCenterX, y: sourceCenterY };
-  var targetCenterX = targetCenterSumX / targetCount;
-  var targetCenterY = targetCenterSumY / targetCount;
-  return {
-    x: sourceCenterX + 0.8 * (targetCenterX - sourceCenterX),
-    y: sourceCenterY + 0.8 * (targetCenterY - sourceCenterY)
-  };
+  var sg = nodeGeomMap[sourceId]; if(!sg) return {x:0,y:0};
+  var scX=sg.x+sg.width/2, scY=sg.y+sg.height/2;
+  var tcSX=0,tcSY=0,tc=0;
+  for(var i=0;i<targetIds.length;i++){var tg=nodeGeomMap[targetIds[i]];if(!tg)continue;tcSX+=tg.x+tg.width/2;tcSY+=tg.y+tg.height/2;tc++;}
+  if(tc===0)return{x:scX,y:scY};
+  return{x:scX+0.8*(tcSX/tc-scX),y:scY+0.8*(tcSY/tc-scY)};
 }
 
-/** 更新所有 fork 节点位置（移植自 updateForkNodePositions） */
 function updateForkNodePositions() {
-  FORKS.forEach(function(fork) {
-    var newPos = calculateForkPosition(fork.sourceId, fork.targetIds);
-    if (nodeGeomMap[fork.id]) {
-      nodeGeomMap[fork.id].x = newPos.x;
-      nodeGeomMap[fork.id].y = newPos.y;
-    }
-  });
+  FORKS.forEach(function(fork){var np=calculateForkPosition(fork.sourceId,fork.targetIds);if(nodeGeomMap[fork.id]){nodeGeomMap[fork.id].x=np.x;nodeGeomMap[fork.id].y=np.y;}});
 }
 
-/** 更新属性标签位置（移植自 updateAttributeTagPositions） */
 function updateAttributeTagPositions(nodeId) {
-  var sourceGeom = nodeGeomMap[nodeId];
-  if (!sourceGeom) return;
-
-  var stemLength = 16;
-  var tagGap = 6;
-  var currentY = sourceGeom.y + sourceGeom.height + stemLength;
-
-  // 找到属于该节点的所有属性标签，按当前 Y 排序
-  var tags = ATTR_TAGS.filter(function(t) { return t.sourceNodeId === nodeId; });
-  tags.sort(function(a, b) {
-    var ga = nodeGeomMap[a.id];
-    var gb = nodeGeomMap[b.id];
-    return (ga ? ga.y : 0) - (gb ? gb.y : 0);
-  });
-
-  tags.forEach(function(tag) {
-    var tagX = sourceGeom.x + sourceGeom.width / 2 - tag.width / 2;
-    if (nodeGeomMap[tag.id]) {
-      nodeGeomMap[tag.id].x = tagX;
-      nodeGeomMap[tag.id].y = currentY;
-    }
-
-    // 更新对应的 stem 边（source/target 是坐标点而非 cell）
-    var stemEdgeId = 'attr-stem-' + tag.attributeEdgeId;
-    var stemConn = edgeConnMap[stemEdgeId];
-    if (stemConn) {
-      // stem 边的 source/target 是固定坐标，需要特殊处理
-      var stemX = sourceGeom.x + sourceGeom.width / 2;
-      stemConn._stemSource = { x: stemX, y: sourceGeom.y + sourceGeom.height };
-      stemConn._stemTarget = { x: stemX, y: currentY };
-    }
-
-    currentY = currentY + tag.height + tagGap;
+  var sg = nodeGeomMap[nodeId]; if(!sg) return;
+  var stemLength=16, tagGap=6, currentY=sg.y+sg.height+stemLength;
+  var tags = ATTR_TAGS.filter(function(t){return t.sourceNodeId===nodeId;});
+  tags.sort(function(a,b){var ga=nodeGeomMap[a.id],gb=nodeGeomMap[b.id];return(ga?ga.y:0)-(gb?gb.y:0);});
+  tags.forEach(function(tag){
+    var tagX=sg.x+sg.width/2-tag.width/2;
+    if(nodeGeomMap[tag.id]){nodeGeomMap[tag.id].x=tagX;nodeGeomMap[tag.id].y=currentY;}
+    var stemEdgeId='attr-stem-'+tag.attributeEdgeId;
+    var stemConn=edgeConnMap[stemEdgeId];
+    if(stemConn){var sx=sg.x+sg.width/2;stemConn.stemSourceX=sx;stemConn.stemSourceY=sg.y+sg.height;stemConn.stemTargetX=sx;stemConn.stemTargetY=currentY;}
+    currentY+=tag.height+tagGap;
   });
 }
 
-/** 更新组合框边界（移植自 updateGroupBoundsForMember） */
 function updateGroupBoundsForMember(nodeId) {
-  GROUPS.forEach(function(group) {
-    if (group.detached) return;
-    if (nodeId && group.memberNodeIds.indexOf(nodeId) === -1) return;
-
-    var memberGeoms = group.memberNodeIds.map(function(id) { return nodeGeomMap[id]; }).filter(Boolean);
-    if (memberGeoms.length === 0) return;
-
-    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    memberGeoms.forEach(function(g) {
-      minX = Math.min(minX, g.x);
-      minY = Math.min(minY, g.y);
-      maxX = Math.max(maxX, g.x + g.width);
-      maxY = Math.max(maxY, g.y + g.height);
-    });
-
-    var padding = 25;
-    var labelSpace = 36;
-    if (nodeGeomMap[group.id]) {
-      nodeGeomMap[group.id].x = minX - padding;
-      nodeGeomMap[group.id].y = minY - padding - labelSpace;
-      nodeGeomMap[group.id].width = maxX - minX + padding * 2;
-      nodeGeomMap[group.id].height = maxY - minY + padding * 2 + labelSpace;
-    }
-  });
-}
-
-/** 重路由单条边并更新 SVG */
-function rerouteEdge(edgeId) {
-  var conn = edgeConnMap[edgeId];
-  if (!conn) return;
-
-  var edgeEl = svgEl.querySelector('[data-cell-id="' + edgeId + '"]');
-  if (!edgeEl) return;
-
-  var pathEl = edgeEl.querySelector('path');
-  if (!pathEl) return;
-
-  // 属性 stem 边使用固定坐标
-  if (conn._stemSource && conn._stemTarget) {
-    var d = 'M ' + conn._stemSource.x + ' ' + conn._stemSource.y +
-            ' L ' + conn._stemTarget.x + ' ' + conn._stemTarget.y;
-    pathEl.setAttribute('d', d);
-    return;
-  }
-
-  var points = routeEdge(conn);
-  if (!points || points.length === 0) return;
-
-  var pathD = pointsToPathD(points, 8);
-  pathEl.setAttribute('d', pathD);
-
-  // 更新边标签位置（固定在路径中点）
-  var labelEl = edgeEl.querySelector('.x6-edge-label');
-  if (labelEl) {
-    var midIdx = Math.floor(points.length / 2);
-    var midPoint = points[midIdx] || points[0];
-    var transform = labelEl.getAttribute('transform') || '';
-    // 提取现有的 translate 之外的 transform
-    var baseTransform = transform.replace(/translate\\([^)]*\\)/g, '').trim();
-    labelEl.setAttribute('transform', 'translate(' + midPoint.x + ',' + midPoint.y + ')' + (baseTransform ? ' ' + baseTransform : ''));
-  }
-}
-
-/** 重路由所有与指定节点关联的边 */
-function rerouteConnectedEdges(nodeId) {
-  EDGE_CONNS.forEach(function(conn) {
-    if (conn.sourceId === nodeId || conn.targetId === nodeId) {
-      rerouteEdge(conn.id);
-    }
-  });
-}
-
-/** 节点移动后的完整联动更新 */
-function onNodeMoved(nodeId, newX, newY) {
-  var geom = nodeGeomMap[nodeId];
-  if (!geom) return;
-  geom.x = newX;
-  geom.y = newY;
-
-  // 1. 更新组合框边界
-  updateGroupBoundsForMember(nodeId);
-
-  // 2. 更新 fork 节点位置
-  updateForkNodePositions();
-
-  // 3. 更新属性标签位置
-  updateAttributeTagPositions(nodeId);
-
-  // 4. 重路由所有关联边
-  rerouteConnectedEdges(nodeId);
-
-  // 5. 重路由所有连接到组合框的边（组合框边界可能变化）
-  GROUPS.forEach(function(group) {
-    if (group.memberNodeIds.indexOf(nodeId) !== -1) {
-      rerouteConnectedEdges(group.id);
-    }
-  });
-
-  // 6. 重路由所有连接到 fork 节点的边
-  FORKS.forEach(function(fork) {
-    if (fork.sourceId === nodeId || fork.targetIds.indexOf(nodeId) !== -1) {
-      rerouteConnectedEdges(fork.id);
-    }
-  });
-
-  // 7. 重路由所有连接到属性标签的 stem 边
-  ATTR_TAGS.forEach(function(tag) {
-    if (tag.sourceNodeId === nodeId) {
-      rerouteEdge('attr-stem-' + tag.attributeEdgeId);
-    }
+  GROUPS.forEach(function(group){
+    if(group.detached)return;
+    if(nodeId&&group.memberNodeIds.indexOf(nodeId)===-1)return;
+    var mg=group.memberNodeIds.map(function(id){return nodeGeomMap[id];}).filter(Boolean);
+    if(mg.length===0)return;
+    var mnx=Infinity,mny=Infinity,mxx=-Infinity,mxy=-Infinity;
+    mg.forEach(function(g){mnx=Math.min(mnx,g.x);mny=Math.min(mny,g.y);mxx=Math.max(mxx,g.x+g.width);mxy=Math.max(mxy,g.y+g.height);});
+    var pad=25,ls=36;
+    if(nodeGeomMap[group.id]){nodeGeomMap[group.id].x=mnx-pad;nodeGeomMap[group.id].y=mny-pad-ls;nodeGeomMap[group.id].width=mxx-mnx+pad*2;nodeGeomMap[group.id].height=mxy-mny+pad*2+ls;}
   });
 }
 
@@ -994,113 +682,269 @@ function onNodeMoved(nodeId, newX, newY) {
 // SVG 元素操作
 // ============================================================
 
-/** 获取节点 SVG 元素的当前 transform（translate） */
-function getNodeTransform(el) {
-  var transform = el.getAttribute('transform') || '';
-  var match = transform.match(/translate\\(([\\d.\\-]+)[\\s,]+([\\d.\\-]+)\\)/);
-  if (match) {
-    return { x: parseFloat(match[1]), y: parseFloat(match[2]), raw: transform };
-  }
-  return { x: 0, y: 0, raw: transform };
-}
-
-/** 设置节点 SVG 元素的 transform */
 function setNodeTransform(el, x, y) {
   var transform = el.getAttribute('transform') || '';
-  // 移除现有 translate，保留其他 transform
   var baseTransform = transform.replace(/translate\\([^)]*\\)/g, '').trim();
   el.setAttribute('transform', 'translate(' + x + ',' + y + ')' + (baseTransform ? ' ' + baseTransform : ''));
 }
 
-// ============================================================
-// 拖拽逻辑
-// ============================================================
-
-var dragging = null;  // {nodeId, el, startMouseX, startMouseY, startNodeX, startNodeY}
-
-function startDrag(e, nodeId, el) {
-  if (!dragModeEnabled) return;
-  // 不拖拽属性标签的 stem 边
-  var geom = nodeGeomMap[nodeId];
-  if (!geom) return;
-
-  // 获取鼠标在 SVG 坐标系中的位置
-  var pt = getSVGPoint(e);
-  dragging = {
-    nodeId: nodeId,
-    el: el,
-    startMouseX: pt.x,
-    startMouseY: pt.y,
-    startNodeX: geom.x,
-    startNodeY: geom.y
-  };
-  e.preventDefault();
-  e.stopPropagation();
+function updateElementTransform(nodeId) {
+  var geom = nodeGeomMap[nodeId]; if(!geom) return;
+  var el = svgEl.querySelector('[data-cell-id="' + nodeId + '"]') ||
+           svgEl.querySelector('[data-id="' + nodeId + '"]');
+  if (el) setNodeTransform(el, geom.x, geom.y);
 }
 
-function getSVGPoint(e) {
-  var pt = svgEl.createSVGPoint();
-  pt.x = e.clientX;
-  pt.y = e.clientY;
-  var ctm = svgEl.getScreenCTM();
-  if (ctm) {
-    pt = pt.matrixTransform(ctm.inverse());
+function updateGroupRect(groupId) {
+  var geom = nodeGeomMap[groupId]; if(!geom) return;
+  var el = svgEl.querySelector('[data-cell-id="' + groupId + '"]') ||
+           svgEl.querySelector('[data-id="' + groupId + '"]');
+  if (!el) return;
+  var rect = el.querySelector('rect');
+  if (rect) { rect.setAttribute('width', String(geom.width)); rect.setAttribute('height', String(geom.height)); }
+}
+
+/** 重路由单条边并更新 SVG */
+function rerouteEdge(edgeId) {
+  var conn = edgeConnMap[edgeId]; if(!conn) return;
+  var edgeEl = svgEl.querySelector('[data-cell-id="' + edgeId + '"]') ||
+               svgEl.querySelector('[data-id="' + edgeId + '"]');
+  if (!edgeEl) return;
+  var pathEl = edgeEl.querySelector('path'); if (!pathEl) return;
+
+  // stem 边使用坐标点
+  if (conn.isAttributeStem) {
+    var sx = conn.stemSourceX, sy = conn.stemSourceY, tx = conn.stemTargetX, ty = conn.stemTargetY;
+    if (typeof sx === 'number') {
+      pathEl.setAttribute('d', 'M ' + sx + ' ' + sy + ' L ' + tx + ' ' + ty);
+    }
+    return;
   }
-  return pt;
+
+  var points = routeEdge(conn);
+  if (!points || points.length === 0) return;
+  pathEl.setAttribute('d', pointsToPathD(points, 8));
+
+  // 更新边标签位置
+  var labelEl = edgeEl.querySelector('.x6-edge-label');
+  if (labelEl) {
+    var midIdx = Math.floor(points.length / 2);
+    var midPoint = points[midIdx] || points[0];
+    var transform = labelEl.getAttribute('transform') || '';
+    var baseTransform = transform.replace(/translate\\([^)]*\\)/g, '').trim();
+    labelEl.setAttribute('transform', 'translate(' + midPoint.x + ',' + midPoint.y + ')' + (baseTransform ? ' ' + baseTransform : ''));
+  }
 }
 
-if (svgEl) {
-  svgEl.addEventListener('mousedown', function(e) {
-    // 拖拽节点
-    var nodeEl = e.target.closest('.p2p-node, .p2p-group, .p2p-attr-tag');
-    if (nodeEl && nodeEl.dataset.id && dragModeEnabled) {
-      startDrag(e, nodeEl.dataset.id, nodeEl);
-      return;
-    }
+function rerouteConnectedEdges(nodeId) {
+  EDGE_CONNS.forEach(function(conn) {
+    if (conn.sourceId === nodeId || conn.targetId === nodeId) rerouteEdge(conn.id);
+  });
+}
 
-    // 点击高亮（非拖拽模式或点击的是边/空白）
-    if (!dragModeEnabled || !nodeEl) {
-      var clickNodeEl = e.target.closest('.p2p-node');
-      if (clickNodeEl && clickNodeEl.dataset.id) {
-        if (e.ctrlKey || e.metaKey) toggleNodeHighlight(clickNodeEl.dataset.id);
-        else highlightNodes([clickNodeEl.dataset.id]);
-        e.stopPropagation();
-        return;
-      }
-      var edgeEl = e.target.closest('.p2p-edge');
-      if (edgeEl && edgeEl.dataset.id) {
-        highlightEdge(edgeEl.dataset.id);
-        e.stopPropagation();
-        return;
-      }
-      var attrEl = e.target.closest('.p2p-attr-tag');
-      if (attrEl && attrEl.dataset.source) {
-        highlightNodes([attrEl.dataset.source]);
-        e.stopPropagation();
-        return;
-      }
-    }
+/** 节点移动后的完整联动更新（节点自身的 geom 和 transform 已在 mousemove 中更新） */
+function onNodeMoved(nodeId, newX, newY) {
+  var geom = nodeGeomMap[nodeId]; if(!geom) return;
+  // geom.x/y 已在 mousemove 中更新，此处不再重复设置
 
-    // 拖拽平移（空白区域）
-    if (!nodeEl) {
-      var target = e.target.closest('.p2p-node, .p2p-edge, .p2p-attr-tag');
-      if (!target) {
-        panning = true;
-        panStart = { x: e.clientX - viewState.x, y: e.clientY - viewState.y };
-        e.preventDefault();
-      }
+  // 1. 更新组合框边界 + SVG
+  updateGroupBoundsForMember(nodeId);
+  GROUPS.forEach(function(group) {
+    if (!group.detached && group.memberNodeIds.indexOf(nodeId) !== -1) {
+      updateElementTransform(group.id);
+      updateGroupRect(group.id);
     }
   });
 
+  // 2. 更新 fork 节点位置（fork 已从 SVG 移除，只更新数据）
+  updateForkNodePositions();
+
+  // 3. 更新属性标签位置 + SVG
+  updateAttributeTagPositions(nodeId);
+  ATTR_TAGS.forEach(function(tag) {
+    if (tag.sourceNodeId === nodeId) updateElementTransform(tag.id);
+  });
+
+  // 4. 重路由所有关联边
+  rerouteConnectedEdges(nodeId);
+
+  // 5. 重路由连接到组合框的边
+  GROUPS.forEach(function(group) {
+    if (group.memberNodeIds.indexOf(nodeId) !== -1) rerouteConnectedEdges(group.id);
+  });
+
+  // 6. 重路由连接到 fork 节点的边
+  FORKS.forEach(function(fork) {
+    if (fork.sourceId === nodeId || fork.targetIds.indexOf(nodeId) !== -1) rerouteConnectedEdges(fork.id);
+  });
+
+  // 7. 重路由属性标签的 stem 边
+  ATTR_TAGS.forEach(function(tag) {
+    if (tag.sourceNodeId === nodeId) rerouteEdge('attr-stem-' + tag.attributeEdgeId);
+  });
+}
+
+/** 组合框拖拽时移动所有成员 */
+function onGroupMoved(groupId, dx, dy) {
+  var group = groupMap[groupId];
+  if (!group || group.detached) return;
+
+  // 移动所有成员节点
+  group.memberNodeIds.forEach(function(memberId) {
+    var mg = nodeGeomMap[memberId];
+    if (mg) { mg.x += dx; mg.y += dy; updateElementTransform(memberId); }
+  });
+
+  // 更新组合框自身的边界（基于成员新位置重新计算）
+  updateGroupBoundsForMember(groupId);
+  updateGroupRect(groupId);
+
+  // 成员移动后需要更新边线等
+  group.memberNodeIds.forEach(function(memberId) {
+    rerouteConnectedEdges(memberId);
+  });
+
+  // 更新属性标签
+  ATTR_TAGS.forEach(function(tag) {
+    if (group.memberNodeIds.indexOf(tag.sourceNodeId) !== -1) {
+      updateAttributeTagPositions(tag.sourceNodeId);
+      updateElementTransform(tag.id);
+      rerouteEdge('attr-stem-' + tag.attributeEdgeId);
+    }
+  });
+
+  // 更新 fork
+  updateForkNodePositions();
+
+  // 重路由连接到组合框的边
+  rerouteConnectedEdges(groupId);
+}
+
+// ============================================================
+// 坐标转换
+// ============================================================
+
+var viewState = {x: 0, y: 0, scale: 1};
+var viewportEl = svgEl ? (svgEl.querySelector('.x6-graph-svg-viewport') || svgEl.querySelector('g')) : null;
+var wrapperEl = svgEl ? svgEl.querySelector('.p2p-pan-zoom-wrapper') : null;
+
+function applyView() {
+  if (wrapperEl) wrapperEl.setAttribute('transform', 'translate(' + viewState.x + ',' + viewState.y + ') scale(' + viewState.scale + ')');
+}
+
+/** 将屏幕坐标转换为图坐标（viewport <g> 的局部坐标系） */
+function screenToGraph(clientX, clientY) {
+  if (viewportEl) {
+    var ctm = viewportEl.getScreenCTM();
+    if (ctm) {
+      var pt = svgEl.createSVGPoint();
+      pt.x = clientX; pt.y = clientY;
+      pt = pt.matrixTransform(ctm.inverse());
+      return { x: pt.x, y: pt.y };
+    }
+  }
+  // 回退：使用 SVG 根 CTM
+  var ctm2 = svgEl.getScreenCTM();
+  if (ctm2) {
+    var pt2 = svgEl.createSVGPoint();
+    pt2.x = clientX; pt2.y = clientY;
+    pt2 = pt2.matrixTransform(ctm2.inverse());
+    return { x: pt2.x, y: pt2.y };
+  }
+  return { x: clientX, y: clientY };
+}
+
+// ============================================================
+// 拖拽逻辑（区分点击和拖拽）
+// ============================================================
+
+var DRAG_THRESHOLD = 4;  // 像素
+var dragState = null;    // {nodeId, el, startClientX, startClientY, startGraphX, startGraphY, startNodeX, startNodeY, isGroup, memberStartPositions, moved}
+
+if (svgEl) {
+  svgEl.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;  // 只处理左键
+
+    var nodeEl = e.target.closest('.p2p-node, .p2p-group, .p2p-attr-tag');
+
+    if (nodeEl) {
+      var nodeId = nodeEl.getAttribute('data-id') || nodeEl.getAttribute('data-cell-id');
+      if (nodeId && nodeGeomMap[nodeId]) {
+        var graphPt = screenToGraph(e.clientX, e.clientY);
+        var isGroup = !!groupMap[nodeId];
+
+        // 记录成员初始位置（用于组合框拖拽）
+        var memberStartPositions = {};
+        if (isGroup) {
+          var group = groupMap[nodeId];
+          if (group && !group.detached) {
+            group.memberNodeIds.forEach(function(mid) {
+              var mg = nodeGeomMap[mid];
+              if (mg) memberStartPositions[mid] = { x: mg.x, y: mg.y };
+            });
+          }
+        }
+
+        dragState = {
+          nodeId: nodeId,
+          el: nodeEl,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          startGraphX: graphPt.x,
+          startGraphY: graphPt.y,
+          startNodeX: nodeGeomMap[nodeId].x,
+          startNodeY: nodeGeomMap[nodeId].y,
+          isGroup: isGroup,
+          memberStartPositions: memberStartPositions,
+          moved: false
+        };
+        e.preventDefault();
+        return;
+      }
+    }
+
+    // 边线点击：不启动平移，让 click 事件处理高亮
+    var edgeEl = e.target.closest('.p2p-edge');
+    if (edgeEl) {
+      e.preventDefault();
+      return;
+    }
+
+    // 空白区域：开始平移
+    panning = true;
+    panStartClient = { x: e.clientX, y: e.clientY };
+    panStart = { x: e.clientX - viewState.x, y: e.clientY - viewState.y };
+    e.preventDefault();
+  });
+
   document.addEventListener('mousemove', function(e) {
-    if (dragging) {
-      var pt = getSVGPoint(e);
-      var dx = pt.x - dragging.startMouseX;
-      var dy = pt.y - dragging.startMouseY;
-      var newX = dragging.startNodeX + dx;
-      var newY = dragging.startNodeY + dy;
-      setNodeTransform(dragging.el, newX, newY);
-      onNodeMoved(dragging.nodeId, newX, newY);
+    if (dragState) {
+      var dx = e.clientX - dragState.startClientX;
+      var dy = e.clientY - dragState.startClientY;
+      if (!dragState.moved && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+        dragState.moved = true;
+      }
+      if (dragState.moved) {
+        var graphPt = screenToGraph(e.clientX, e.clientY);
+        var gdx = graphPt.x - dragState.startGraphX;
+        var gdy = graphPt.y - dragState.startGraphY;
+        var newX = dragState.startNodeX + gdx;
+        var newY = dragState.startNodeY + gdy;
+
+        // 更新节点几何数据
+        nodeGeomMap[dragState.nodeId].x = newX;
+        nodeGeomMap[dragState.nodeId].y = newY;
+
+        if (dragState.isGroup) {
+          // 组合框拖拽：更新组合框自身 transform + 移动所有成员
+          setNodeTransform(dragState.el, newX, newY);
+          onGroupMoved(dragState.nodeId, gdx, gdy);
+        } else {
+          // 普通节点拖拽：更新 transform + 联动更新关联元素
+          setNodeTransform(dragState.el, newX, newY);
+          onNodeMoved(dragState.nodeId, newX, newY);
+        }
+      }
     } else if (panning) {
       viewState.x = e.clientX - panStart.x;
       viewState.y = e.clientY - panStart.y;
@@ -1108,22 +952,160 @@ if (svgEl) {
     }
   });
 
-  document.addEventListener('mouseup', function() {
-    dragging = null;
-    panning = false;
+  document.addEventListener('mouseup', function(e) {
+    if (dragState) {
+      if (!dragState.moved) {
+        // 没有移动 → 视为点击，处理高亮
+        var nodeId = dragState.nodeId;
+        var isAttrTag = dragState.el.classList.contains('p2p-attr-tag');
+        if (isAttrTag) {
+          // 点击属性标签 → 高亮其源节点
+          var sourceId = dragState.el.getAttribute('data-source');
+          if (sourceId) handleNodeClick(sourceId, e.ctrlKey || e.metaKey);
+        } else if (dragState.el.classList.contains('p2p-group')) {
+          // 点击组合框 → 高亮组合框本身
+          handleNodeClick(nodeId, e.ctrlKey || e.metaKey);
+        } else {
+          handleNodeClick(nodeId, e.ctrlKey || e.metaKey);
+        }
+      }
+      dragState = null;
+    } else if (panning) {
+      // 判断是否实际平移了（未移动视为点击空白 → 清除高亮）
+      var panMoved = panStartClient && (Math.abs(e.clientX - panStartClient.x) > DRAG_THRESHOLD || Math.abs(e.clientY - panStartClient.y) > DRAG_THRESHOLD);
+      if (!panMoved) {
+        clearAllHighlights();
+        updateAllSentences();
+      }
+      panning = false;
+      panStartClient = null;
+    }
   });
-}
 
-function toggleDragMode() {
-  dragModeEnabled = !dragModeEnabled;
-  var btn = document.getElementById('dragToggleBtn');
-  btn.textContent = '拖拽模式: ' + (dragModeEnabled ? '开' : '关');
-  btn.classList.toggle('active', dragModeEnabled);
-  svgEl.style.cursor = dragModeEnabled ? 'default' : 'grab';
+  svgEl.addEventListener('contextmenu', function(e) { e.preventDefault(); });
 }
 
 // ============================================================
-// 高亮和文本交互（保留原有功能）
+// 高亮逻辑（修复：单选清除之前，Ctrl多选累积）
+// ============================================================
+
+function clearAllHighlights() {
+  document.querySelectorAll('.p2p-highlighted').forEach(function(el) { el.classList.remove('p2p-highlighted'); });
+  document.querySelectorAll('.p2p-highlighted-branch').forEach(function(el) { el.classList.remove('p2p-highlighted-branch'); });
+  highlightedNodeIds = [];
+}
+
+function handleNodeClick(nodeId, ctrlKey) {
+  if (ctrlKey) {
+    // Ctrl 多选：切换
+    var idx = highlightedNodeIds.indexOf(nodeId);
+    if (idx >= 0) { highlightedNodeIds.splice(idx, 1); }
+    else { highlightedNodeIds.push(nodeId); }
+  } else {
+    // 单选：清除之前所有高亮
+    clearAllHighlights();
+    highlightedNodeIds = [nodeId];
+  }
+  applyNodeHighlights();
+  updateAllSentences();
+  scrollToFirstHighlight();
+}
+
+function handleEdgeClick(edgeId, ctrlKey) {
+  if (!ctrlKey) {
+    // 单选：先清除所有高亮（节点+边线）
+    clearAllHighlights();
+  }
+
+  var edgeEl = document.querySelector('.p2p-edge[data-id="' + edgeId + '"]') ||
+               document.querySelector('.p2p-edge[data-cell-id="' + edgeId + '"]');
+  if (!edgeEl) return;
+
+  if (ctrlKey) {
+    // Ctrl 多选：切换边高亮
+    if (edgeEl.classList.contains('p2p-highlighted')) {
+      edgeEl.classList.remove('p2p-highlighted');
+      // 同时移除关联的 branch 高亮
+      var srcId = edgeEl.getAttribute('data-source');
+      if (srcId) {
+        document.querySelectorAll('.p2p-branch.p2p-highlighted-branch').forEach(function(be) {
+          if (be.getAttribute('data-source') === srcId) be.classList.remove('p2p-highlighted-branch');
+        });
+      }
+      applyNodeHighlights();
+      updateAllSentences();
+      return;
+    }
+  }
+
+  edgeEl.classList.add('p2p-highlighted');
+  var sourceId = edgeEl.getAttribute('data-source');
+  var targetId = edgeEl.getAttribute('data-target');
+  var isTrunk = edgeEl.classList.contains('p2p-trunk');
+
+  if (isTrunk && sourceId) {
+    document.querySelectorAll('.p2p-branch').forEach(function(be) {
+      if (be.getAttribute('data-source') === sourceId) be.classList.add('p2p-highlighted-branch');
+    });
+  }
+
+  var nodeIds = [];
+  if (isTrunk && sourceId) {
+    nodeIds.push(sourceId);
+    document.querySelectorAll('.p2p-branch.p2p-highlighted-branch').forEach(function(be) {
+      var tid = be.getAttribute('data-target'); if (tid && nodeIds.indexOf(tid) === -1) nodeIds.push(tid);
+    });
+  } else {
+    if (sourceId) nodeIds.push(sourceId);
+    if (targetId) nodeIds.push(targetId);
+  }
+
+  if (!ctrlKey) {
+    highlightedNodeIds = nodeIds;
+  } else {
+    nodeIds.forEach(function(nid) { if (highlightedNodeIds.indexOf(nid) === -1) highlightedNodeIds.push(nid); });
+  }
+
+  applyNodeHighlights();
+  updateAllSentences();
+  scrollToFirstHighlight();
+}
+
+function applyNodeHighlights() {
+  document.querySelectorAll('.p2p-node.p2p-highlighted').forEach(function(el) { el.classList.remove('p2p-highlighted'); });
+  highlightedNodeIds.forEach(function(id) {
+    var el = document.querySelector('.p2p-node[data-id="' + id + '"]') ||
+             document.querySelector('.p2p-node[data-cell-id="' + id + '"]');
+    if (el) el.classList.add('p2p-highlighted');
+  });
+  updateLegend();
+}
+
+// 边线点击（独立于拖拽逻辑，通过 click 事件处理）
+if (svgEl) {
+  svgEl.addEventListener('click', function(e) {
+    // 只处理边线点击（节点点击已在 mouseup 中处理）
+    var edgeEl = e.target.closest('.p2p-edge');
+    if (edgeEl) {
+      var edgeId = edgeEl.getAttribute('data-id') || edgeEl.getAttribute('data-cell-id');
+      if (edgeId) {
+        handleEdgeClick(edgeId, e.ctrlKey || e.metaKey);
+      }
+      return;
+    }
+    // 点击空白区域时也清除高亮（兜底，主要逻辑在 mouseup 中）
+    var anyInteractive = e.target.closest('.p2p-node, .p2p-edge, .p2p-group, .p2p-attr-tag');
+    if (!anyInteractive) {
+      clearAllHighlights();
+      updateAllSentences();
+    }
+  });
+}
+
+function clearHighlight() { clearAllHighlights(); updateAllSentences(); }
+
+// ============================================================
+// 文本高亮
 // ============================================================
 
 function renderSentences() {
@@ -1145,11 +1127,7 @@ function renderSentences() {
   });
 }
 
-function escapeHtml(text) {
-  var div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+function escapeHtml(text) { var div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
 
 function highlightTextInSentence(text, mode) {
   var html = escapeHtml(text);
@@ -1168,10 +1146,7 @@ function highlightTextInSentence(text, mode) {
     var regex = new RegExp(escapedText.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&'), 'gi');
     var found = false;
     html = html.replace(regex, function(match) {
-      if (!found) {
-        found = true;
-        return '<mark class="text-highlight" data-node-id="' + item.nodeId + '" style="background-color:' + item.color.bg + ';color:' + item.color.border + '" onclick="textNodeClick(\\'' + item.nodeId + '\\')">' + match + '</mark>';
-      }
+      if (!found) { found = true; return '<mark class="text-highlight" data-node-id="' + item.nodeId + '" style="background-color:' + item.color.bg + ';color:' + item.color.border + '" onclick="textNodeClick(\\'' + item.nodeId + '\\')">' + match + '</mark>'; }
       return match;
     });
   });
@@ -1185,17 +1160,11 @@ function updateSentenceHighlight(sentId) {
   var transEl = document.getElementById('trans-' + sentId);
   if (!origEl) return;
   origEl.innerHTML = highlightTextInSentence(sent.text, 'original');
-  if (sent.translation) {
-    transEl.innerHTML = highlightTextInSentence(sent.translation, 'translation');
-  } else {
-    transEl.innerHTML = '';
-  }
+  if (sent.translation) { transEl.innerHTML = highlightTextInSentence(sent.translation, 'translation'); }
+  else { transEl.innerHTML = ''; }
 }
 
-function updateAllSentences() {
-  SENTENCES.forEach(function(sent) { updateSentenceHighlight(sent.id); });
-  updateLegend();
-}
+function updateAllSentences() { SENTENCES.forEach(function(sent) { updateSentenceHighlight(sent.id); }); }
 
 function updateLegend() {
   legendBar.innerHTML = '';
@@ -1208,20 +1177,13 @@ function updateLegend() {
     item.style.background = color.bg;
     item.style.border = '1px solid ' + color.border;
     item.innerHTML = '<span class="dot" style="background:' + color.border + '"></span><span>' + escapeHtml(node.chineseText || node.originalText) + '</span>';
-    item.onclick = function() { toggleNodeHighlight(nodeId); };
+    item.onclick = function() { handleNodeClick(nodeId, true); };
     legendBar.appendChild(item);
   });
 }
 
-function highlightNodes(ids) {
-  document.querySelectorAll('.p2p-node.p2p-highlighted').forEach(function(el) { el.classList.remove('p2p-highlighted'); });
-  highlightedNodeIds = ids;
-  ids.forEach(function(id) {
-    var el = document.querySelector('.p2p-node[data-id="' + id + '"]');
-    if (el) el.classList.add('p2p-highlighted');
-  });
-  updateAllSentences();
-  if (ids.length > 0) {
+function scrollToFirstHighlight() {
+  if (highlightedNodeIds.length > 0) {
     var blocks = sidebarBody.querySelectorAll('.sentence-block');
     for (var i = 0; i < blocks.length; i++) {
       var origEl = blocks[i].querySelector('.sentence-original');
@@ -1233,65 +1195,13 @@ function highlightNodes(ids) {
   }
 }
 
-function toggleNodeHighlight(nodeId) {
-  var idx = highlightedNodeIds.indexOf(nodeId);
-  if (idx >= 0) { highlightedNodeIds.splice(idx, 1); }
-  else { highlightedNodeIds.push(nodeId); }
-  highlightNodes(highlightedNodeIds);
-}
-
-function textNodeClick(nodeId) { toggleNodeHighlight(nodeId); }
-
-function highlightEdge(edgeId) {
-  clearEdgeHighlight();
-  var edgeEl = document.querySelector('.p2p-edge[data-id="' + edgeId + '"]');
-  if (!edgeEl) return;
-  var sourceId = edgeEl.dataset.source;
-  var targetId = edgeEl.dataset.target;
-  edgeEl.classList.add('p2p-highlighted');
-  var isTrunk = edgeEl.classList.contains('p2p-trunk');
-  if (isTrunk) {
-    document.querySelectorAll('.p2p-branch').forEach(function(be) {
-      if (be.dataset.source === sourceId) be.classList.add('p2p-highlighted-branch');
-    });
-  }
-  var nodeIds = [];
-  if (isTrunk) {
-    nodeIds.push(sourceId);
-    document.querySelectorAll('.p2p-branch.p2p-highlighted-branch').forEach(function(be) {
-      if (be.dataset.target) nodeIds.push(be.dataset.target);
-    });
-  } else {
-    if (sourceId) nodeIds.push(sourceId);
-    if (targetId) nodeIds.push(targetId);
-  }
-  highlightNodes(nodeIds);
-}
-
-function clearEdgeHighlight() {
-  document.querySelectorAll('.p2p-highlighted').forEach(function(el) { el.classList.remove('p2p-highlighted'); });
-  document.querySelectorAll('.p2p-highlighted-branch').forEach(function(el) { el.classList.remove('p2p-highlighted-branch'); });
-}
-
-function clearHighlight() { clearEdgeHighlight(); highlightNodes([]); }
+function textNodeClick(nodeId) { handleNodeClick(nodeId, true); }
 
 // ============================================================
 // 缩放和平移
 // ============================================================
 
-var viewState = {x: 0, y: 0, scale: 1};
-var viewportEl = null;
-var panning = false, panStart = null;
-
-if (svgEl) {
-  viewportEl = svgEl.querySelector('.x6-graph-svg-viewport') || svgEl.querySelector('g');
-}
-
-function applyView() {
-  if (viewportEl) {
-    viewportEl.setAttribute('transform', 'translate(' + viewState.x + ',' + viewState.y + ') scale(' + viewState.scale + ')');
-  }
-}
+var panning = false, panStart = null, panStartClient = null;
 
 function zoomIn() { viewState.scale = Math.min(3, viewState.scale * 1.2); applyView(); }
 function zoomOut() { viewState.scale = Math.max(0.1, viewState.scale / 1.2); applyView(); }
@@ -1304,8 +1214,6 @@ if (svgEl) {
     viewState.scale = Math.max(0.1, Math.min(3, viewState.scale * delta));
     applyView();
   }, {passive: false});
-
-  svgEl.addEventListener('contextmenu', function(e) { e.preventDefault(); });
 }
 
 // 初始化
