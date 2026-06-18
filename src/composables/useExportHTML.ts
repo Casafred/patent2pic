@@ -432,13 +432,18 @@ mark.text-highlight { padding: 1px 3px; border-radius: 3px; font-weight: 600; cu
 .toolbar button:hover { border-color: #1890ff; color: #1890ff; }
 .toolbar button.active { background: #1890ff; color: #fff; border-color: #1890ff; }
 /* 交互样式 */
-.p2p-node { cursor: move; }
+.p2p-node { cursor: move; pointer-events: all; }
+.p2p-node * { pointer-events: all; }
 .p2p-node:hover { opacity: 0.85; }
-.p2p-group { cursor: move; }
-.p2p-attr-tag { cursor: move; }
-.p2p-edge { cursor: pointer; }
+.p2p-group { cursor: move; pointer-events: all; }
+.p2p-group * { pointer-events: all; }
+.p2p-attr-tag { cursor: move; pointer-events: all; }
+.p2p-attr-tag * { pointer-events: all; }
+.p2p-edge { cursor: pointer; pointer-events: stroke; }
+.p2p-edge * { pointer-events: stroke; }
 .p2p-edge:hover { opacity: 0.7; }
 .p2p-attr-stem { pointer-events: none; }
+.p2p-attr-stem * { pointer-events: none; }
 /* 高亮样式 */
 .p2p-node.p2p-highlighted rect { stroke: #e63946 !important; stroke-width: 4 !important; }
 .p2p-node.p2p-highlighted polygon { stroke: #e63946 !important; stroke-width: 4 !important; }
@@ -506,6 +511,31 @@ var legendBar = document.getElementById('legendBar');
 
 if (!svgEl) {
   svgContainer.innerHTML = '<div style="padding:40px;text-align:center;color:#86909c">SVG 图形加载失败</div>';
+}
+
+// ============================================================
+// Cell 类型映射（用于事件处理时快速判断类型，不依赖 CSS class）
+// ============================================================
+var cellTypeMap = {};
+NODE_GEOMS.forEach(function(g) { cellTypeMap[g.id] = 'node'; });
+EDGE_CONNS.forEach(function(e) { cellTypeMap[e.id] = e.isAttributeStem ? 'attr-stem' : 'edge'; });
+GROUPS.forEach(function(g) { cellTypeMap[g.id] = 'group'; });
+FORKS.forEach(function(f) { cellTypeMap[f.id] = 'fork'; });
+ATTR_TAGS.forEach(function(t) { cellTypeMap[t.id] = 'attr-tag'; });
+
+/** 从点击目标向上遍历 DOM（使用 parentNode 跨越 foreignObject 的 HTML/SVG 边界），找到 data-cell-id 对应的 cell 信息 */
+function findCellInfo(target) {
+  var el = target;
+  while (el && el !== svgEl) {
+    if (el.nodeType === 1 && el.getAttribute) {
+      var cellId = el.getAttribute('data-id') || el.getAttribute('data-cell-id');
+      if (cellId && cellTypeMap[cellId]) {
+        return { el: el, cellId: cellId, type: cellTypeMap[cellId] };
+      }
+    }
+    el = el.parentNode;
+  }
+  return null;
 }
 
 // ============================================================
@@ -865,48 +895,49 @@ if (svgEl) {
   svgEl.addEventListener('mousedown', function(e) {
     if (e.button !== 0) return;  // 只处理左键
 
-    var nodeEl = e.target.closest('.p2p-node, .p2p-group, .p2p-attr-tag');
+    var info = findCellInfo(e.target);
 
-    if (nodeEl) {
-      var nodeId = nodeEl.getAttribute('data-id') || nodeEl.getAttribute('data-cell-id');
-      if (nodeId && nodeGeomMap[nodeId]) {
-        var graphPt = screenToGraph(e.clientX, e.clientY);
-        var isGroup = !!groupMap[nodeId];
+    if (info) {
+      if (info.type === 'node' || info.type === 'group' || info.type === 'attr-tag') {
+        // 节点/组合框/属性标签：准备拖拽
+        if (nodeGeomMap[info.cellId]) {
+          var graphPt = screenToGraph(e.clientX, e.clientY);
+          var isGroup = info.type === 'group';
 
-        // 记录成员初始位置（用于组合框拖拽）
-        var memberStartPositions = {};
-        if (isGroup) {
-          var group = groupMap[nodeId];
-          if (group && !group.detached) {
-            group.memberNodeIds.forEach(function(mid) {
-              var mg = nodeGeomMap[mid];
-              if (mg) memberStartPositions[mid] = { x: mg.x, y: mg.y };
-            });
+          // 记录成员初始位置（用于组合框拖拽）
+          var memberStartPositions = {};
+          if (isGroup) {
+            var group = groupMap[info.cellId];
+            if (group && !group.detached) {
+              group.memberNodeIds.forEach(function(mid) {
+                var mg = nodeGeomMap[mid];
+                if (mg) memberStartPositions[mid] = { x: mg.x, y: mg.y };
+              });
+            }
           }
-        }
 
-        dragState = {
-          nodeId: nodeId,
-          el: nodeEl,
-          startClientX: e.clientX,
-          startClientY: e.clientY,
-          startGraphX: graphPt.x,
-          startGraphY: graphPt.y,
-          startNodeX: nodeGeomMap[nodeId].x,
-          startNodeY: nodeGeomMap[nodeId].y,
-          isGroup: isGroup,
-          memberStartPositions: memberStartPositions,
-          moved: false
-        };
+          dragState = {
+            nodeId: info.cellId,
+            el: info.el,
+            startClientX: e.clientX,
+            startClientY: e.clientY,
+            startGraphX: graphPt.x,
+            startGraphY: graphPt.y,
+            startNodeX: nodeGeomMap[info.cellId].x,
+            startNodeY: nodeGeomMap[info.cellId].y,
+            isGroup: isGroup,
+            memberStartPositions: memberStartPositions,
+            moved: false
+          };
+          e.preventDefault();
+          return;
+        }
+      } else if (info.type === 'edge') {
+        // 边线：不启动平移，让 click 事件处理高亮
         e.preventDefault();
         return;
       }
-    }
-
-    // 边线点击：不启动平移，让 click 事件处理高亮
-    var edgeEl = e.target.closest('.p2p-edge');
-    if (edgeEl) {
-      e.preventDefault();
+      // attr-stem / fork：忽略，不启动平移
       return;
     }
 
@@ -957,15 +988,13 @@ if (svgEl) {
       if (!dragState.moved) {
         // 没有移动 → 视为点击，处理高亮
         var nodeId = dragState.nodeId;
-        var isAttrTag = dragState.el.classList.contains('p2p-attr-tag');
-        if (isAttrTag) {
+        var cellType = cellTypeMap[nodeId];
+        if (cellType === 'attr-tag') {
           // 点击属性标签 → 高亮其源节点
-          var sourceId = dragState.el.getAttribute('data-source');
-          if (sourceId) handleNodeClick(sourceId, e.ctrlKey || e.metaKey);
-        } else if (dragState.el.classList.contains('p2p-group')) {
-          // 点击组合框 → 高亮组合框本身
-          handleNodeClick(nodeId, e.ctrlKey || e.metaKey);
+          var attrTag = ATTR_TAGS.find(function(t) { return t.id === nodeId; });
+          if (attrTag) handleNodeClick(attrTag.sourceNodeId, e.ctrlKey || e.metaKey);
         } else {
+          // 点击节点/组合框 → 高亮
           handleNodeClick(nodeId, e.ctrlKey || e.metaKey);
         }
       }
@@ -990,8 +1019,8 @@ if (svgEl) {
 // ============================================================
 
 function clearAllHighlights() {
-  document.querySelectorAll('.p2p-highlighted').forEach(function(el) { el.classList.remove('p2p-highlighted'); });
-  document.querySelectorAll('.p2p-highlighted-branch').forEach(function(el) { el.classList.remove('p2p-highlighted-branch'); });
+  svgEl.querySelectorAll('.p2p-highlighted').forEach(function(el) { el.classList.remove('p2p-highlighted'); });
+  svgEl.querySelectorAll('.p2p-highlighted-branch').forEach(function(el) { el.classList.remove('p2p-highlighted-branch'); });
   highlightedNodeIds = [];
 }
 
@@ -1017,8 +1046,8 @@ function handleEdgeClick(edgeId, ctrlKey) {
     clearAllHighlights();
   }
 
-  var edgeEl = document.querySelector('.p2p-edge[data-id="' + edgeId + '"]') ||
-               document.querySelector('.p2p-edge[data-cell-id="' + edgeId + '"]');
+  var edgeEl = svgEl.querySelector('[data-cell-id="' + edgeId + '"]') ||
+               svgEl.querySelector('[data-id="' + edgeId + '"]');
   if (!edgeEl) return;
 
   if (ctrlKey) {
@@ -1028,7 +1057,7 @@ function handleEdgeClick(edgeId, ctrlKey) {
       // 同时移除关联的 branch 高亮
       var srcId = edgeEl.getAttribute('data-source');
       if (srcId) {
-        document.querySelectorAll('.p2p-branch.p2p-highlighted-branch').forEach(function(be) {
+        svgEl.querySelectorAll('.p2p-branch.p2p-highlighted-branch').forEach(function(be) {
           if (be.getAttribute('data-source') === srcId) be.classList.remove('p2p-highlighted-branch');
         });
       }
@@ -1044,7 +1073,7 @@ function handleEdgeClick(edgeId, ctrlKey) {
   var isTrunk = edgeEl.classList.contains('p2p-trunk');
 
   if (isTrunk && sourceId) {
-    document.querySelectorAll('.p2p-branch').forEach(function(be) {
+    svgEl.querySelectorAll('.p2p-branch').forEach(function(be) {
       if (be.getAttribute('data-source') === sourceId) be.classList.add('p2p-highlighted-branch');
     });
   }
@@ -1052,7 +1081,7 @@ function handleEdgeClick(edgeId, ctrlKey) {
   var nodeIds = [];
   if (isTrunk && sourceId) {
     nodeIds.push(sourceId);
-    document.querySelectorAll('.p2p-branch.p2p-highlighted-branch').forEach(function(be) {
+    svgEl.querySelectorAll('.p2p-branch.p2p-highlighted-branch').forEach(function(be) {
       var tid = be.getAttribute('data-target'); if (tid && nodeIds.indexOf(tid) === -1) nodeIds.push(tid);
     });
   } else {
@@ -1074,8 +1103,8 @@ function handleEdgeClick(edgeId, ctrlKey) {
 function applyNodeHighlights() {
   document.querySelectorAll('.p2p-node.p2p-highlighted').forEach(function(el) { el.classList.remove('p2p-highlighted'); });
   highlightedNodeIds.forEach(function(id) {
-    var el = document.querySelector('.p2p-node[data-id="' + id + '"]') ||
-             document.querySelector('.p2p-node[data-cell-id="' + id + '"]');
+    var el = svgEl.querySelector('[data-cell-id="' + id + '"]') ||
+             svgEl.querySelector('[data-id="' + id + '"]');
     if (el) el.classList.add('p2p-highlighted');
   });
   updateLegend();
@@ -1084,18 +1113,13 @@ function applyNodeHighlights() {
 // 边线点击（独立于拖拽逻辑，通过 click 事件处理）
 if (svgEl) {
   svgEl.addEventListener('click', function(e) {
-    // 只处理边线点击（节点点击已在 mouseup 中处理）
-    var edgeEl = e.target.closest('.p2p-edge');
-    if (edgeEl) {
-      var edgeId = edgeEl.getAttribute('data-id') || edgeEl.getAttribute('data-cell-id');
-      if (edgeId) {
-        handleEdgeClick(edgeId, e.ctrlKey || e.metaKey);
-      }
+    var info = findCellInfo(e.target);
+    if (info && info.type === 'edge') {
+      handleEdgeClick(info.cellId, e.ctrlKey || e.metaKey);
       return;
     }
-    // 点击空白区域时也清除高亮（兜底，主要逻辑在 mouseup 中）
-    var anyInteractive = e.target.closest('.p2p-node, .p2p-edge, .p2p-group, .p2p-attr-tag');
-    if (!anyInteractive) {
+    // 点击空白区域时清除高亮（兜底，主要逻辑在 mouseup 中）
+    if (!info) {
       clearAllHighlights();
       updateAllSentences();
     }
