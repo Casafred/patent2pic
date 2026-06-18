@@ -630,32 +630,7 @@ export class GraphEngine {
         const tagX = pos.x + size.width / 2 - tagWidth / 2
         const tagY = currentY
 
-        // Create a small stem line from node bottom to tag top
-        // Draw stem as a thin edge from node bottom-center to tag top-center
-        this.graph.addEdge({
-          id: `attr-stem-${attrEdge.id}`,
-          shape: 'edge',
-          source: { cell: nodeId, anchor: { name: 'bottom' } },
-          target: { cell: `attr-tag-${attrEdge.id}`, anchor: { name: 'top' } },
-          connector: { name: 'normal' },
-          attrs: {
-            line: {
-              stroke: attrStyle.stroke,
-              strokeWidth: 2,
-              strokeDasharray: '3 3',
-              sourceMarker: '',
-              targetMarker: '',
-            },
-          },
-          data: {
-            isAttributeStem: true,
-            attributeEdgeId: attrEdge.id,
-            sourceNodeId: nodeId,
-          },
-          zIndex: 5,
-        })
-
-        // Create the tag label node
+        // Create the tag label node FIRST (stem edge references it as target)
         this.graph.addNode({
           id: `attr-tag-${attrEdge.id}`,
           x: tagX,
@@ -692,6 +667,30 @@ export class GraphEngine {
             chineseText: attrEdge.chineseText,
             relationType: 'attribute',
             style: attrStyle,
+          },
+          zIndex: 5,
+        })
+
+        // Create stem edge AFTER the tag node exists
+        this.graph.addEdge({
+          id: `attr-stem-${attrEdge.id}`,
+          shape: 'edge',
+          source: { cell: nodeId, anchor: { name: 'bottom' } },
+          target: { cell: `attr-tag-${attrEdge.id}`, anchor: { name: 'top' } },
+          connector: { name: 'normal' },
+          attrs: {
+            line: {
+              stroke: attrStyle.stroke,
+              strokeWidth: 2,
+              strokeDasharray: '3 3',
+              sourceMarker: '',
+              targetMarker: '',
+            },
+          },
+          data: {
+            isAttributeStem: true,
+            attributeEdgeId: attrEdge.id,
+            sourceNodeId: nodeId,
           },
           zIndex: 5,
         })
