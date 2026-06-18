@@ -92,6 +92,20 @@
             </div>
           </div>
         </div>
+
+        <div class="legend-section">
+          <div class="section-title">属性标签</div>
+          <div class="legend-items">
+            <div class="legend-item">
+              <svg class="edge-sample" width="40" height="28" viewBox="0 0 40 28">
+                <line x1="20" y1="0" x2="20" y2="12" stroke="#13c2c2" stroke-width="1.5" stroke-dasharray="3 3"/>
+                <rect x="4" y="12" width="32" height="14" rx="3" fill="#e6fffb" stroke="#13c2c2" stroke-width="1"/>
+                <text x="20" y="23" text-anchor="middle" font-size="7" fill="#08979c">属性</text>
+              </svg>
+              <span class="legend-label">节点属性（无箭头标签）</span>
+            </div>
+          </div>
+        </div>
       </div>
     </transition>
   </div>
@@ -113,6 +127,7 @@ const relationTypes = [
   { label: '动作关系', stroke: '#52c41a', dasharray: '', arrowType: 'solid-triangle' },
   { label: '包含关系', stroke: '#fa8c16', dasharray: '5 5', arrowType: 'hollow-triangle' },
   { label: '逻辑关系', stroke: '#722ed1', dasharray: '2 4 2 4 5 4', arrowType: 'diamond' },
+  { label: '属性关系', stroke: '#13c2c2', dasharray: '3 3', arrowType: 'none' },
 ]
 
 const lineStyles = [

@@ -32,7 +32,7 @@ export function useAIExtract() {
   const error = ref<string | null>(null)
   let abortController: AbortController | null = null
 
-  async function extract(claimText: string): Promise<ExtractResult | null> {
+  async function extract(claimText: string, claimId?: string): Promise<ExtractResult | null> {
     const timingKey = `权利要求分析 [${claimText.slice(0, 30).replace(/\n/g, ' ')}...]`
     timingStart(timingKey)
 
@@ -50,7 +50,7 @@ export function useAIExtract() {
     const providerType = aiStore.activeProviderType
     const model = aiStore.activeModel
 
-    const tab = graphStore.addTab(undefined, isChinese)
+    const tab = graphStore.addTab(undefined, isChinese, true, claimId ?? null)
 
     let fullContent = ''
     let fullReasoning = ''
@@ -215,7 +215,7 @@ export function useAIExtract() {
       return null
     }
 
-    const extractResult = await extract(claim.rawText)
+    const extractResult = await extract(claim.rawText, claim.id)
     if (!extractResult) return null
 
     if (extractResult.sentencePairs && extractResult.sentencePairs.length > 0) {

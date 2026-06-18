@@ -27,10 +27,12 @@ import TabBar from '../canvas/TabBar.vue'
 import StylePanel from '../panel/StylePanel.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
+import { useClaimStore } from '@/stores/claim'
 import { graphEngine } from '@/services/graph/engine'
 
 const editorStore = useEditorStore()
 const graphStore = useGraphStore()
+const claimStore = useClaimStore()
 const graphCanvasRef = ref<InstanceType<typeof GraphCanvas> | null>(null)
 
 const hasSelection = computed(() =>
@@ -38,7 +40,7 @@ const hasSelection = computed(() =>
 )
 
 watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
-  if (!newTabId || newTabId === oldTabId) return
+  if (newTabId === oldTabId) return
 
   if (oldTabId) {
     const oldTab = graphStore.tabs.find(t => t.id === oldTabId)
@@ -48,20 +50,53 @@ watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
     }
   }
 
-  const newTab = graphStore.tabs.find(t => t.id === newTabId)
-  if (!newTab) return
-
   const graph = graphEngine.getGraph()
   if (!graph) return
 
+  // Clear the graph engine's canvas
   graph.clearCells()
+
+  if (!newTabId) {
+    // Last tab closed - reset to empty state
+    graphStore.clearGraph()
+    return
+  }
+
+  const newTab = graphStore.tabs.find(t => t.id === newTabId)
+  if (!newTab) return
+
+  // Sync the claim store's active claim with the new tab
+  if (newTab.claimId) {
+    claimStore.setActiveClaim(newTab.claimId)
+  }
 
   if (newTab.serializedGraph && Object.keys(newTab.serializedGraph).length > 0) {
     graphEngine.fromJSON(newTab.serializedGraph)
   } else if (newTab.extractResult) {
     await graphEngine.batchBuild(newTab.extractResult, undefined, newTab.isChinese)
   }
+  // If extractResult is not available yet (parallel processing in progress),
+  // the canvas stays empty. The extractResult watcher below will build the graph
+  // when it becomes available.
 })
+
+// Watch for extractResult becoming available on the active tab during parallel processing.
+// This handles the case where the user switches to a tab whose processing hasn't completed yet.
+watch(
+  () => graphStore.activeTab?.extractResult,
+  async (newResult) => {
+    if (!newResult) return
+    const graph = graphEngine.getGraph()
+    if (!graph) return
+    // Only build if the canvas is currently empty
+    if (graph.getCells().length === 0) {
+      const tab = graphStore.activeTab
+      if (tab) {
+        await graphEngine.batchBuild(newResult, undefined, tab.isChinese)
+      }
+    }
+  },
+)
 </script>
 
 <style scoped>

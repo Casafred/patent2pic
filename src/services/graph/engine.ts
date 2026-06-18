@@ -11,8 +11,8 @@ import type { ExtractResult, ExtractGroup } from '@/types/ai'
 import { buildNode, updateNodeStyle, calculateNodeSize } from './node-builder'
 import { buildEdge, buildTrunkEdge, buildBranchEdge, updateEdgeStyle } from './edge-builder'
 import { applyElkLayout, type ElkLayoutOptions } from './layout'
-import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle } from './style-registry'
-import { setupCustomEdge } from './custom-edge'
+import { getDefaultNodeStyle, getDefaultEdgeStyle, getHierarchyNodeStyle, arrowTypeToMarker } from './style-registry'
+import { setupCustomEdge, EdgeViewWithGap } from './custom-edge'
 import { timingStart, timingEnd } from '@/utils/timing'
 
 export class GraphEngine {
@@ -39,7 +39,7 @@ export class GraphEngine {
         anchor: 'center',
         connectionPoint: 'perpendicularBoundary',
         allowBlank: false,
-        allowLoop: false,
+        allowLoop: true,
         allowMulti: true,
         snap: { radius: 30 },
         createEdge() {
@@ -80,13 +80,38 @@ export class GraphEngine {
             }
 
             if (edgeData?.originalText !== undefined) {
-              if (type === 'source') {
-                return sourceCell.id === edge.getSourceCellId() && targetCell.id === edge.getTargetCellId()
-              }
-              return sourceCell.id === edge.getSourceCellId() && targetCell.id === edge.getTargetCellId()
+              // Use stored original node IDs for validation.
+              // edge.getSourceCellId()/getTargetCellId() are unreliable because
+              // snapArrowhead updates terminals in real-time via setTerminal().
+              const origSourceId = (edgeData._origSourceId as string) || edge.getSourceCellId()
+              const origTargetId = (edgeData._origTargetId as string) || edge.getTargetCellId()
+              return sourceCell.id === origSourceId && targetCell.id === origTargetId
             }
           }
 
+          return true
+        },
+        validateEdge({ edge, type, previous }) {
+          const edgeData = edge.getData() as Record<string, unknown> | undefined
+          if (edgeData?.originalText !== undefined) {
+            const prevTerminal = previous as unknown as Record<string, unknown>
+            const prevCellId = prevTerminal?.cell as string | undefined
+            if (type === 'source') {
+              const origSourceId = (edgeData._origSourceId as string) || prevCellId
+              if (edge.getSourceCellId() !== origSourceId) return false
+            } else {
+              const origTargetId = (edgeData._origTargetId as string) || prevCellId
+              if (edge.getTargetCellId() !== origTargetId) return false
+            }
+            // Update stored IDs with the new port info (port may have changed)
+            const currentSource = edge.getSource() as unknown as Record<string, unknown>
+            const currentTarget = edge.getTarget() as unknown as Record<string, unknown>
+            edge.setData({
+              ...edgeData,
+              _origSourceId: currentSource?.cell as string || edgeData._origSourceId,
+              _origTargetId: currentTarget?.cell as string || edgeData._origTargetId,
+            })
+          }
           return true
         },
       },
@@ -116,6 +141,25 @@ export class GraphEngine {
 
     this.graph.on('edge:mouseleave', ({ edge }: { edge: any }) => {
       edge.removeTools()
+    })
+
+    // Batch arrowhead drag operations so they appear as a single undo step
+    // snapArrowhead calls setTerminal() on every mousemove, which creates
+    // multiple history entries without batching
+    let arrowheadDragging = false
+    this.graph.on('cell:mousedown', ({ e, cell }: { e: MouseEvent; cell: any }) => {
+      if (!cell || !cell.isEdge()) return
+      const target = e.target as HTMLElement
+      if (target && target.getAttribute('data-terminal')) {
+        arrowheadDragging = true
+        this.graph!.startBatch('arrowhead-drag')
+      }
+    })
+    this.graph.on('cell:mouseup', () => {
+      if (arrowheadDragging) {
+        arrowheadDragging = false
+        this.graph!.stopBatch('arrowhead-drag')
+      }
     })
 
     this.graph.on('edge:click', ({ edge }: { edge: any }) => {
@@ -159,6 +203,9 @@ export class GraphEngine {
         allowReverse: false,
       },
     }))
+
+    // Create a shared labels layer so edge labels render above ALL edge lines
+    this.setupLabelsLayer()
   }
 
   destroy(): void {
@@ -166,6 +213,34 @@ export class GraphEngine {
       this.graph.dispose()
       this.graph = null
     }
+  }
+
+  /**
+   * Create a shared SVG group for edge labels, positioned after all edges
+   * but before nodes. This ensures all edge labels render above all edge
+   * lines, fixing the issue where one edge's line covers another edge's label.
+   */
+  private setupLabelsLayer(): void {
+    if (!this.graph) return
+    const container = this.graph.container
+    const viewport = container.querySelector('.x6-graph-svg-viewport') as SVGElement | null
+    if (!viewport) return
+
+    const labelsLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    labelsLayer.setAttribute('class', 'edge-labels-layer')
+    // Insert before the first node container, or at the end if no nodes
+    const firstNode = viewport.querySelector('.x6-node')
+    if (firstNode) {
+      viewport.insertBefore(labelsLayer, firstNode)
+    } else {
+      viewport.appendChild(labelsLayer)
+    }
+    EdgeViewWithGap.setLabelsLayer(labelsLayer)
+
+    // When edges are removed, reorganize labels to clean up
+    this.graph.on('edge:removed', () => {
+      EdgeViewWithGap.scheduleLabelsReorganize()
+    })
   }
 
   getGraph(): Graph | null {
@@ -197,17 +272,43 @@ export class GraphEngine {
       }
     })
 
-    const edgeDataList: EdgeData[] = result.edges.map(e => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      originalText: e.originalText,
-      chineseText: e.chineseText,
-      relationType: e.relationType,
-      style: getDefaultEdgeStyle(e.relationType),
-    }))
+    const edgeDataList: EdgeData[] = result.edges
+      .filter(e => e.relationType !== 'attribute' || e.source !== e.target)
+      .map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        originalText: e.originalText,
+        chineseText: e.chineseText,
+        relationType: e.relationType,
+        style: getDefaultEdgeStyle(e.relationType),
+      }))
 
-    const autoGroupInfoMap = new Map<string, { memberNodeIds: string[] }>()
+    const attributeEdgeList: EdgeData[] = result.edges
+      .filter(e => e.relationType === 'attribute' && e.source === e.target)
+      .map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        originalText: e.originalText,
+        chineseText: e.chineseText,
+        relationType: e.relationType,
+        style: getDefaultEdgeStyle(e.relationType),
+      }))
+
+    // Find the minimum hierarchy level (level 0 = topmost/root level)
+    let minHierarchyLevel = Infinity
+    for (const nodeData of nodeDataList) {
+      if ((nodeData.hierarchyLevel ?? 0) < minHierarchyLevel) {
+        minHierarchyLevel = nodeData.hierarchyLevel ?? 0
+      }
+    }
+    const nodeHierarchyMap = new Map<string, number>()
+    for (const nodeData of nodeDataList) {
+      nodeHierarchyMap.set(nodeData.id, nodeData.hierarchyLevel ?? 0)
+    }
+
+    const autoGroupInfoMap = new Map<string, { memberNodeIds: string[]; isContainmentGroup?: boolean }>()
     const outgoingInfoMap = new Map<string, {
       containmentTargets: Set<string>
       hasOtherOutgoing: boolean
@@ -235,9 +336,18 @@ export class GraphEngine {
       }
     }
     for (const [nodeId, info] of outgoingInfoMap) {
-      if (!info.hasOtherOutgoing && info.containmentTargets.size >= 3) {
+      const nodeLevel = nodeHierarchyMap.get(nodeId) ?? 0
+      if (nodeLevel <= minHierarchyLevel && info.containmentTargets.size >= 1) {
+        // Topmost hierarchy level nodes become group boxes themselves
         autoGroupInfoMap.set(nodeId, {
           memberNodeIds: [...info.containmentTargets],
+        })
+      } else if (info.containmentTargets.size >= 1) {
+        // Non-topmost level nodes: keep the node, create a group box for children,
+        // and replace multiple containment edges with a single edge to the group box
+        autoGroupInfoMap.set(nodeId, {
+          memberNodeIds: [...info.containmentTargets],
+          isContainmentGroup: true,
         })
       }
     }
@@ -352,6 +462,11 @@ export class GraphEngine {
     }
     timingEnd(`    │    添加节点和边`)
 
+    // Render attribute edges as property tags below nodes
+    if (attributeEdgeList.length > 0) {
+      this.renderAttributeTags(attributeEdgeList, isChinese)
+    }
+
     if (autoGroupInfoMap.size > 0) {
       this.convertAutoGroupNodes(autoGroupInfoMap, isChinese)
     }
@@ -411,7 +526,8 @@ export class GraphEngine {
 
       const bounds = this.getNodesBounds(memberNodes)
 
-      const padding = 20
+      const padding = 25
+      const labelSpace = 36
       const groupLabel = isChinese
         ? (group.label.chinese || group.label.original)
         : `${group.label.original}\n${group.label.chinese}`
@@ -419,9 +535,9 @@ export class GraphEngine {
       this.graph.addNode({
         id: group.id,
         x: bounds.minX - padding,
-        y: bounds.minY - padding - 24,
+        y: bounds.minY - padding - labelSpace,
         width: bounds.maxX - bounds.minX + padding * 2,
-        height: bounds.maxY - bounds.minY + padding * 2 + 24,
+        height: bounds.maxY - bounds.minY + padding * 2 + labelSpace,
         shape: 'rect',
         zIndex: -1,
         attrs: {
@@ -437,7 +553,7 @@ export class GraphEngine {
           },
           label: {
             text: groupLabel,
-            fontSize: 11,
+            fontSize: 20,
             fill: '#fa8c16',
             fontWeight: 'bold',
             textAnchor: 'left',
@@ -457,6 +573,143 @@ export class GraphEngine {
     }
 
     this.bindGroupTracking()
+  }
+
+  private renderAttributeTags(attributeEdges: EdgeData[], isChinese: boolean): void {
+    if (!this.graph) return
+
+    // Group attribute edges by source node
+    const nodeAttributesMap = new Map<string, EdgeData[]>()
+    for (const attrEdge of attributeEdges) {
+      const existing = nodeAttributesMap.get(attrEdge.source)
+      if (existing) {
+        existing.push(attrEdge)
+      } else {
+        nodeAttributesMap.set(attrEdge.source, [attrEdge])
+      }
+    }
+
+    for (const [nodeId, attrs] of nodeAttributesMap) {
+      const sourceCell = this.graph.getCellById(nodeId)
+      if (!sourceCell || !sourceCell.isNode()) continue
+
+      const sourceNode = sourceCell as unknown as {
+        getPosition: () => { x: number; y: number }
+        getSize: () => { width: number; height: number }
+      }
+      const pos = sourceNode.getPosition()
+      const size = sourceNode.getSize()
+
+      const attrStyle = getDefaultEdgeStyle('attribute')
+      const tagFontSize = 12
+      const tagLineHeight = tagFontSize * 1.4
+      const tagPaddingH = 8
+      const tagPaddingV = 4
+      const tagGap = 6
+      const stemLength = 16
+
+      // Calculate starting Y position below the node
+      let currentY = pos.y + size.height + stemLength
+
+      for (let i = 0; i < attrs.length; i++) {
+        const attrEdge = attrs[i]
+        const labelText = isChinese
+          ? (attrEdge.chineseText || attrEdge.originalText)
+          : `${attrEdge.originalText}\n${attrEdge.chineseText}`
+
+        // Measure text to determine tag size
+        const lines = labelText.split('\n')
+        let maxTextWidth = 0
+        for (const line of lines) {
+          const width = this.measureTextWidth(line, tagFontSize, attrStyle.fontFamily)
+          if (width > maxTextWidth) maxTextWidth = width
+        }
+        const tagWidth = maxTextWidth + tagPaddingH * 2
+        const tagHeight = lines.length * tagLineHeight + tagPaddingV * 2
+
+        const tagX = pos.x + size.width / 2 - tagWidth / 2
+        const tagY = currentY
+
+        // Create a small stem line from node bottom to tag top
+        const stemX = pos.x + size.width / 2
+        const stemStartY = pos.y + size.height
+        const stemEndY = tagY
+
+        // Draw stem as a thin edge (no arrow, dashed)
+        this.graph.addEdge({
+          id: `attr-stem-${attrEdge.id}`,
+          shape: 'edge',
+          source: { x: stemX, y: stemStartY },
+          target: { x: stemX, y: stemEndY },
+          attrs: {
+            line: {
+              stroke: attrStyle.stroke,
+              strokeWidth: 2,
+              strokeDasharray: '3 3',
+              sourceMarker: '',
+              targetMarker: '',
+            },
+          },
+          data: {
+            isAttributeStem: true,
+            attributeEdgeId: attrEdge.id,
+            sourceNodeId: nodeId,
+          },
+          zIndex: 5,
+        })
+
+        // Create the tag label node
+        this.graph.addNode({
+          id: `attr-tag-${attrEdge.id}`,
+          x: tagX,
+          y: tagY,
+          width: tagWidth,
+          height: tagHeight,
+          shape: 'rect',
+          attrs: {
+            body: {
+              fill: '#e6fffb',
+              fillOpacity: 0.9,
+              stroke: attrStyle.stroke,
+              strokeWidth: 1.5,
+              strokeDasharray: '',
+              rx: 4,
+              ry: 4,
+            },
+            label: {
+              text: labelText,
+              fontSize: tagFontSize,
+              fontFamily: attrStyle.fontFamily,
+              fill: '#08979c',
+              fontWeight: 'normal',
+              textAnchor: 'middle',
+              textVerticalAnchor: 'middle',
+              lineHeight: tagLineHeight,
+            },
+          },
+          data: {
+            isAttributeTag: true,
+            attributeEdgeId: attrEdge.id,
+            sourceNodeId: nodeId,
+            originalText: attrEdge.originalText,
+            chineseText: attrEdge.chineseText,
+            relationType: 'attribute',
+            style: attrStyle,
+          },
+          zIndex: 5,
+        })
+
+        currentY = tagY + tagHeight + tagGap
+      }
+    }
+  }
+
+  private measureTextWidth(text: string, fontSize: number, fontFamily: string): number {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return text.length * fontSize * 0.6
+    ctx.font = `normal ${fontSize}px ${fontFamily}`
+    return ctx.measureText(text).width
   }
 
   private getNodesBounds(nodes: unknown[]): { minX: number; minY: number; maxX: number; maxY: number } {
@@ -486,7 +739,7 @@ export class GraphEngine {
     this.graph.on('node:moved', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined; attr: (path: string, value?: unknown) => unknown } }) => {
       if (isUpdatingGroup) return
       const data = node.getData()
-      if (data?.isForkNode) return
+      if (data?.isForkNode || data?.isAttributeTag) return
       if (data?.isGroup) {
         this.restoreGroupVisibility(node)
         return
@@ -494,13 +747,14 @@ export class GraphEngine {
       isUpdatingGroup = true
       this.updateGroupBoundsForMember(node.id)
       this.updateForkNodePositions()
+      this.updateAttributeTagPositions(node.id)
       isUpdatingGroup = false
     })
 
     this.graph.on('node:change:position', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined; attr: (path: string, value?: unknown) => unknown } }) => {
       if (isUpdatingGroup) return
       const data = node.getData()
-      if (data?.isForkNode) return
+      if (data?.isForkNode || data?.isAttributeTag) return
       if (data?.isGroup) {
         this.restoreGroupVisibility(node)
         return
@@ -508,6 +762,7 @@ export class GraphEngine {
       isUpdatingGroup = true
       this.updateGroupBoundsForMember(node.id)
       this.updateForkNodePositions()
+      this.updateAttributeTagPositions(node.id)
       isUpdatingGroup = false
     })
   }
@@ -537,7 +792,7 @@ export class GraphEngine {
   }
 
   private convertAutoGroupNodes(
-    autoGroupInfoMap: Map<string, { memberNodeIds: string[] }>,
+    autoGroupInfoMap: Map<string, { memberNodeIds: string[]; isContainmentGroup?: boolean }>,
     isChinese: boolean,
   ): void {
     if (!this.graph) return
@@ -594,58 +849,185 @@ export class GraphEngine {
       if (memberNodes.length === 0) continue
 
       const bounds = this.getNodesBounds(memberNodes)
-      const padding = 20
+      const padding = 25
+      const labelSpace = 36
 
       const nodeData = cell.getData() as Record<string, unknown>
       const groupLabel = isChinese
         ? ((nodeData?.chineseText as string) || (nodeData?.originalText as string) || '')
         : `${nodeData?.originalText || ''}\n${nodeData?.chineseText || ''}`
 
-      const node = cell as unknown as {
-        setPosition: (x: number, y: number) => void
-        resize: (width: number, height: number) => void
-        attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
-        setData: (data: Record<string, unknown>) => void
-        setZIndex: (z: number) => void
-      }
+      if (info.isContainmentGroup) {
+        // Non-topmost level: keep the original node, create a new group box for children,
+        // and add a single containment edge from the original node to the group box
+        const groupBoxId = `containment-group-${nodeId}`
 
-      node.setPosition(bounds.minX - padding, bounds.minY - padding - 24)
-      node.resize(
-        bounds.maxX - bounds.minX + padding * 2,
-        bounds.maxY - bounds.minY + padding * 2 + 24,
-      )
-      node.attr({
-        body: {
-          fill: '#fafafa',
-          fillOpacity: 0.5,
-          stroke: '#fa8c16',
-          strokeWidth: 1.5,
-          strokeDasharray: '6 3',
-          rx: 8,
-          ry: 8,
-          pointerEvents: 'stroke',
-        },
-        label: {
-          text: groupLabel,
-          fontSize: 11,
-          fill: '#fa8c16',
-          fontWeight: 'bold',
-          textAnchor: 'left',
-          textVerticalAnchor: 'top',
-          refX: 12,
-          refY: 8,
-          pointerEvents: 'none',
-        },
-      })
-      node.setData({
-        ...nodeData,
-        isGroup: true,
-        isAutoGroup: true,
-        label: { original: nodeData?.originalText || '', chinese: nodeData?.chineseText || '' },
-        memberNodeIds: info.memberNodeIds,
-        detached: false,
-      })
-      node.setZIndex(-1)
+        this.graph.addNode({
+          id: groupBoxId,
+          x: bounds.minX - padding,
+          y: bounds.minY - padding - labelSpace,
+          width: bounds.maxX - bounds.minX + padding * 2,
+          height: bounds.maxY - bounds.minY + padding * 2 + labelSpace,
+          shape: 'rect',
+          zIndex: -1,
+          attrs: {
+            body: {
+              fill: '#fafafa',
+              fillOpacity: 0.5,
+              stroke: '#fa8c16',
+              strokeWidth: 1.5,
+              strokeDasharray: '6 3',
+              rx: 8,
+              ry: 8,
+              pointerEvents: 'stroke',
+            },
+            label: {
+              text: groupLabel,
+              fontSize: 20,
+              fill: '#fa8c16',
+              fontWeight: 'bold',
+              textAnchor: 'left',
+              textVerticalAnchor: 'top',
+              refX: 12,
+              refY: 8,
+              pointerEvents: 'none',
+            },
+          },
+          data: {
+            isGroup: true,
+            isAutoGroup: true,
+            isContainmentGroup: true,
+            label: { original: nodeData?.originalText || '', chinese: nodeData?.chineseText || '' },
+            memberNodeIds: info.memberNodeIds,
+            sourceNodeId: nodeId,
+            detached: false,
+          },
+        })
+
+        // Create a single containment edge from the original node to the group box
+        const containmentStyle = getDefaultEdgeStyle('containment')
+        const containmentLabel = isChinese ? '包含' : '包含\ncontainment'
+
+        this.graph.addEdge({
+          id: `containment-edge-${nodeId}`,
+          shape: 'edge-with-gap',
+          view: 'edge-with-gap-view',
+          source: { cell: nodeId, connectionPoint: 'perpendicularBoundary' },
+          target: { cell: groupBoxId, connectionPoint: 'perpendicularBoundary' },
+          router: { name: 'perpendicularManhattan', args: { padding: 20, step: 10 } },
+          connector: { name: 'rounded', args: { radius: 8 } },
+          attrs: {
+            line: {
+              stroke: containmentStyle.stroke,
+              strokeWidth: containmentStyle.strokeWidth,
+              strokeDasharray: containmentStyle.strokeDasharray ?? '',
+              sourceMarker: undefined,
+              targetMarker: { name: arrowTypeToMarker(containmentStyle.arrowType) || '' },
+            },
+          },
+          labels: [
+            {
+              markup: [
+                { tagName: 'rect', selector: 'bg' },
+                { tagName: 'text', selector: 'labelText' },
+              ],
+              attrs: {
+                bg: {
+                  ref: 'labelText',
+                  refWidth: 1.2,
+                  refHeight: 1.4,
+                  refX: -0.1,
+                  refY: -0.2,
+                  fill: 'transparent',
+                  stroke: 'none',
+                  strokeWidth: 0,
+                  rx: 4,
+                  ry: 4,
+                  cursor: 'move',
+                  pointerEvents: 'all',
+                },
+                labelText: {
+                  text: containmentLabel,
+                  fontSize: containmentStyle.fontSize,
+                  fontFamily: containmentStyle.fontFamily,
+                  fill: containmentStyle.fontColor,
+                  fontWeight: 'bold',
+                  textAnchor: 'middle',
+                  textVerticalAnchor: 'middle',
+                  lineHeight: containmentStyle.fontSize * 1.6,
+                  stroke: '#ffffff',
+                  strokeWidth: 6,
+                  paintOrder: 'stroke fill',
+                  strokeLinejoin: 'round',
+                  pointerEvents: 'none',
+                },
+              },
+              position: {
+                distance: 0.5,
+                offset: { x: 0, y: 0 },
+              },
+            },
+          ],
+          data: {
+            originalText: '包含',
+            chineseText: 'containment',
+            relationType: 'containment',
+            style: containmentStyle,
+            labelDetached: false,
+            isContainmentGroupEdge: true,
+            sourceNodeId: nodeId,
+            groupBoxId,
+          },
+          zIndex: 10,
+        })
+      } else {
+        // Topmost level: transform the node itself into a group box
+        const node = cell as unknown as {
+          setPosition: (x: number, y: number) => void
+          resize: (width: number, height: number) => void
+          attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
+          setData: (data: Record<string, unknown>) => void
+          setZIndex: (z: number) => void
+        }
+
+        node.setPosition(bounds.minX - padding, bounds.minY - padding - labelSpace)
+        node.resize(
+          bounds.maxX - bounds.minX + padding * 2,
+          bounds.maxY - bounds.minY + padding * 2 + labelSpace,
+        )
+        node.attr({
+          body: {
+            fill: '#fafafa',
+            fillOpacity: 0.5,
+            stroke: '#fa8c16',
+            strokeWidth: 1.5,
+            strokeDasharray: '6 3',
+            rx: 8,
+            ry: 8,
+            pointerEvents: 'stroke',
+          },
+          label: {
+            text: groupLabel,
+            fontSize: 20,
+            fill: '#fa8c16',
+            fontWeight: 'bold',
+            textAnchor: 'left',
+            textVerticalAnchor: 'top',
+            refX: 12,
+            refY: 8,
+            pointerEvents: 'none',
+          },
+        })
+        node.setData({
+          ...nodeData,
+          isGroup: true,
+          isAutoGroup: true,
+          label: { original: nodeData?.originalText || '', chinese: nodeData?.chineseText || '' },
+          memberNodeIds: info.memberNodeIds,
+          detached: false,
+        })
+        node.setZIndex(-1)
+      }
     }
 
     this.updateGroupBoundsForMember('')
@@ -717,6 +1099,65 @@ export class GraphEngine {
     }
   }
 
+  private updateAttributeTagPositions(nodeId: string): void {
+    if (!this.graph) return
+
+    // Find all attribute tags and stems belonging to this node
+    const attrTags = this.graph.getNodes().filter(n => {
+      const data = n.getData() as Record<string, unknown> | undefined
+      return data?.isAttributeTag && data?.sourceNodeId === nodeId
+    })
+
+    if (attrTags.length === 0) return
+
+    const sourceCell = this.graph.getCellById(nodeId)
+    if (!sourceCell || !sourceCell.isNode()) return
+
+    const sourceNode = sourceCell as unknown as {
+      getPosition: () => { x: number; y: number }
+      getSize: () => { width: number; height: number }
+    }
+    const pos = sourceNode.getPosition()
+    const size = sourceNode.getSize()
+
+    const stemLength = 16
+    const tagGap = 6
+    let currentY = pos.y + size.height + stemLength
+
+    // Sort tags by their current Y position to maintain order
+    const sortedTags = [...attrTags].sort((a, b) => {
+      const aNode = a as unknown as { getPosition: () => { x: number; y: number } }
+      const bNode = b as unknown as { getPosition: () => { x: number; y: number } }
+      return aNode.getPosition().y - bNode.getPosition().y
+    })
+
+    for (const tagNode of sortedTags) {
+      const tagData = tagNode.getData() as Record<string, unknown>
+      const tagN = tagNode as unknown as {
+        getPosition: () => { x: number; y: number }
+        getSize: () => { width: number; height: number }
+        setPosition: (x: number, y: number) => void
+      }
+      const tagSize = tagN.getSize()
+      const tagX = pos.x + size.width / 2 - tagSize.width / 2
+      tagN.setPosition(tagX, currentY)
+
+      // Update the corresponding stem edge
+      const attrEdgeId = tagData.attributeEdgeId as string
+      const stemEdge = this.graph.getEdges().find(e => {
+        const eData = e.getData() as Record<string, unknown> | undefined
+        return eData?.isAttributeStem && eData?.attributeEdgeId === attrEdgeId
+      })
+      if (stemEdge) {
+        const stemX = pos.x + size.width / 2
+        stemEdge.setSource({ x: stemX, y: pos.y + size.height })
+        stemEdge.setTarget({ x: stemX, y: currentY })
+      }
+
+      currentY = currentY + tagSize.height + tagGap
+    }
+  }
+
   updateGroupBoundsForMember(nodeId: string): void {
     if (!this.graph) return
 
@@ -737,16 +1178,17 @@ export class GraphEngine {
       if (memberNodes.length === 0) continue
 
       const bounds = this.getNodesBounds(memberNodes)
-      const padding = 20
+      const padding = 25
+      const labelSpace = 36
 
       const g = groupNode as unknown as {
         setPosition: (x: number, y: number) => void
         resize: (width: number, height: number) => void
       }
-      g.setPosition(bounds.minX - padding, bounds.minY - padding - 24)
+      g.setPosition(bounds.minX - padding, bounds.minY - padding - labelSpace)
       g.resize(
         bounds.maxX - bounds.minX + padding * 2,
-        bounds.maxY - bounds.minY + padding * 2 + 24
+        bounds.maxY - bounds.minY + padding * 2 + labelSpace
       )
     }
   }
@@ -984,7 +1426,7 @@ export class GraphEngine {
         },
         label: {
           text: label,
-          fontSize: 11,
+          fontSize: 20,
           fill: '#fa8c16',
           fontWeight: 'bold',
           textAnchor: 'left',
@@ -1034,6 +1476,27 @@ export class GraphEngine {
     if (!this.graph) return
     const cell = this.graph.getCellById(id)
     if (cell && cell.isNode()) {
+      const data = cell.getData() as Record<string, unknown> | undefined
+      // For group nodes, only update visual attrs, never resize (which would collapse the group box)
+      if (data?.isGroup) {
+        this.graph.startBatch('nodeStyle')
+        const n = cell as unknown as { attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void }
+        const bodyAttrs: Record<string, unknown> = {}
+        const labelAttrs: Record<string, unknown> = {}
+        if (style.fill !== undefined) bodyAttrs.fill = style.fill
+        if (style.stroke !== undefined) bodyAttrs.stroke = style.stroke
+        if (style.strokeWidth !== undefined) bodyAttrs.strokeWidth = style.strokeWidth
+        if (style.strokeDasharray !== undefined) bodyAttrs.strokeDasharray = style.strokeDasharray ?? ''
+        if (style.borderRadius !== undefined) { bodyAttrs.rx = style.borderRadius; bodyAttrs.ry = style.borderRadius }
+        if (style.fontSize !== undefined) labelAttrs.fontSize = style.fontSize
+        if (style.fontFamily !== undefined) labelAttrs.fontFamily = style.fontFamily
+        if (style.fontColor !== undefined) labelAttrs.fill = style.fontColor
+        if (style.fontWeight !== undefined) labelAttrs.fontWeight = style.fontWeight
+        if (Object.keys(bodyAttrs).length > 0) n.attr({ body: bodyAttrs })
+        if (Object.keys(labelAttrs).length > 0) n.attr({ label: labelAttrs })
+        this.graph.stopBatch('nodeStyle')
+        return
+      }
       this.graph.startBatch('nodeStyle')
       updateNodeStyle(cell, style)
       this.graph.stopBatch('nodeStyle')
@@ -1185,9 +1648,39 @@ export class GraphEngine {
     const nodes = this.graph.getNodes()
     for (const node of nodes) {
       const data = node.getData() as Record<string, unknown> | undefined
-      if (data?.isForkNode || data?.isGroup) continue
-      const n = node as unknown as { attr: (path: string, value?: unknown) => unknown }
+      if (data?.isForkNode) continue
+
+      const n = node as unknown as {
+        attr: (path: string, value?: unknown) => unknown
+        getSize: () => { width: number; height: number }
+        resize: (width: number, height: number) => void
+        getData: () => Record<string, unknown> | undefined
+        setData: (data: Record<string, unknown>) => void
+      }
       n.attr('label/fontSize', fontSize)
+
+      if (data?.isGroup) {
+        // For group nodes, only update font size, don't resize (would collapse the group box)
+        const currentData = n.getData() || {}
+        n.setData({ ...currentData, groupFontSize: fontSize })
+        continue
+      }
+
+      // Recalculate node size based on new font size to prevent text overflow
+      const originalText = (data?.originalText as string) || ''
+      const chineseText = (data?.chineseText as string) || ''
+      const nodeStyle = (data?.style as Record<string, unknown>) || {}
+      const fontFamily = (nodeStyle.fontFamily as string) || '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+      const fontWeight = (nodeStyle.fontWeight as string) || 'bold'
+      const isChinese = (data?.isChinese as boolean) || false
+      const currentSize = n.getSize()
+      const newSize = calculateNodeSize(originalText, chineseText, isChinese, fontSize, fontFamily, fontWeight, currentSize.width, currentSize.height)
+      n.resize(newSize.width, newSize.height)
+
+      // Update stored style
+      const currentData = n.getData() || {}
+      const currentStyle = (currentData.style as Record<string, unknown>) || {}
+      n.setData({ ...currentData, style: { ...currentStyle, fontSize } })
     }
     this.graph.stopBatch('fontSize')
   }
@@ -1197,7 +1690,7 @@ export class GraphEngine {
     this.graph.startBatch('fontSize')
     const edges = this.graph.getEdges()
     for (const edge of edges) {
-      const e = edge as { getLabels: () => unknown[]; setLabels: (labels: unknown[]) => void }
+      const e = edge as { getLabels: () => unknown[]; setLabels: (labels: unknown[]) => void; getData: () => Record<string, unknown> | undefined; setData: (data: Record<string, unknown>) => void }
       const labels = e.getLabels()
       if (labels.length > 0) {
         const firstLabel = labels[0] as Record<string, unknown>
@@ -1212,11 +1705,17 @@ export class GraphEngine {
             labelText: {
               ...existingLabelText,
               fontSize,
+              lineHeight: fontSize * 1.6,
             },
           },
         }
         e.setLabels([newLabel])
       }
+
+      // Update stored style
+      const edgeData = e.getData() || {}
+      const edgeStyle = (edgeData.style as Record<string, unknown>) || {}
+      e.setData({ ...edgeData, style: { ...edgeStyle, fontSize } })
     }
     this.graph.stopBatch('fontSize')
   }
@@ -1382,7 +1881,7 @@ export class GraphEngine {
 
     const padding = options?.padding ?? 40
     const backgroundColor = options?.backgroundColor ?? '#ffffff'
-    const scale = options?.scale ?? 3
+    const scale = options?.scale ?? 4
 
     return new Promise<Blob | null>((resolve) => {
       this.graph!.toPNG((dataUrl: string) => {
@@ -1412,30 +1911,40 @@ export class GraphEngine {
     if (!this.graph) return ''
 
     const padding = _options?.padding ?? 40
-    const contentArea = this.graph.getContentArea()
-    const contentBBox = contentArea.x !== undefined ? contentArea : null
+    const contentBBox = this.graph.getContentBBox()
 
     let svgStr = ''
     this.graph.toSVG((svg: string) => {
-      if (contentBBox && (contentBBox as { x: number }).x !== undefined) {
-        const bbox = contentBBox as { x: number; y: number; width: number; height: number }
-        const svgWidth = bbox.width + padding * 2
-        const svgHeight = bbox.height + padding * 2
-        const viewBox = `${bbox.x - padding} ${bbox.y - padding} ${svgWidth} ${svgHeight}`
-        svgStr = svg.replace(
-          /<svg([^>]*)>/,
-          (_, attrs: string) => {
-            const cleaned = attrs
-              .replace(/\s*viewBox\s*=\s*["'][^"']*["']/g, '')
-              .replace(/\s*width\s*=\s*["'][^"']*["']/g, '')
-              .replace(/\s*height\s*=\s*["'][^"']*["']/g, '')
-            return `<svg${cleaned} viewBox="${viewBox}" width="${svgWidth}" height="${svgHeight}">`
-          }
-        )
-      } else {
-        svgStr = svg
-      }
+      svgStr = svg
     })
+
+    if (!svgStr) return ''
+
+    // Manually set viewBox and dimensions to ensure complete display
+    const svgWidth = contentBBox.width + padding * 2
+    const svgHeight = contentBBox.height + padding * 2
+    const viewBox = `${contentBBox.x - padding} ${contentBBox.y - padding} ${svgWidth} ${svgHeight}`
+
+    svgStr = svgStr.replace(
+      /<svg([^>]*)>/,
+      (_, attrs: string) => {
+        const cleaned = attrs
+          .replace(/\s*viewBox\s*=\s*["'][^"']*["']/g, '')
+          .replace(/\s*width\s*=\s*["'][^"']*["']/g, '')
+          .replace(/\s*height\s*=\s*["'][^"']*["']/g, '')
+        // Ensure xmlns declarations
+        let newAttrs = cleaned
+        if (!newAttrs.includes('xmlns="http://www.w3.org/2000/svg"')) {
+          newAttrs = ' xmlns="http://www.w3.org/2000/svg"' + newAttrs
+        }
+        if (!newAttrs.includes('xmlns:xlink')) {
+          newAttrs = ' xmlns:xlink="http://www.w3.org/1999/xlink"' + newAttrs
+        }
+        // Use 100% width/height so the SVG fills the browser window and centers via viewBox
+        return `<svg${newAttrs} viewBox="${viewBox}" width="100%" height="100%">`
+      }
+    )
+
     return svgStr
   }
 

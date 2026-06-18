@@ -9,7 +9,7 @@ function isTauri(): boolean {
 export function useExport() {
 
   async function exportPNG(): Promise<Blob | null> {
-    return graphEngine.toPNG({ padding: 40, scale: 3 })
+    return graphEngine.toPNG({ padding: 40, scale: 4 })
   }
 
   function exportSVG(): string {
@@ -36,15 +36,15 @@ export function useExport() {
       const extensions: Record<ExportFormat, string[]> = {
         png: ['png'],
         svg: ['svg'],
-        html: ['html'],
         p2p: ['p2p'],
+        html: ['html'],
       }
 
       const defaultNames: Record<ExportFormat, string> = {
         png: 'patent2pic-graph.png',
         svg: 'patent2pic-graph.svg',
-        html: 'patent2pic-graph.html',
         p2p: 'patent2pic-graph.p2p',
+        html: 'patent2pic-interactive.html',
       }
 
       const path = await save({
@@ -102,7 +102,7 @@ export function useExport() {
       case 'html': {
         const html = exportHTML()
         const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-        downloadBlob(blob, 'patent2pic-graph.html')
+        downloadBlob(blob, 'patent2pic-interactive.html')
         break
       }
     }

@@ -16,19 +16,22 @@ export function useGraph() {
 
   function bindEvents(): void {
     graphEngine.on('node:click', (args: unknown) => {
-      const { node, e } = args as { node: { id: string }; e: { ctrlKey: boolean; metaKey: boolean } }
+      const { node, e } = args as { node: { id: string; getData: () => Record<string, unknown> | undefined }; e: { ctrlKey: boolean; metaKey: boolean } }
+      const data = node.getData()
+      // If clicking an attribute tag, highlight its source node instead
+      const targetId = (data?.isAttributeTag && data?.sourceNodeId) ? data.sourceNodeId as string : node.id
       if (e.ctrlKey || e.metaKey) {
         const current = editorStore.highlightedNodeIds
-        const idx = current.indexOf(node.id)
+        const idx = current.indexOf(targetId)
         if (idx >= 0) {
           const newIds = [...current]
           newIds.splice(idx, 1)
           editorStore.highlightNodes(newIds)
         } else {
-          editorStore.highlightNodes([...current, node.id])
+          editorStore.highlightNodes([...current, targetId])
         }
       } else {
-        editorStore.highlightNodes([node.id])
+        editorStore.highlightNodes([targetId])
       }
     })
 

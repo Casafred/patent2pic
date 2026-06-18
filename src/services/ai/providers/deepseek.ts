@@ -25,7 +25,7 @@ export class DeepSeekProvider implements AIProviderAdapter {
     const body: Record<string, unknown> = {
       model: params.model,
       messages: params.messages,
-      max_tokens: params.maxTokens ?? (isThinking ? 32768 : 16384),
+      max_tokens: params.maxTokens ?? (isThinking ? 65536 : 32768),
       stream: true,
       stream_options: { include_usage: true },
     }

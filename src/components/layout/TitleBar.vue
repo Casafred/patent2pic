@@ -1,7 +1,7 @@
 <template>
   <div class="title-bar" data-tauri-drag-region>
     <div class="title-bar-left" data-tauri-drag-region>
-      <span class="app-icon">P2P</span>
+      <img src="/logo.webp" alt="P2P" class="app-logo" />
       <span class="app-title">Patent2Pic</span>
     </div>
     <div class="title-bar-center" data-tauri-drag-region>
@@ -44,17 +44,11 @@ const showAIConfig = ref(false)
   gap: 8px;
 }
 
-.app-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.app-logo {
   width: 24px;
   height: 24px;
   border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: white;
-  font-size: 10px;
-  font-weight: bold;
+  object-fit: contain;
 }
 
 .app-title {

@@ -52,8 +52,29 @@ export function getDefaultBaseUrl(providerType: AIProviderType): string {
 export function getDefaultModels(providerType: AIProviderType): string[] {
   switch (providerType) {
     case 'openai': return ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo']
-    case 'zhipu': return ['glm-5.1', 'glm-5', 'glm-4-plus', 'glm-4-flash', 'glm-4-air', 'glm-4']
+    case 'zhipu': return ['glm-4.5', 'glm-4-plus', 'glm-5.1', 'glm-5', 'glm-4.7', 'glm-4.6']
     case 'deepseek': return ['deepseek-v4-flash', 'deepseek-v4-pro']
+  }
+}
+
+export function getModelConcurrency(providerType: AIProviderType, model: string): number {
+  switch (providerType) {
+    case 'openai': return 5
+    case 'zhipu': {
+      if (model === 'glm-4.5') return 10
+      if (model === 'glm-4-plus') return 20
+      if (model === 'glm-5.1') return 3
+      if (model === 'glm-5') return 2
+      if (model === 'glm-4.7') return 2
+      if (model === 'glm-4.6') return 3
+      return 3
+    }
+    case 'deepseek': {
+      if (model === 'deepseek-v4-flash') return 2500
+      if (model === 'deepseek-v4-pro') return 500
+      return 500
+    }
+    default: return 3
   }
 }
 
