@@ -280,6 +280,9 @@ function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string 
 
     if (!info) return
 
+    // 强制所有元素可接收鼠标事件（覆盖 X6 的 pointerEvents 设置）
+    el.setAttribute('pointer-events', 'all')
+
     switch (info.type) {
       case 'node':
         el.classList.add('p2p-node')
@@ -294,9 +297,13 @@ function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string 
         // data-source/target：优先使用 realSourceId/realTargetId（trunk/branch），回退到 edgeSourceId/edgeTargetId
         el.setAttribute('data-source', info.realSourceId || info.edgeSourceId || '')
         el.setAttribute('data-target', info.realTargetId || info.edgeTargetId || '')
+        // 边线只响应线条点击
+        el.setAttribute('pointer-events', 'stroke')
         break
       case 'group':
         el.classList.add('p2p-group')
+        // 组合框覆盖 pointer-events: stroke，改为 all 以支持内部点击拖拽
+        el.setAttribute('pointer-events', 'all')
         break
       case 'attr-tag':
         el.classList.add('p2p-attr-tag')
@@ -304,6 +311,7 @@ function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string 
         break
       case 'attr-stem':
         el.classList.add('p2p-attr-stem')
+        el.setAttribute('pointer-events', 'none')
         break
     }
   })
@@ -444,6 +452,8 @@ mark.text-highlight { padding: 1px 3px; border-radius: 3px; font-weight: 600; cu
 .p2p-edge:hover { opacity: 0.7; }
 .p2p-attr-stem { pointer-events: none; }
 .p2p-attr-stem * { pointer-events: none; }
+svg { cursor: default; }
+svg:active { cursor: default; }
 /* 高亮样式 */
 .p2p-node.p2p-highlighted rect { stroke: #e63946 !important; stroke-width: 4 !important; }
 .p2p-node.p2p-highlighted polygon { stroke: #e63946 !important; stroke-width: 4 !important; }
@@ -472,7 +482,7 @@ mark.text-highlight { padding: 1px 3px; border-radius: 3px; font-weight: 600; cu
       <button onclick="clearHighlight()">清除高亮</button>
     </div>
     <div id="svgContainer" style="width:100%;height:100%">${processedSvg}</div>
-    <div class="info-bar">点击节点/边高亮 · Ctrl多选 · 滚轮缩放 · 拖拽节点移动 · 空白区拖拽平移</div>
+    <div class="info-bar">左键点击高亮/拖拽节点 · 右键拖动画布 · 滚轮缩放 · Ctrl多选</div>
   </div>
 </div>
 <script>
@@ -713,9 +723,9 @@ function updateGroupBoundsForMember(nodeId) {
 // ============================================================
 
 function setNodeTransform(el, x, y) {
-  var transform = el.getAttribute('transform') || '';
-  var baseTransform = transform.replace(/translate\\([^)]*\\)/g, '').trim();
-  el.setAttribute('transform', 'translate(' + x + ',' + y + ')' + (baseTransform ? ' ' + baseTransform : ''));
+  // X6 SVG 中节点的 transform 可能是 "translate(x,y)" 或 "matrix(a,b,c,d,e,f)" 格式
+  // 直接用 translate 替换整个 transform，因为节点位置完全由 translate 决定
+  el.setAttribute('transform', 'translate(' + x + ',' + y + ')');
 }
 
 function updateElementTransform(nodeId) {
@@ -760,9 +770,7 @@ function rerouteEdge(edgeId) {
   if (labelEl) {
     var midIdx = Math.floor(points.length / 2);
     var midPoint = points[midIdx] || points[0];
-    var transform = labelEl.getAttribute('transform') || '';
-    var baseTransform = transform.replace(/translate\\([^)]*\\)/g, '').trim();
-    labelEl.setAttribute('transform', 'translate(' + midPoint.x + ',' + midPoint.y + ')' + (baseTransform ? ' ' + baseTransform : ''));
+    labelEl.setAttribute('transform', 'translate(' + midPoint.x + ',' + midPoint.y + ')');
   }
 }
 
@@ -885,13 +893,14 @@ function screenToGraph(clientX, clientY) {
 }
 
 // ============================================================
-// 拖拽逻辑（区分点击和拖拽）
+// 拖拽逻辑（左键拖拽节点/边线，右键拖动画布）
 // ============================================================
 
 var DRAG_THRESHOLD = 4;  // 像素
 var dragState = null;    // {nodeId, el, startClientX, startClientY, startGraphX, startGraphY, startNodeX, startNodeY, isGroup, memberStartPositions, moved}
 
 if (svgEl) {
+  // 左键 mousedown：节点/边线操作
   svgEl.addEventListener('mousedown', function(e) {
     if (e.button !== 0) return;  // 只处理左键
 
@@ -933,19 +942,27 @@ if (svgEl) {
           return;
         }
       } else if (info.type === 'edge') {
-        // 边线：不启动平移，让 click 事件处理高亮
+        // 边线：不启动拖拽，让 click 事件处理高亮
         e.preventDefault();
         return;
       }
-      // attr-stem / fork：忽略，不启动平移
+      // attr-stem / fork：忽略
       return;
     }
 
-    // 空白区域：开始平移
+    // 空白区域左键：也清除高亮（不做平移，平移改用右键）
+    // 不启动任何拖拽，让 click 事件处理
+  });
+
+  // 右键 mousedown：拖动画布
+  svgEl.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+  svgEl.addEventListener('mousedown', function(e) {
+    if (e.button !== 2) return;  // 只处理右键
+    e.preventDefault();
     panning = true;
     panStartClient = { x: e.clientX, y: e.clientY };
     panStart = { x: e.clientX - viewState.x, y: e.clientY - viewState.y };
-    e.preventDefault();
   });
 
   document.addEventListener('mousemove', function(e) {
@@ -1000,18 +1017,25 @@ if (svgEl) {
       }
       dragState = null;
     } else if (panning) {
-      // 判断是否实际平移了（未移动视为点击空白 → 清除高亮）
-      var panMoved = panStartClient && (Math.abs(e.clientX - panStartClient.x) > DRAG_THRESHOLD || Math.abs(e.clientY - panStartClient.y) > DRAG_THRESHOLD);
-      if (!panMoved) {
-        clearAllHighlights();
-        updateAllSentences();
-      }
       panning = false;
       panStartClient = null;
     }
   });
 
-  svgEl.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+  // 左键 click：处理边线点击和空白区域点击
+  svgEl.addEventListener('click', function(e) {
+    if (e.button !== 0) return;  // 只处理左键
+    var info = findCellInfo(e.target);
+    if (info && info.type === 'edge') {
+      handleEdgeClick(info.cellId, e.ctrlKey || e.metaKey);
+      return;
+    }
+    // 点击空白区域时清除高亮
+    if (!info) {
+      clearAllHighlights();
+      updateAllSentences();
+    }
+  });
 }
 
 // ============================================================
@@ -1101,29 +1125,13 @@ function handleEdgeClick(edgeId, ctrlKey) {
 }
 
 function applyNodeHighlights() {
-  document.querySelectorAll('.p2p-node.p2p-highlighted').forEach(function(el) { el.classList.remove('p2p-highlighted'); });
+  svgEl.querySelectorAll('.p2p-node.p2p-highlighted').forEach(function(el) { el.classList.remove('p2p-highlighted'); });
   highlightedNodeIds.forEach(function(id) {
     var el = svgEl.querySelector('[data-cell-id="' + id + '"]') ||
              svgEl.querySelector('[data-id="' + id + '"]');
     if (el) el.classList.add('p2p-highlighted');
   });
   updateLegend();
-}
-
-// 边线点击（独立于拖拽逻辑，通过 click 事件处理）
-if (svgEl) {
-  svgEl.addEventListener('click', function(e) {
-    var info = findCellInfo(e.target);
-    if (info && info.type === 'edge') {
-      handleEdgeClick(info.cellId, e.ctrlKey || e.metaKey);
-      return;
-    }
-    // 点击空白区域时清除高亮（兜底，主要逻辑在 mouseup 中）
-    if (!info) {
-      clearAllHighlights();
-      updateAllSentences();
-    }
-  });
 }
 
 function clearHighlight() { clearAllHighlights(); updateAllSentences(); }
