@@ -631,16 +631,13 @@ export class GraphEngine {
         const tagY = currentY
 
         // Create a small stem line from node bottom to tag top
-        const stemX = pos.x + size.width / 2
-        const stemStartY = pos.y + size.height
-        const stemEndY = tagY
-
-        // Draw stem as a thin edge (no arrow, dashed)
+        // Draw stem as a thin edge from node bottom-center to tag top-center
         this.graph.addEdge({
           id: `attr-stem-${attrEdge.id}`,
           shape: 'edge',
-          source: { x: stemX, y: stemStartY },
-          target: { x: stemX, y: stemEndY },
+          source: { cell: nodeId, anchor: { name: 'bottom' } },
+          target: { cell: `attr-tag-${attrEdge.id}`, anchor: { name: 'top' } },
+          connector: { name: 'normal' },
           attrs: {
             line: {
               stroke: attrStyle.stroke,
@@ -1132,7 +1129,6 @@ export class GraphEngine {
     })
 
     for (const tagNode of sortedTags) {
-      const tagData = tagNode.getData() as Record<string, unknown>
       const tagN = tagNode as unknown as {
         getPosition: () => { x: number; y: number }
         getSize: () => { width: number; height: number }
@@ -1142,17 +1138,7 @@ export class GraphEngine {
       const tagX = pos.x + size.width / 2 - tagSize.width / 2
       tagN.setPosition(tagX, currentY)
 
-      // Update the corresponding stem edge
-      const attrEdgeId = tagData.attributeEdgeId as string
-      const stemEdge = this.graph.getEdges().find(e => {
-        const eData = e.getData() as Record<string, unknown> | undefined
-        return eData?.isAttributeStem && eData?.attributeEdgeId === attrEdgeId
-      })
-      if (stemEdge) {
-        const stemX = pos.x + size.width / 2
-        stemEdge.setSource({ x: stemX, y: pos.y + size.height })
-        stemEdge.setTarget({ x: stemX, y: currentY })
-      }
+      // Stem edge is connected to node and tag node, so it auto-updates with position changes
 
       currentY = currentY + tagSize.height + tagGap
     }
