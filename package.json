@@ -26,7 +26,12 @@
     "@tauri-apps/plugin-store": "^2.2.0",
     "element-plus": "^2.9.1",
     "elkjs": "^0.11.1",
+    "fontkit": "^2.0.4",
+    "linebreak": "^1.1.0",
     "pinia": "^2.3.1",
+    "pptxgenjs": "^4.0.1",
+    "skia-canvas": "^3.0.8",
+    "tslib": "^2.8.1",
     "vue": "^3.5.13",
     "xlsx": "^0.18.5"
   },
