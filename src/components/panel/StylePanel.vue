@@ -25,7 +25,7 @@
           </div>
           <div class="form-row">
             <label>边框样式</label>
-            <el-select v-model="nodeBorderStyle" @change="applyNodeBorderStyle" size="small">
+            <el-select v-model="nodeBorderStyle" @change="applyNodeBorderStyle" size="small" class="full-select">
               <el-option label="实线" value="solid" />
               <el-option label="虚线" value="dashed" />
             </el-select>
@@ -40,7 +40,7 @@
           <h4>文字样式</h4>
           <div class="form-row">
             <label>字体</label>
-            <el-select v-model="nodeStyle.fontFamily" @change="applyNodeStyle" size="small">
+            <el-select v-model="nodeStyle.fontFamily" @change="applyNodeStyle" size="small" class="full-select">
               <el-option v-for="f in FONT_FAMILY_OPTIONS" :key="f.value" :label="f.label" :value="f.value" />
             </el-select>
           </div>
@@ -86,13 +86,13 @@
           </div>
           <div class="form-row">
             <label>线条类型</label>
-            <el-select v-model="edgeLineStyle" @change="applyEdgeLineStyle" size="small">
+            <el-select v-model="edgeLineStyle" @change="applyEdgeLineStyle" size="small" class="full-select">
               <el-option v-for="l in LINE_STYLE_OPTIONS" :key="l.value" :label="l.label" :value="l.value" />
             </el-select>
           </div>
           <div class="form-row">
             <label>箭头样式</label>
-            <el-select v-model="edgeStyle.arrowType" @change="applyEdgeStyle" size="small">
+            <el-select v-model="edgeStyle.arrowType" @change="applyEdgeStyle" size="small" class="full-select">
               <el-option v-for="a in ARROW_TYPE_OPTIONS" :key="a.value" :label="a.label" :value="a.value" />
             </el-select>
           </div>
@@ -300,6 +300,22 @@ function applyEdgeLineStyle(): void {
 .form-row :deep(.el-select),
 .form-row :deep(.el-input-number) {
   flex: 1;
+  min-width: 0;
+}
+
+.form-row :deep(.full-select),
+.form-row :deep(.el-select) {
+  width: 100%;
+}
+
+.form-row :deep(.el-select .el-select__wrapper) {
+  min-width: 0;
+}
+
+.form-row :deep(.el-select .el-select__selected-item span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty-hint {

@@ -26,7 +26,7 @@
       </div>
       <div v-if="isNode" class="form-group">
         <label>节点类型</label>
-        <el-select v-model="nodeType" size="default">
+        <el-select v-model="nodeType" size="default" class="full-select">
           <el-option label="部件 (component)" value="component" />
           <el-option label="子系统 (subsystem)" value="subsystem" />
           <el-option label="特征 (feature)" value="feature" />
@@ -34,7 +34,7 @@
       </div>
       <div v-if="!isNode" class="form-group">
         <label>关系类型</label>
-        <el-select v-model="relationType" size="default">
+        <el-select v-model="relationType" size="default" class="full-select">
           <el-option label="位置关系" value="position" />
           <el-option label="动作关系" value="action" />
           <el-option label="包含关系" value="containment" />
@@ -109,5 +109,9 @@ function handleSave(): void {
   font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+.full-select {
+  width: 100%;
 }
 </style>

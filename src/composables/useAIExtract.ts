@@ -51,7 +51,7 @@ export function useAIExtract() {
     const providerType = aiStore.activeProviderType
     const model = aiStore.activeModel
 
-    const tab = graphStore.addTab(undefined, isChinese, true, claimId ?? null)
+    const tab = graphStore.addTab(undefined, isChinese, true, claimId ?? null, claimStore.rawText, JSON.parse(JSON.stringify(claimStore.claims)), claimStore.activeClaimId)
 
     let fullContent = ''
     let fullReasoning = ''

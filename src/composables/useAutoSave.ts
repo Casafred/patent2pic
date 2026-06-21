@@ -39,6 +39,10 @@ export function useAutoSave() {
           serializedGraph: tab.id === graphStore.activeTabId && graph
             ? graphEngine.toJSON()
             : tab.serializedGraph,
+          // Save current tab's claim data from claimStore if it's the active tab
+          rawText: tab.id === graphStore.activeTabId ? claimStore.rawText : tab.rawText,
+          claims: tab.id === graphStore.activeTabId ? claimStore.claims : tab.claims,
+          activeClaimId: tab.id === graphStore.activeTabId ? claimStore.activeClaimId : tab.activeClaimId,
         })),
         activeTabId: graphStore.activeTabId,
         savedAt: Date.now(),
@@ -88,6 +92,20 @@ export function useAutoSave() {
         graphStore.setActiveTabId(data.activeTabId || data.tabs[0].id)
 
         const activeTab = graphStore.activeTab
+        // Restore claim data from the active tab
+        if (activeTab?.rawText !== undefined) {
+          claimStore.setText(activeTab.rawText)
+          if (activeTab.claims && activeTab.claims.length > 0) {
+            claimStore.setClaims(activeTab.claims)
+          } else if (activeTab.rawText) {
+            const parsed = parseClaims(activeTab.rawText)
+            claimStore.setClaims(parsed)
+          }
+          if (activeTab.activeClaimId) {
+            claimStore.setActiveClaim(activeTab.activeClaimId)
+          }
+        }
+
         if (activeTab?.serializedGraph) {
           const graph = graphEngine.getGraph()
           if (graph) {

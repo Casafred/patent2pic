@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { NodeData, EdgeData, GroupData, GraphJSON } from '@/types/graph'
 import type { ExtractResult } from '@/types/ai'
+import type { Claim } from '@/types/claim'
 
 export interface TabData {
   id: string
@@ -10,6 +11,9 @@ export interface TabData {
   serializedGraph: Record<string, unknown> | null
   isChinese: boolean
   claimId: string | null
+  rawText: string
+  claims: Claim[]
+  activeClaimId: string | null
 }
 
 export const useGraphStore = defineStore('graph', () => {
@@ -29,7 +33,7 @@ export const useGraphStore = defineStore('graph', () => {
 
   let tabCounter = 0
 
-  function addTab(name?: string, isChinese: boolean = false, activate: boolean = true, claimId: string | null = null): TabData {
+  function addTab(name?: string, isChinese: boolean = false, activate: boolean = true, claimId: string | null = null, rawText: string = '', claims: Claim[] = [], activeClaimId: string | null = null): TabData {
     tabCounter++
     const tab: TabData = {
       id: `tab-${Date.now()}-${tabCounter}`,
@@ -38,6 +42,9 @@ export const useGraphStore = defineStore('graph', () => {
       serializedGraph: null,
       isChinese,
       claimId,
+      rawText,
+      claims,
+      activeClaimId,
     }
     tabs.value.push(tab)
     if (activate) {
@@ -86,6 +93,15 @@ export const useGraphStore = defineStore('graph', () => {
     const tab = tabs.value.find(t => t.id === id)
     if (tab) {
       tab.name = name
+    }
+  }
+
+  function updateTabClaimData(id: string, rawText: string, claims: Claim[], activeClaimId: string | null): void {
+    const tab = tabs.value.find(t => t.id === id)
+    if (tab) {
+      tab.rawText = rawText
+      tab.claims = claims
+      tab.activeClaimId = activeClaimId
     }
   }
 
@@ -180,6 +196,7 @@ export const useGraphStore = defineStore('graph', () => {
     updateTabExtractResult,
     updateTabSerializedGraph,
     updateTabName,
+    updateTabClaimData,
     setExtractResult,
     setNodes,
     setEdges,

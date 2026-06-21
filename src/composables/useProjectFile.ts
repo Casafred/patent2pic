@@ -32,7 +32,13 @@ export function useProjectFile() {
       isInputCollapsed: claimStore.isInputCollapsed,
       translations: translationStore.toJSON(),
       graphJSON: graphEngine.toJSON(),
-      tabs: graphStore.tabs,
+      tabs: graphStore.tabs.map(tab => ({
+        ...tab,
+        // Save current tab's claim data from claimStore if it's the active tab
+        rawText: tab.id === graphStore.activeTabId ? claimStore.rawText : tab.rawText,
+        claims: tab.id === graphStore.activeTabId ? claimStore.claims : tab.claims,
+        activeClaimId: tab.id === graphStore.activeTabId ? claimStore.activeClaimId : tab.activeClaimId,
+      })),
       activeTabId: graphStore.activeTabId,
     }
 
@@ -158,6 +164,20 @@ export function useProjectFile() {
         graphStore.setActiveTabId(data.activeTabId || data.tabs[0].id)
 
         const activeTab = graphStore.activeTab
+        // Restore claim data from the active tab
+        if (activeTab?.rawText !== undefined) {
+          claimStore.setText(activeTab.rawText)
+          if (activeTab.claims && activeTab.claims.length > 0) {
+            claimStore.setClaims(activeTab.claims)
+          } else if (activeTab.rawText) {
+            const parsed = parseClaims(activeTab.rawText)
+            claimStore.setClaims(parsed)
+          }
+          if (activeTab.activeClaimId) {
+            claimStore.setActiveClaim(activeTab.activeClaimId)
+          }
+        }
+
         const graphJSON = activeTab?.serializedGraph || data.graphJSON
 
         if (graphJSON) {
