@@ -26,6 +26,8 @@ interface CellInfo {
   isBranch?: boolean
   isContainment?: boolean
   forkNodeId?: string
+  memberNodeIds?: string[]
+  groupLabel?: { original: string; chinese: string }
 }
 
 function escapeHtml(text: string): string {
@@ -74,6 +76,8 @@ function buildCellInfoMap(): Map<string, CellInfo> {
       isBranch: d.isBranch as boolean,
       isContainment: (d.isContainmentGroupEdge as boolean) || (id.startsWith('containment-edge-')),
       forkNodeId: d.forkNodeId as string,
+      memberNodeIds: d.memberNodeIds as string[] | undefined,
+      groupLabel: d.label as { original: string; chinese: string } | undefined,
     })
   }
 
@@ -147,6 +151,13 @@ function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string 
         break
       case 'group':
         el.classList.add('p2p-group')
+        if (info.memberNodeIds && info.memberNodeIds.length > 0) {
+          el.setAttribute('data-member-ids', info.memberNodeIds.join(','))
+        }
+        if (info.groupLabel) {
+          if (info.groupLabel.original) el.setAttribute('data-group-original', info.groupLabel.original)
+          if (info.groupLabel.chinese) el.setAttribute('data-group-chinese', info.groupLabel.chinese)
+        }
         setPointerEventsRecursive(el, 'all')
         break
       case 'attr-tag':
@@ -191,7 +202,7 @@ function processSVG(svgStr: string, cellInfoMap: Map<string, CellInfo>): string 
   return serializer.serializeToString(doc)
 }
 
-/** 收集导出数据（节点信息、句子、翻译） */
+/** 收集导出数据（节点信息、句子、翻译、组合框） */
 function collectExportData() {
   const graphStore = useGraphStore()
   const claimStore = useClaimStore()
@@ -199,6 +210,7 @@ function collectExportData() {
 
   const tab = graphStore.activeTab
   const nodes: ExtractNode[] = tab?.extractResult?.nodes ?? []
+  const groups = tab?.extractResult?.groups ?? []
 
   const claim = claimStore.getActiveClaim() ?? null
   const sentences = claim?.sentences.map(s => ({ id: s.id, text: s.text })) ?? []
@@ -221,6 +233,12 @@ function collectExportData() {
       id: n.id,
       originalText: n.originalText,
       chineseText: n.chineseText,
+    })),
+    groups: groups.map(g => ({
+      id: g.id,
+      originalText: g.label.original,
+      chineseText: g.label.chinese,
+      memberNodeIds: g.memberNodeIds,
     })),
     sentences: sentences.map(s => {
       const trans = translations.find(t => t.sentenceId === s.id)
@@ -245,6 +263,7 @@ export function exportInteractiveHTML(): string {
   const data = collectExportData()
 
   const nodesJson = JSON.stringify(data.nodes)
+  const groupsJson = JSON.stringify(data.groups)
   const sentencesJson = JSON.stringify(data.sentences)
   const claimTitle = data.claimTitle
 
@@ -311,7 +330,7 @@ mark.text-highlight { padding: 1px 3px; border-radius: 3px; font-weight: 600; cu
   <div class="sidebar">
     <div class="sidebar-header">
       <span class="title">${escapeHtml(claimTitle)}</span>
-      <span style="font-size:12px;color:#86909c">点击节点或边线高亮文本</span>
+      <span style="font-size:12px;color:#86909c">点击节点、边线或组合框高亮文本</span>
     </div>
     <div class="legend-bar" id="legend-bar"></div>
     <div class="sidebar-body" id="sidebar-body"></div>
@@ -330,6 +349,7 @@ mark.text-highlight { padding: 1px 3px; border-radius: 3px; font-weight: 600; cu
 // 数据
 // ============================================================
 var NODES = ${nodesJson};
+var GROUPS = ${groupsJson};
 var SENTENCES = ${sentencesJson};
 var CELL_TYPES = ${cellTypesJson};
 
@@ -339,6 +359,7 @@ var sidebarBody = document.getElementById('sidebar-body');
 var legendBar = document.getElementById('legend-bar');
 
 var highlightedNodeIds = [];
+var highlightedComboIds = [];
 
 var HIGHLIGHT_PALETTE = [
   {bg:'#ffe3e3',border:'#e63946'},
@@ -426,6 +447,7 @@ function clearAllHighlights() {
   svgEl.querySelectorAll('.p2p-highlighted').forEach(function(el) { el.classList.remove('p2p-highlighted'); });
   svgEl.querySelectorAll('.p2p-highlighted-branch').forEach(function(el) { el.classList.remove('p2p-highlighted-branch'); });
   highlightedNodeIds = [];
+  highlightedComboIds = [];
 }
 
 function handleNodeClick(nodeId, ctrlKey) {
@@ -499,6 +521,47 @@ function handleEdgeClick(edgeId, ctrlKey) {
   scrollToFirstHighlight();
 }
 
+function handleGroupClick(groupId, ctrlKey) {
+  var groupEl = svgEl.querySelector('[data-cell-id="' + groupId + '"]') ||
+               svgEl.querySelector('[data-id="' + groupId + '"]');
+  if (!groupEl) return;
+
+  var group = GROUPS.find(function(g) { return g.id === groupId; });
+  if (!group) return;
+
+  if (!ctrlKey) {
+    clearAllHighlights();
+    highlightedComboIds = [groupId];
+    // Also highlight member nodes on canvas
+    if (group.memberNodeIds) {
+      highlightedNodeIds = group.memberNodeIds.slice();
+    }
+  } else {
+    var comboIdx = highlightedComboIds.indexOf(groupId);
+    if (comboIdx >= 0) {
+      highlightedComboIds.splice(comboIdx, 1);
+      // Remove member nodes that belong only to this combo
+      if (group.memberNodeIds) {
+        highlightedNodeIds = highlightedNodeIds.filter(function(nid) {
+          return group.memberNodeIds.indexOf(nid) === -1;
+        });
+      }
+    } else {
+      highlightedComboIds.push(groupId);
+      // Add member nodes
+      if (group.memberNodeIds) {
+        group.memberNodeIds.forEach(function(nid) {
+          if (highlightedNodeIds.indexOf(nid) === -1) highlightedNodeIds.push(nid);
+        });
+      }
+    }
+  }
+
+  applyNodeHighlights();
+  updateAllSentences();
+  scrollToFirstHighlight();
+}
+
 function applyNodeHighlights() {
   if (!svgEl) return;
   svgEl.querySelectorAll('.p2p-node.p2p-highlighted').forEach(function(el) { el.classList.remove('p2p-highlighted'); });
@@ -547,6 +610,16 @@ function highlightTextInSentence(text, mode) {
       nodeTexts.push({text: t, nodeId: nodeId, color: HIGHLIGHT_PALETTE[idx % HIGHLIGHT_PALETTE.length]});
     }
   });
+  // Add combo label texts
+  var comboBaseIdx = highlightedNodeIds.length;
+  highlightedComboIds.forEach(function(comboId, idx) {
+    var group = GROUPS.find(function(g) { return g.id === comboId; });
+    if (!group) return;
+    var t = mode === 'translation' ? (group.chineseText || group.originalText) : (group.originalText || group.chineseText);
+    if (t && (t.length >= 2 || /[\\u4e00-\\u9fff\\u3400-\\u4dbf]/.test(t))) {
+      nodeTexts.push({text: t, nodeId: comboId, color: HIGHLIGHT_PALETTE[(comboBaseIdx + idx) % HIGHLIGHT_PALETTE.length]});
+    }
+  });
   nodeTexts.sort(function(a, b) { return b.text.length - a.text.length; });
   nodeTexts.forEach(function(item) {
     var escapedText = escapeHtml(item.text);
@@ -587,10 +660,23 @@ function updateLegend() {
     item.onclick = function() { handleNodeClick(nodeId, true); };
     legendBar.appendChild(item);
   });
+  var comboBaseIdx = highlightedNodeIds.length;
+  highlightedComboIds.forEach(function(comboId, idx) {
+    var group = GROUPS.find(function(g) { return g.id === comboId; });
+    if (!group) return;
+    var color = HIGHLIGHT_PALETTE[(comboBaseIdx + idx) % HIGHLIGHT_PALETTE.length];
+    var item = document.createElement('div');
+    item.className = 'legend-item';
+    item.style.background = color.bg;
+    item.style.border = '1px solid ' + color.border;
+    item.innerHTML = '<span class="dot" style="background:' + color.border + '"></span><span>' + escapeHtml(group.chineseText || group.originalText) + '</span>';
+    item.onclick = function() { handleGroupClick(comboId, true); };
+    legendBar.appendChild(item);
+  });
 }
 
 function scrollToFirstHighlight() {
-  if (highlightedNodeIds.length > 0) {
+  if (highlightedNodeIds.length > 0 || highlightedComboIds.length > 0) {
     var blocks = sidebarBody.querySelectorAll('.sentence-block');
     for (var i = 0; i < blocks.length; i++) {
       var origEl = blocks[i].querySelector('.sentence-original');
@@ -616,8 +702,10 @@ if (svgEl) {
       updateAllSentences();
       return;
     }
-    if (info.type === 'node' || info.type === 'group') {
+    if (info.type === 'node') {
       handleNodeClick(info.cellId, e.ctrlKey || e.metaKey);
+    } else if (info.type === 'group') {
+      handleGroupClick(info.cellId, e.ctrlKey || e.metaKey);
     } else if (info.type === 'attr-tag') {
       // 属性标签：高亮其源节点
       var tagEl = info.el;

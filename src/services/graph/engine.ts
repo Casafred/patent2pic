@@ -164,18 +164,6 @@ export class GraphEngine {
       }
     })
 
-    this.graph.on('edge:click', ({ edge }: { edge: any }) => {
-      const data = edge.getData() as Record<string, unknown> | undefined
-      if (data?.isBranch) return
-      this.highlightEdge(edge.id)
-    })
-
-    this.graph.on('edge:label:click', ({ edge }: { edge: any }) => {
-      const data = edge.getData() as Record<string, unknown> | undefined
-      if (data?.isBranch) return
-      this.highlightEdge(edge.id)
-    })
-
     this.graph.on('blank:click', () => {
       this.clearHighlight()
     })
@@ -1325,12 +1313,12 @@ export class GraphEngine {
   private highlightedNodeIds: string[] = []
   private highlightedBranchEdgeIds: string[] = []
 
-  highlightEdge(edgeId: string): void {
+  highlightEdge(edgeId: string): string[] {
     this.clearHighlight()
-    if (!this.graph) return
+    if (!this.graph) return []
 
     const cell = this.graph.getCellById(edgeId)
-    if (!cell || !cell.isEdge()) return
+    if (!cell || !cell.isEdge()) return []
 
     this.highlightedEdgeId = edgeId
 
@@ -1387,6 +1375,8 @@ export class GraphEngine {
       n.attr('body/stroke', '#e63946')
       this.highlightedNodeIds.push(nodeId)
     }
+
+    return nodeIdsToHighlight
   }
 
   clearHighlight(): void {

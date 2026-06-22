@@ -22,10 +22,10 @@
         >
           导出Excel
         </el-button>
-        <span class="reader-hint" v-if="editorStore.highlightedNodeIds.length > 0">
-          已选中 {{ editorStore.highlightedNodeIds.length }} 个节点
+        <span class="reader-hint" v-if="editorStore.highlightedNodeIds.length > 0 || editorStore.highlightedComboIds.length > 0">
+          已选中 {{ editorStore.highlightedNodeIds.length + editorStore.highlightedComboIds.length }} 项
         </span>
-        <span class="reader-hint" v-else>点击画布节点查看对应文本</span>
+        <span class="reader-hint" v-else>点击画布节点或边线查看对应文本</span>
       </div>
     </div>
 
@@ -140,6 +140,14 @@ interface NodeHighlightInfo {
   chineseText: string
 }
 
+interface ComboHighlightInfo {
+  color: HighlightColor
+  label: string
+  comboId: string
+  originalText: string
+  chineseText: string
+}
+
 interface RenderedSegment {
   text: string
   highlightedHtml: string
@@ -200,6 +208,12 @@ const extractNodes = computed<ExtractNode[]>(() => {
   return tab.extractResult.nodes
 })
 
+const extractGroups = computed(() => {
+  const tab = graphStore.activeTab
+  if (!tab?.extractResult) return []
+  return tab.extractResult.groups
+})
+
 const nodeHighlightMap = computed<Map<string, NodeHighlightInfo>>(() => {
   const map = new Map<string, NodeHighlightInfo>()
   const selectedIds = editorStore.highlightedNodeIds
@@ -219,16 +233,54 @@ const nodeHighlightMap = computed<Map<string, NodeHighlightInfo>>(() => {
   return map
 })
 
+const comboHighlightMap = computed<Map<string, ComboHighlightInfo>>(() => {
+  const map = new Map<string, ComboHighlightInfo>()
+  const comboIds = editorStore.highlightedComboIds
+  const nodeIds = editorStore.highlightedNodeIds
+  const baseIdx = nodeIds.length
+
+  comboIds.forEach((comboId: string, idx: number) => {
+    const group = extractGroups.value.find((g: any) => g.id === comboId)
+    const graphGroup = graphStore.groups.find(g => g.id === comboId)
+    const label = group?.label || graphGroup?.label
+    if (!label) return
+    const colorIdx = (baseIdx + idx) % HIGHLIGHT_PALETTE.length
+    map.set(comboId, {
+      color: HIGHLIGHT_PALETTE[colorIdx],
+      label: label.chinese || label.original,
+      comboId,
+      originalText: label.original,
+      chineseText: label.chinese,
+    })
+  })
+
+  return map
+})
+
 const legendItems = computed(() => {
-  return editorStore.highlightedNodeIds.map((nodeId: string, idx: number) => {
+  const items: { nodeId: string; color: HighlightColor; label: string }[] = []
+  editorStore.highlightedNodeIds.forEach((nodeId: string, idx: number) => {
     const node = extractNodes.value.find((n: ExtractNode) => n.id === nodeId)
     const colorIdx = idx % HIGHLIGHT_PALETTE.length
-    return {
+    items.push({
       nodeId,
       color: HIGHLIGHT_PALETTE[colorIdx],
       label: node?.chineseText || node?.originalText || nodeId,
-    }
+    })
   })
+  const baseIdx = editorStore.highlightedNodeIds.length
+  editorStore.highlightedComboIds.forEach((comboId: string, idx: number) => {
+    const group = extractGroups.value.find((g: any) => g.id === comboId)
+    const graphGroup = graphStore.groups.find(g => g.id === comboId)
+    const label = group?.label || graphGroup?.label
+    const colorIdx = (baseIdx + idx) % HIGHLIGHT_PALETTE.length
+    items.push({
+      nodeId: comboId,
+      color: HIGHLIGHT_PALETTE[colorIdx],
+      label: label ? (label.chinese || label.original) : comboId,
+    })
+  })
+  return items
 })
 
 function escapeHtml(text: string): string {
@@ -247,6 +299,23 @@ function highlightTextInSentence(sentenceText: string, mode: 'original' | 'trans
     const text = mode === 'translation' ? (info.chineseText || info.originalText) : (info.originalText || info.chineseText)
     if (text && (text.length >= 2 || /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text))) {
       nodeTexts.push({ text, info })
+    }
+  }
+
+  // Add combo label texts
+  for (const [_comboId, info] of comboHighlightMap.value) {
+    const text = mode === 'translation' ? (info.chineseText || info.originalText) : (info.originalText || info.chineseText)
+    if (text && (text.length >= 2 || /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text))) {
+      nodeTexts.push({
+        text,
+        info: {
+          color: info.color,
+          label: info.label,
+          nodeId: info.comboId,
+          originalText: info.originalText,
+          chineseText: info.chineseText,
+        },
+      })
     }
   }
 
@@ -334,7 +403,7 @@ const renderedSegments = computed<RenderedSegment[]>(() => {
   return segments
 })
 
-watch(() => editorStore.highlightedNodeIds, () => {
+watch(() => [editorStore.highlightedNodeIds, editorStore.highlightedComboIds] as const, () => {
   nextTick(() => {
     if (readerBodyRef.value) {
       const first = readerBodyRef.value.querySelector('.segment-highlighted')

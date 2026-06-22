@@ -5,6 +5,7 @@ export const useEditorStore = defineStore('editor', () => {
   const selectedNodeIds = ref<string[]>([])
   const selectedEdgeIds = ref<string[]>([])
   const highlightedNodeIds = ref<string[]>([])
+  const highlightedComboIds = ref<string[]>([])
   const activePanel = ref<'style' | 'ai' | null>(null)
   const zoom = ref(1)
   const isDirty = ref(false)
@@ -16,6 +17,10 @@ export const useEditorStore = defineStore('editor', () => {
 
   function highlightNodes(ids: string[]): void {
     highlightedNodeIds.value = ids
+  }
+
+  function highlightCombos(ids: string[]): void {
+    highlightedComboIds.value = ids
   }
 
   function toggleNodeInSelection(id: string): void {
@@ -37,6 +42,7 @@ export const useEditorStore = defineStore('editor', () => {
     selectedNodeIds.value = []
     selectedEdgeIds.value = []
     highlightedNodeIds.value = []
+    highlightedComboIds.value = []
   }
 
   function togglePanel(panel: 'style' | 'ai' | null): void {
@@ -59,11 +65,13 @@ export const useEditorStore = defineStore('editor', () => {
     selectedNodeIds,
     selectedEdgeIds,
     highlightedNodeIds,
+    highlightedComboIds,
     activePanel,
     zoom,
     isDirty,
     selectNodes,
     highlightNodes,
+    highlightCombos,
     toggleNodeInSelection,
     selectEdges,
     clearSelection,
