@@ -14,6 +14,7 @@ export interface TabData {
   rawText: string
   claims: Claim[]
   activeClaimId: string | null
+  translations: Record<string, { claimId: string; sentences: { sentenceId: string; originalText: string; translatedText: string; status: string; error: string | null }[]; overallStatus: string }> | null
 }
 
 export const useGraphStore = defineStore('graph', () => {
@@ -45,6 +46,7 @@ export const useGraphStore = defineStore('graph', () => {
       rawText,
       claims,
       activeClaimId,
+      translations: null,
     }
     tabs.value.push(tab)
     if (activate) {
@@ -102,6 +104,13 @@ export const useGraphStore = defineStore('graph', () => {
       tab.rawText = rawText
       tab.claims = claims
       tab.activeClaimId = activeClaimId
+    }
+  }
+
+  function updateTabTranslations(id: string, translations: Record<string, { claimId: string; sentences: { sentenceId: string; originalText: string; translatedText: string; status: string; error: string | null }[]; overallStatus: string }> | null): void {
+    const tab = tabs.value.find(t => t.id === id)
+    if (tab) {
+      tab.translations = translations
     }
   }
 
@@ -197,6 +206,7 @@ export const useGraphStore = defineStore('graph', () => {
     updateTabSerializedGraph,
     updateTabName,
     updateTabClaimData,
+    updateTabTranslations,
     setExtractResult,
     setNodes,
     setEdges,

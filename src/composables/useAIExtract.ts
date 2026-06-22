@@ -61,13 +61,17 @@ export function useAIExtract() {
       rawText: currentTab.rawText,
       claims: JSON.parse(JSON.stringify(currentTab.claims)),
       activeClaimId: currentTab.activeClaimId,
+      translations: currentTab.translations ? JSON.parse(JSON.stringify(currentTab.translations)) : null,
     } : null
 
     const tab = graphStore.addTab(undefined, isChinese, true, claimId ?? null, claimStore.rawText, JSON.parse(JSON.stringify(claimStore.claims)), claimStore.activeClaimId)
 
-    // Restore the old tab's original claim data (the watcher may have overwritten it)
+    // Restore the old tab's original claim data and translations (the watcher may have overwritten it)
     if (savedClaimData) {
       graphStore.updateTabClaimData(savedClaimData.id, savedClaimData.rawText, savedClaimData.claims, savedClaimData.activeClaimId)
+      if (savedClaimData.translations) {
+        graphStore.updateTabTranslations(savedClaimData.id, savedClaimData.translations)
+      }
     }
 
     let fullContent = ''

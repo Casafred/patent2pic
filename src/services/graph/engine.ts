@@ -45,6 +45,7 @@ export class GraphEngine {
         allowMulti: true,
         snap: { radius: 30 },
         createEdge() {
+          this.startBatch('edge-connect')
           return this.createEdge({
             shape: 'edge-with-gap',
             view: 'edge-with-gap-view',
@@ -225,6 +226,11 @@ export class GraphEngine {
         labelDragging = false
         this.graph!.stopBatch('label-drag')
       }
+    })
+
+    // Batch new edge creation so it appears as a single undo step
+    this.graph.on('edge:connected', () => {
+      this.graph!.stopBatch('edge-connect')
     })
 
     this.graph.on('blank:click', () => {

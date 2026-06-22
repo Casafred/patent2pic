@@ -30,12 +30,14 @@ import StylePanel from '../panel/StylePanel.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
+import { useTranslationStore } from '@/stores/translation'
 import { graphEngine } from '@/services/graph/engine'
 import { parseClaims } from '@/services/claim/parser'
 
 const editorStore = useEditorStore()
 const graphStore = useGraphStore()
 const claimStore = useClaimStore()
+const translationStore = useTranslationStore()
 const graphCanvasRef = ref<InstanceType<typeof GraphCanvas> | null>(null)
 const leftPanelRef = ref<HTMLElement | null>(null)
 const rightPanelRef = ref<HTMLElement | null>(null)
@@ -105,6 +107,8 @@ watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
       graphStore.updateTabSerializedGraph(oldTabId, json)
       // Save current claim data to the old tab
       graphStore.updateTabClaimData(oldTabId, claimStore.rawText, claimStore.claims, claimStore.activeClaimId)
+      // Save current translation data to the old tab
+      graphStore.updateTabTranslations(oldTabId, translationStore.toJSON())
     }
   }
 
@@ -139,6 +143,13 @@ watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
   // Sync the claim store's active claim with the new tab
   if (newTab.claimId) {
     claimStore.setActiveClaim(newTab.claimId)
+  }
+
+  // Restore translation data from the new tab
+  if (newTab.translations) {
+    translationStore.fromJSON(newTab.translations as any)
+  } else {
+    translationStore.clearAllTranslations()
   }
 
   if (newTab.serializedGraph && Object.keys(newTab.serializedGraph).length > 0) {

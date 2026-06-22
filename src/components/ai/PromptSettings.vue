@@ -7,6 +7,9 @@
       <el-tab-pane label="方法类提示词" name="method">
         <div class="tab-desc">用于方法/流程/过程类权利要求的拆解构图</div>
       </el-tab-pane>
+      <el-tab-pane label="混合类提示词" name="mixed">
+        <div class="tab-desc">用于装置类权利要求中嵌套方法步骤的混合拆解构图</div>
+      </el-tab-pane>
     </el-tabs>
 
     <template v-if="activeTab === 'structure'">
@@ -46,7 +49,7 @@
       </div>
     </template>
 
-    <template v-else>
+    <template v-else-if="activeTab === 'method'">
       <div class="prompt-section">
         <div class="section-header">
           <h4>方法类系统提示词 (System Prompt)</h4>
@@ -80,6 +83,43 @@
       <div class="prompt-actions">
         <el-button size="small" @click="resetAllMethod">全部恢复默认</el-button>
         <el-button size="small" type="primary" @click="handlePreview('method')">预览完整提示词</el-button>
+      </div>
+    </template>
+
+    <template v-else>
+      <div class="prompt-section">
+        <div class="section-header">
+          <h4>混合类系统提示词 (System Prompt)</h4>
+          <el-button size="small" text type="warning" @click="resetMixedSystemPrompt">恢复默认</el-button>
+        </div>
+        <p class="section-desc">定义 AI 对混合型权利要求的分析规则，同时提取组件节点和方法步骤节点，组件的方法行为拆解为独立步骤</p>
+        <el-input
+          v-model="mixedSystemPrompt"
+          type="textarea"
+          :rows="8"
+          placeholder="输入混合类系统提示词"
+          @change="handleMixedSystemPromptChange"
+        />
+      </div>
+
+      <div class="prompt-section">
+        <div class="section-header">
+          <h4>混合类用户提示词模板 (User Prompt)</h4>
+          <el-button size="small" text type="warning" @click="resetMixedUserPrompt">恢复默认</el-button>
+        </div>
+        <p class="section-desc">定义发送给 AI 的混合类分析指令，<code>{claimText}</code> 会被替换为实际权利要求文本</p>
+        <el-input
+          v-model="mixedUserPromptTemplate"
+          type="textarea"
+          :rows="10"
+          placeholder="输入混合类用户提示词模板"
+          @change="handleMixedUserPromptChange"
+        />
+      </div>
+
+      <div class="prompt-actions">
+        <el-button size="small" @click="resetAllMixed">全部恢复默认</el-button>
+        <el-button size="small" type="primary" @click="handlePreview('mixed')">预览完整提示词</el-button>
       </div>
     </template>
 
@@ -118,9 +158,15 @@ import {
   setMethodUserPromptTemplate,
   getDefaultMethodSystemPrompt,
   getDefaultMethodUserPromptTemplate,
+  getMixedSystemPrompt,
+  getMixedUserPromptTemplate,
+  setMixedSystemPrompt,
+  setMixedUserPromptTemplate,
+  getDefaultMixedSystemPrompt,
+  getDefaultMixedUserPromptTemplate,
 } from '@/services/ai/prompt'
 
-const activeTab = ref<'structure' | 'method'>('structure')
+const activeTab = ref<'structure' | 'method' | 'mixed'>('structure')
 
 // 结构类提示词
 const systemPrompt = ref('')
@@ -129,6 +175,10 @@ const userPromptTemplate = ref('')
 // 方法类提示词
 const methodSystemPrompt = ref('')
 const methodUserPromptTemplate = ref('')
+
+// 混合类提示词
+const mixedSystemPrompt = ref('')
+const mixedUserPromptTemplate = ref('')
 
 // 预览
 const showPreview = ref(false)
@@ -140,6 +190,8 @@ onMounted(() => {
   userPromptTemplate.value = getUserPromptTemplate()
   methodSystemPrompt.value = getMethodSystemPrompt()
   methodUserPromptTemplate.value = getMethodUserPromptTemplate()
+  mixedSystemPrompt.value = getMixedSystemPrompt()
+  mixedUserPromptTemplate.value = getMixedUserPromptTemplate()
 })
 
 // 结构类
@@ -190,14 +242,41 @@ function resetAllMethod(): void {
   resetMethodUserPrompt()
 }
 
+// 混合类
+function handleMixedSystemPromptChange(): void {
+  setMixedSystemPrompt(mixedSystemPrompt.value)
+}
+
+function handleMixedUserPromptChange(): void {
+  setMixedUserPromptTemplate(mixedUserPromptTemplate.value)
+}
+
+function resetMixedSystemPrompt(): void {
+  mixedSystemPrompt.value = getDefaultMixedSystemPrompt()
+  setMixedSystemPrompt(mixedSystemPrompt.value)
+}
+
+function resetMixedUserPrompt(): void {
+  mixedUserPromptTemplate.value = getDefaultMixedUserPromptTemplate()
+  setMixedUserPromptTemplate(mixedUserPromptTemplate.value)
+}
+
+function resetAllMixed(): void {
+  resetMixedSystemPrompt()
+  resetMixedUserPrompt()
+}
+
 // 预览
-function handlePreview(type: 'structure' | 'method'): void {
+function handlePreview(type: 'structure' | 'method' | 'mixed'): void {
   if (type === 'structure') {
     previewSystem.value = systemPrompt.value
     previewUser.value = userPromptTemplate.value
-  } else {
+  } else if (type === 'method') {
     previewSystem.value = methodSystemPrompt.value
     previewUser.value = methodUserPromptTemplate.value
+  } else {
+    previewSystem.value = mixedSystemPrompt.value
+    previewUser.value = mixedUserPromptTemplate.value
   }
   showPreview.value = true
 }

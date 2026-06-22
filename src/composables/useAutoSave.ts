@@ -43,6 +43,8 @@ export function useAutoSave() {
           rawText: tab.id === graphStore.activeTabId ? claimStore.rawText : tab.rawText,
           claims: tab.id === graphStore.activeTabId ? claimStore.claims : tab.claims,
           activeClaimId: tab.id === graphStore.activeTabId ? claimStore.activeClaimId : tab.activeClaimId,
+          // Save current tab's translation data from translationStore if it's the active tab
+          translations: tab.id === graphStore.activeTabId ? translationStore.toJSON() : tab.translations,
         })),
         activeTabId: graphStore.activeTabId,
         savedAt: Date.now(),
@@ -104,6 +106,13 @@ export function useAutoSave() {
           if (activeTab.activeClaimId) {
             claimStore.setActiveClaim(activeTab.activeClaimId)
           }
+        }
+
+        // Restore translation data from the active tab
+        if (activeTab?.translations && typeof activeTab.translations === 'object') {
+          translationStore.fromJSON(activeTab.translations as any)
+        } else {
+          translationStore.clearAllTranslations()
         }
 
         if (activeTab?.serializedGraph) {

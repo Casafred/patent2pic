@@ -332,14 +332,18 @@ export function useParallelExtract() {
         rawText: currentTab.rawText,
         claims: JSON.parse(JSON.stringify(currentTab.claims)),
         activeClaimId: currentTab.activeClaimId,
+        translations: currentTab.translations ? JSON.parse(JSON.stringify(currentTab.translations)) : null,
       } : null
 
       // Activate the first successful tab - AppLayout.vue watch will build the graph
       graphStore.setActiveTabId(firstSuccess.tabId)
 
-      // Restore the old tab's original claim data
+      // Restore the old tab's original claim data and translations
       if (savedClaimData) {
         graphStore.updateTabClaimData(savedClaimData.id, savedClaimData.rawText, savedClaimData.claims, savedClaimData.activeClaimId)
+        if (savedClaimData.translations) {
+          graphStore.updateTabTranslations(savedClaimData.id, savedClaimData.translations)
+        }
       }
     } else {
       isRunning.value = false
