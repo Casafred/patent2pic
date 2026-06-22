@@ -322,8 +322,24 @@ export function useParallelExtract() {
       aiStore.isExtracting = false
       abortControllers = []
 
+      // Save the current tab's ORIGINAL claim data before activating a new tab.
+      // The tab-switch watcher will save claimStore (which may have been modified
+      // by applySentencePairs) to the old tab, overwriting its original data.
+      const currentTab = graphStore.activeTab
+      const savedClaimData = currentTab ? {
+        id: currentTab.id,
+        rawText: currentTab.rawText,
+        claims: JSON.parse(JSON.stringify(currentTab.claims)),
+        activeClaimId: currentTab.activeClaimId,
+      } : null
+
       // Activate the first successful tab - AppLayout.vue watch will build the graph
       graphStore.setActiveTabId(firstSuccess.tabId)
+
+      // Restore the old tab's original claim data
+      if (savedClaimData) {
+        graphStore.updateTabClaimData(savedClaimData.id, savedClaimData.rawText, savedClaimData.claims, savedClaimData.activeClaimId)
+      }
     } else {
       isRunning.value = false
       aiStore.isExtracting = false

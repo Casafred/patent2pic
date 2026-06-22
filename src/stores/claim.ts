@@ -27,7 +27,7 @@ export const useClaimStore = defineStore('claim', () => {
     }
   }
 
-  function setActiveClaim(id: string): void {
+  function setActiveClaim(id: string | null): void {
     activeClaimId.value = id
   }
 

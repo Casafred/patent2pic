@@ -51,7 +51,24 @@ export function useAIExtract() {
     const providerType = aiStore.activeProviderType
     const model = aiStore.activeModel
 
+    // Save the current tab's ORIGINAL claim data before creating a new tab.
+    // When addTab() activates the new tab, the tab-switch watcher in AppLayout.vue
+    // will save claimStore (which now has the NEW text) to the old tab, overwriting
+    // its original data. We restore it immediately after to prevent this corruption.
+    const currentTab = graphStore.activeTab
+    const savedClaimData = currentTab ? {
+      id: currentTab.id,
+      rawText: currentTab.rawText,
+      claims: JSON.parse(JSON.stringify(currentTab.claims)),
+      activeClaimId: currentTab.activeClaimId,
+    } : null
+
     const tab = graphStore.addTab(undefined, isChinese, true, claimId ?? null, claimStore.rawText, JSON.parse(JSON.stringify(claimStore.claims)), claimStore.activeClaimId)
+
+    // Restore the old tab's original claim data (the watcher may have overwritten it)
+    if (savedClaimData) {
+      graphStore.updateTabClaimData(savedClaimData.id, savedClaimData.rawText, savedClaimData.claims, savedClaimData.activeClaimId)
+    }
 
     let fullContent = ''
     let fullReasoning = ''

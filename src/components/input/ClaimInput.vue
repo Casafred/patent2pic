@@ -8,6 +8,15 @@
             v-if="hasGraphData"
             size="small"
             text
+            @click="handleNewAnalysis"
+          >
+            <el-icon><Plus /></el-icon>
+            新建分析
+          </el-button>
+          <el-button
+            v-if="hasGraphData"
+            size="small"
+            text
             @click="claimStore.collapseInput()"
           >
             <el-icon><ArrowUp /></el-icon>
@@ -127,15 +136,21 @@
     </template>
 
     <template v-else>
-      <div class="collapsed-bar" @click="claimStore.expandInput()">
-        <div class="collapsed-info">
+      <div class="collapsed-bar">
+        <div class="collapsed-info" @click="claimStore.expandInput()">
           <span class="collapsed-label">权利要求 {{ activeClaimIndex }}</span>
           <span class="collapsed-preview">{{ collapsedPreview }}</span>
         </div>
-        <el-button size="small" text class="expand-btn">
-          <el-icon><ArrowDown /></el-icon>
-          展开
-        </el-button>
+        <div class="collapsed-actions">
+          <el-button size="small" text class="new-analysis-btn" @click="handleNewAnalysis">
+            <el-icon><Plus /></el-icon>
+            新建
+          </el-button>
+          <el-button size="small" text class="expand-btn" @click="claimStore.expandInput()">
+            <el-icon><ArrowDown /></el-icon>
+            展开
+          </el-button>
+        </div>
       </div>
     </template>
   </div>
@@ -143,7 +158,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Loading, ArrowDown, ArrowUp, InfoFilled, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
+import { Loading, ArrowDown, ArrowUp, InfoFilled, CircleCheckFilled, CircleCloseFilled, Plus } from '@element-plus/icons-vue'
 import { useClaimStore } from '@/stores/claim'
 import { useAIStore } from '@/stores/ai'
 import { useGraphStore } from '@/stores/graph'
@@ -188,6 +203,29 @@ function getTaskForClaim(claimId: string) {
 function handleTextInput(): void {
   const claims = parseClaims(claimStore.rawText)
   claimStore.setClaims(claims)
+}
+
+function handleNewAnalysis(): void {
+  // Save the current tab's data before creating a new one
+  const currentTab = graphStore.activeTab
+  if (currentTab) {
+    const savedClaimData = {
+      rawText: currentTab.rawText,
+      claims: JSON.parse(JSON.stringify(currentTab.claims)),
+      activeClaimId: currentTab.activeClaimId,
+    }
+    // Create a new tab with empty input
+    graphStore.addTab(undefined, false, true, null, '', [], null)
+    // Restore the old tab's original claim data (the watcher may have overwritten it)
+    graphStore.updateTabClaimData(currentTab.id, savedClaimData.rawText, savedClaimData.claims, savedClaimData.activeClaimId)
+  } else {
+    graphStore.addTab(undefined, false, true, null, '', [], null)
+  }
+  // Clear the input for the new tab
+  claimStore.setText('')
+  claimStore.setClaims([])
+  claimStore.setActiveClaim(null)
+  claimStore.expandInput()
 }
 
 async function handleGenerate(): Promise<void> {
@@ -450,7 +488,6 @@ function handleParallelAbort(): void {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border-radius: var(--radius-md);
-  cursor: pointer;
   transition: background 0.15s;
   border: 1px solid var(--border-color-light);
 }
@@ -467,6 +504,14 @@ function handleParallelAbort(): void {
   overflow: hidden;
   flex: 1;
   min-width: 0;
+  cursor: pointer;
+}
+
+.collapsed-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .collapsed-label {
