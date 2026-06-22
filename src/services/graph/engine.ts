@@ -46,13 +46,65 @@ export class GraphEngine {
         snap: { radius: 30 },
         createEdge() {
           return this.createEdge({
-            shape: 'edge',
+            shape: 'edge-with-gap',
+            view: 'edge-with-gap-view',
+            router: { name: 'perpendicularManhattan', args: { padding: 20, step: 10 } },
+            connector: { name: 'rounded', args: { radius: 8 } },
             attrs: {
               line: {
                 stroke: '#a2b1c3',
                 strokeWidth: 4.5,
                 targetMarker: { name: 'block', width: 12, height: 8 },
               },
+            },
+            labels: [
+              {
+                markup: [
+                  { tagName: 'rect', selector: 'bg' },
+                  { tagName: 'text', selector: 'labelText' },
+                ],
+                attrs: {
+                  bg: {
+                    ref: 'labelText',
+                    refWidth: 1.2,
+                    refHeight: 1.4,
+                    refX: -0.1,
+                    refY: -0.2,
+                    fill: 'transparent',
+                    stroke: 'none',
+                    strokeWidth: 0,
+                    rx: 4,
+                    ry: 4,
+                    cursor: 'move',
+                    pointerEvents: 'all',
+                  },
+                  labelText: {
+                    text: '',
+                    fontSize: 12,
+                    fill: '#666',
+                    fontWeight: 'bold',
+                    textAnchor: 'middle',
+                    textVerticalAnchor: 'middle',
+                    lineHeight: 19,
+                    stroke: '#ffffff',
+                    strokeWidth: 6,
+                    paintOrder: 'stroke fill',
+                    strokeLinejoin: 'round',
+                    pointerEvents: 'none',
+                  },
+                },
+                position: {
+                  distance: 0.5,
+                  offset: { x: 0, y: 0 },
+                },
+              },
+            ],
+            data: {
+              originalText: '',
+              chineseText: '',
+              relationType: 'position',
+              style: getDefaultEdgeStyle('position'),
+              labelDetached: false,
             },
             zIndex: 10,
           })
@@ -149,6 +201,7 @@ export class GraphEngine {
     // snapArrowhead calls setTerminal() on every mousemove, which creates
     // multiple history entries without batching
     let arrowheadDragging = false
+    let labelDragging = false
     this.graph.on('cell:mousedown', ({ e, cell }: { e: MouseEvent; cell: any }) => {
       if (!cell || !cell.isEdge()) return
       const target = e.target as HTMLElement
@@ -156,11 +209,20 @@ export class GraphEngine {
         arrowheadDragging = true
         this.graph!.startBatch('arrowhead-drag')
       }
+      // Check if the target is inside an edge label
+      if (target && target.closest('.x6-edge-label')) {
+        labelDragging = true
+        this.graph!.startBatch('label-drag')
+      }
     })
     this.graph.on('cell:mouseup', () => {
       if (arrowheadDragging) {
         arrowheadDragging = false
         this.graph!.stopBatch('arrowhead-drag')
+      }
+      if (labelDragging) {
+        labelDragging = false
+        this.graph!.stopBatch('label-drag')
       }
     })
 
@@ -182,7 +244,12 @@ export class GraphEngine {
       },
     }))
     this.graph.use(new Snapline({ enabled: true }))
-    this.graph.use(new History({ enabled: true }))
+    this.graph.use(new History({
+      enabled: true,
+      beforeAddCommand: () => {
+        if (this.shouldSkipHistory()) return false
+      },
+    }))
     this.graph.use(new Clipboard({ enabled: true }))
     this.graph.use(new MiniMap({ width: 160, height: 100, padding: 10 }))
     this.graph.use(new Export())
@@ -790,19 +857,33 @@ export class GraphEngine {
 
     let isUpdatingGroup = false
 
+    // Side effects (group bounds, fork positions, attribute tag positions) are
+    // derived from node positions, so they should NOT be recorded in history.
+    // When a node is moved (or undone), node:change:position fires and
+    // re-derives the side effects, keeping them consistent.
     this.graph.on('node:moved', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined; attr: (path: string, value?: unknown) => unknown } }) => {
       if (isUpdatingGroup) return
       const data = node.getData()
       if (data?.isForkNode || data?.isAttributeTag) return
       if (data?.isGroup) {
-        this.restoreGroupVisibility(node)
+        this.startSkipHistory()
+        try {
+          this.restoreGroupVisibility(node)
+        } finally {
+          this.stopSkipHistory()
+        }
         return
       }
       isUpdatingGroup = true
-      this.updateGroupBoundsForMember(node.id)
-      this.updateForkNodePositions()
-      this.updateAttributeTagPositions(node.id)
-      isUpdatingGroup = false
+      this.startSkipHistory()
+      try {
+        this.updateGroupBoundsForMember(node.id)
+        this.updateForkNodePositions()
+        this.updateAttributeTagPositions(node.id)
+      } finally {
+        this.stopSkipHistory()
+        isUpdatingGroup = false
+      }
     })
 
     this.graph.on('node:change:position', ({ node }: { node: { id: string; getData: () => Record<string, unknown> | undefined; attr: (path: string, value?: unknown) => unknown } }) => {
@@ -810,14 +891,24 @@ export class GraphEngine {
       const data = node.getData()
       if (data?.isForkNode || data?.isAttributeTag) return
       if (data?.isGroup) {
-        this.restoreGroupVisibility(node)
+        this.startSkipHistory()
+        try {
+          this.restoreGroupVisibility(node)
+        } finally {
+          this.stopSkipHistory()
+        }
         return
       }
       isUpdatingGroup = true
-      this.updateGroupBoundsForMember(node.id)
-      this.updateForkNodePositions()
-      this.updateAttributeTagPositions(node.id)
-      isUpdatingGroup = false
+      this.startSkipHistory()
+      try {
+        this.updateGroupBoundsForMember(node.id)
+        this.updateForkNodePositions()
+        this.updateAttributeTagPositions(node.id)
+      } finally {
+        this.stopSkipHistory()
+        isUpdatingGroup = false
+      }
     })
   }
 
@@ -1312,133 +1403,158 @@ export class GraphEngine {
   private highlightedEdgeId: string | null = null
   private highlightedNodeIds: string[] = []
   private highlightedBranchEdgeIds: string[] = []
+  private _skipHistoryCount = 0
+
+  private startSkipHistory(): void {
+    this._skipHistoryCount++
+  }
+
+  private stopSkipHistory(): void {
+    if (this._skipHistoryCount > 0) {
+      this._skipHistoryCount--
+    }
+  }
+
+  private shouldSkipHistory(): boolean {
+    return this._skipHistoryCount > 0
+  }
 
   highlightEdge(edgeId: string): string[] {
-    this.clearHighlight()
-    if (!this.graph) return []
+    this.startSkipHistory()
+    try {
+      this.clearHighlight()
+      if (!this.graph) return []
 
-    const cell = this.graph.getCellById(edgeId)
-    if (!cell || !cell.isEdge()) return []
+      const cell = this.graph.getCellById(edgeId)
+      if (!cell || !cell.isEdge()) return []
 
-    this.highlightedEdgeId = edgeId
+      this.highlightedEdgeId = edgeId
 
-    const edge = cell as unknown as {
-      attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
-      getSourceCellId: () => string | null
-      getTargetCellId: () => string | null
-      getData: () => Record<string, unknown> | undefined
-    }
-
-    edge.attr('line/strokeWidth', 6)
-    edge.attr('line/stroke', '#e63946')
-
-    const data = edge.getData()
-    const isTrunk = data?.isTrunk as boolean | undefined
-
-    const sourceId = edge.getSourceCellId()
-    const targetId = edge.getTargetCellId()
-
-    const nodeIdsToHighlight: string[] = []
-
-    if (isTrunk && data) {
-      const forkNodeId = data.forkNodeId as string
-      const realSourceId = data.realSourceId as string
-      nodeIdsToHighlight.push(realSourceId)
-
-      const branchEdges = this.graph!.getEdges().filter(e => {
-        const bd = e.getData() as Record<string, unknown> | undefined
-        return bd?.isBranch && bd.forkNodeId === forkNodeId
-      })
-
-      for (const branchEdge of branchEdges) {
-        const bd = branchEdge.getData() as Record<string, unknown> | undefined
-        const realTargetId = bd?.realTargetId as string | undefined
-        if (realTargetId) {
-          nodeIdsToHighlight.push(realTargetId)
-        }
-        const be = branchEdge as unknown as { attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void }
-        be.attr('line/strokeWidth', 6)
-        be.attr('line/stroke', '#e63946')
-        this.highlightedBranchEdgeIds.push(branchEdge.id)
+      const edge = cell as unknown as {
+        attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
+        getSourceCellId: () => string | null
+        getTargetCellId: () => string | null
+        getData: () => Record<string, unknown> | undefined
       }
-    } else {
-      if (sourceId) nodeIdsToHighlight.push(sourceId)
-      if (targetId) nodeIdsToHighlight.push(targetId)
-    }
 
-    for (const nodeId of nodeIdsToHighlight) {
-      if (!nodeId) continue
-      const nodeCell = this.graph!.getCellById(nodeId)
-      if (!nodeCell || !nodeCell.isNode()) continue
-      const n = nodeCell as unknown as { attr: (path: string, value?: unknown) => void }
-      n.attr('body/strokeWidth', 4)
-      n.attr('body/stroke', '#e63946')
-      this.highlightedNodeIds.push(nodeId)
-    }
+      edge.attr('line/strokeWidth', 6)
+      edge.attr('line/stroke', '#e63946')
 
-    return nodeIdsToHighlight
+      const data = edge.getData()
+      const isTrunk = data?.isTrunk as boolean | undefined
+
+      const sourceId = edge.getSourceCellId()
+      const targetId = edge.getTargetCellId()
+
+      const nodeIdsToHighlight: string[] = []
+
+      if (isTrunk && data) {
+        const forkNodeId = data.forkNodeId as string
+        const realSourceId = data.realSourceId as string
+        nodeIdsToHighlight.push(realSourceId)
+
+        const branchEdges = this.graph!.getEdges().filter(e => {
+          const bd = e.getData() as Record<string, unknown> | undefined
+          return bd?.isBranch && bd.forkNodeId === forkNodeId
+        })
+
+        for (const branchEdge of branchEdges) {
+          const bd = branchEdge.getData() as Record<string, unknown> | undefined
+          const realTargetId = bd?.realTargetId as string | undefined
+          if (realTargetId) {
+            nodeIdsToHighlight.push(realTargetId)
+          }
+          const be = branchEdge as unknown as { attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void }
+          be.attr('line/strokeWidth', 6)
+          be.attr('line/stroke', '#e63946')
+          this.highlightedBranchEdgeIds.push(branchEdge.id)
+        }
+      } else {
+        if (sourceId) nodeIdsToHighlight.push(sourceId)
+        if (targetId) nodeIdsToHighlight.push(targetId)
+      }
+
+      for (const nodeId of nodeIdsToHighlight) {
+        if (!nodeId) continue
+        const nodeCell = this.graph!.getCellById(nodeId)
+        if (!nodeCell || !nodeCell.isNode()) continue
+        const n = nodeCell as unknown as { attr: (path: string, value?: unknown) => void }
+        n.attr('body/strokeWidth', 4)
+        n.attr('body/stroke', '#e63946')
+        this.highlightedNodeIds.push(nodeId)
+      }
+
+      return nodeIdsToHighlight
+    } finally {
+      this.stopSkipHistory()
+    }
   }
 
   clearHighlight(): void {
     if (!this.graph) return
     if (!this.highlightedEdgeId && this.highlightedNodeIds.length === 0) return
 
-    if (this.highlightedEdgeId) {
-      const edgeId = this.highlightedEdgeId
-      this.highlightedEdgeId = null
+    this.startSkipHistory()
+    try {
+      if (this.highlightedEdgeId) {
+        const edgeId = this.highlightedEdgeId
+        this.highlightedEdgeId = null
 
-      const cell = this.graph.getCellById(edgeId)
-      if (cell && cell.isEdge()) {
-        const edge = cell as unknown as {
-          attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
-          getData: () => Record<string, unknown> | undefined
+        const cell = this.graph.getCellById(edgeId)
+        if (cell && cell.isEdge()) {
+          const edge = cell as unknown as {
+            attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
+            getData: () => Record<string, unknown> | undefined
+          }
+
+          const data = edge.getData()
+          const relationType = data?.relationType as string | undefined
+          const defaultStyle = relationType ? getDefaultEdgeStyle(relationType) : null
+          const customStyle = data?.style as Record<string, unknown> | undefined
+          const stroke = (customStyle?.stroke as string) ?? defaultStyle?.stroke ?? '#333333'
+          const strokeWidth = (customStyle?.strokeWidth as number) ?? defaultStyle?.strokeWidth ?? 2
+          const strokeDasharray = (customStyle?.strokeDasharray as string) ?? defaultStyle?.strokeDasharray ?? ''
+          edge.attr('line/strokeWidth', strokeWidth)
+          edge.attr('line/stroke', stroke)
+          edge.attr('line/strokeDasharray', strokeDasharray)
         }
-
-        const data = edge.getData()
-        const relationType = data?.relationType as string | undefined
-        const defaultStyle = relationType ? getDefaultEdgeStyle(relationType) : null
-        const customStyle = data?.style as Record<string, unknown> | undefined
-        const stroke = (customStyle?.stroke as string) ?? defaultStyle?.stroke ?? '#333333'
-        const strokeWidth = (customStyle?.strokeWidth as number) ?? defaultStyle?.strokeWidth ?? 2
-        const strokeDasharray = (customStyle?.strokeDasharray as string) ?? defaultStyle?.strokeDasharray ?? ''
-        edge.attr('line/strokeWidth', strokeWidth)
-        edge.attr('line/stroke', stroke)
-        edge.attr('line/strokeDasharray', strokeDasharray)
       }
-    }
 
-    for (const branchEdgeId of this.highlightedBranchEdgeIds) {
-      const branchCell = this.graph.getCellById(branchEdgeId)
-      if (branchCell && branchCell.isEdge()) {
-        const be = branchCell as unknown as {
-          attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
-          getData: () => Record<string, unknown> | undefined
+      for (const branchEdgeId of this.highlightedBranchEdgeIds) {
+        const branchCell = this.graph.getCellById(branchEdgeId)
+        if (branchCell && branchCell.isEdge()) {
+          const be = branchCell as unknown as {
+            attr: (pathOrObj: string | Record<string, unknown>, value?: unknown) => void
+            getData: () => Record<string, unknown> | undefined
+          }
+          const bd = be.getData()
+          const bRelationType = bd?.relationType as string | undefined
+          const bDefaultStyle = bRelationType ? getDefaultEdgeStyle(bRelationType) : null
+          const bCustomStyle = bd?.style as Record<string, unknown> | undefined
+          const bStroke = (bCustomStyle?.stroke as string) ?? bDefaultStyle?.stroke ?? '#333333'
+          const bStrokeWidth = (bCustomStyle?.strokeWidth as number) ?? bDefaultStyle?.strokeWidth ?? 2
+          const bStrokeDasharray = (bCustomStyle?.strokeDasharray as string) ?? bDefaultStyle?.strokeDasharray ?? ''
+          be.attr('line/strokeWidth', bStrokeWidth)
+          be.attr('line/stroke', bStroke)
+          be.attr('line/strokeDasharray', bStrokeDasharray)
         }
-        const bd = be.getData()
-        const bRelationType = bd?.relationType as string | undefined
-        const bDefaultStyle = bRelationType ? getDefaultEdgeStyle(bRelationType) : null
-        const bCustomStyle = bd?.style as Record<string, unknown> | undefined
-        const bStroke = (bCustomStyle?.stroke as string) ?? bDefaultStyle?.stroke ?? '#333333'
-        const bStrokeWidth = (bCustomStyle?.strokeWidth as number) ?? bDefaultStyle?.strokeWidth ?? 2
-        const bStrokeDasharray = (bCustomStyle?.strokeDasharray as string) ?? bDefaultStyle?.strokeDasharray ?? ''
-        be.attr('line/strokeWidth', bStrokeWidth)
-        be.attr('line/stroke', bStroke)
-        be.attr('line/strokeDasharray', bStrokeDasharray)
       }
-    }
-    this.highlightedBranchEdgeIds = []
+      this.highlightedBranchEdgeIds = []
 
-    for (const nodeId of this.highlightedNodeIds) {
-      if (!nodeId) continue
-      const nodeCell = this.graph.getCellById(nodeId)
-      if (!nodeCell || !nodeCell.isNode()) continue
-      const nodeData = nodeCell.getData() as Record<string, unknown> | undefined
-      const nodeStyle = nodeData?.style as Record<string, unknown> | undefined
-      const n = nodeCell as unknown as { attr: (path: string, value?: unknown) => void }
-      n.attr('body/strokeWidth', (nodeStyle?.strokeWidth as number) ?? 1.5)
-      n.attr('body/stroke', (nodeStyle?.stroke as string) ?? '#333333')
+      for (const nodeId of this.highlightedNodeIds) {
+        if (!nodeId) continue
+        const nodeCell = this.graph.getCellById(nodeId)
+        if (!nodeCell || !nodeCell.isNode()) continue
+        const nodeData = nodeCell.getData() as Record<string, unknown> | undefined
+        const nodeStyle = nodeData?.style as Record<string, unknown> | undefined
+        const n = nodeCell as unknown as { attr: (path: string, value?: unknown) => void }
+        n.attr('body/strokeWidth', (nodeStyle?.strokeWidth as number) ?? 1.5)
+        n.attr('body/stroke', (nodeStyle?.stroke as string) ?? '#333333')
+      }
+      this.highlightedNodeIds = []
+    } finally {
+      this.stopSkipHistory()
     }
-    this.highlightedNodeIds = []
   }
 
   addNode(data: NodeData): string {
@@ -1500,12 +1616,13 @@ export class GraphEngine {
     const cell = this.graph.getCellById(id)
     if (!cell || !cell.isNode()) return
 
+    this.graph.startBatch('removeNode')
     if (removeEdges) {
       const edges = this.graph.getConnectedEdges(cell)
       edges.forEach(edge => edge.remove())
     }
-
     cell.remove()
+    this.graph.stopBatch('removeNode')
   }
 
   getConnectedEdgeIds(nodeId: string): string[] {

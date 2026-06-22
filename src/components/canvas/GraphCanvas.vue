@@ -367,6 +367,48 @@ function handleEditSave(data: { originalText: string; chineseText: string; nodeT
         },
       }
       edge.setLabels([newLabel])
+    } else {
+      // Edge has no labels yet (e.g. manually created edge), add one
+      edge.setLabels([{
+        markup: [
+          { tagName: 'rect', selector: 'bg' },
+          { tagName: 'text', selector: 'labelText' },
+        ],
+        attrs: {
+          bg: {
+            ref: 'labelText',
+            refWidth: 1.2,
+            refHeight: 1.4,
+            refX: -0.1,
+            refY: -0.2,
+            fill: 'transparent',
+            stroke: 'none',
+            strokeWidth: 0,
+            rx: 4,
+            ry: 4,
+            cursor: 'move',
+            pointerEvents: 'all',
+          },
+          labelText: {
+            text: labelText,
+            fontSize: 12,
+            fill: '#666',
+            fontWeight: 'bold',
+            textAnchor: 'middle',
+            textVerticalAnchor: 'middle',
+            lineHeight: 19,
+            stroke: '#ffffff',
+            strokeWidth: 6,
+            paintOrder: 'stroke fill',
+            strokeLinejoin: 'round',
+            pointerEvents: 'none',
+          },
+        },
+        position: {
+          distance: 0.5,
+          offset: { x: 0, y: 0 },
+        },
+      }])
     }
     const prevData = (cell.getData() as Record<string, unknown>) || {}
     edge.setData({ ...prevData, originalText: data.originalText, chineseText: data.chineseText, relationType: data.relationType })
