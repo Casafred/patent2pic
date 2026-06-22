@@ -308,6 +308,8 @@ export class GraphEngine {
     if (!this.graph) return
 
     const claimType = result.claimType || 'structure'
+    const isMethod = claimType === 'method'
+    const isMixed = claimType === 'mixed'
     const timingKey = `    │  图谱 batchBuild (${claimType})`
     timingStart(timingKey)
 
@@ -334,7 +336,7 @@ export class GraphEngine {
       .filter(e => {
         if (e.relationType === 'attribute' && e.source === e.target) return false
         // 方法类：feedback 边布局时单独处理
-        if (claimType === 'method' && e.relationType === 'feedback') return false
+        if ((isMethod || isMixed) && e.relationType === 'feedback') return false
         return true
       })
       .map(e => ({
@@ -347,8 +349,8 @@ export class GraphEngine {
         style: getDefaultEdgeStyle(e.relationType),
       }))
 
-    // 方法类 feedback 边（布局后手动添加）
-    const feedbackEdgeList: EdgeData[] = claimType === 'method'
+    // 方法类/混合类 feedback 边（布局后手动添加）
+    const feedbackEdgeList: EdgeData[] = (isMethod || isMixed)
       ? result.edges
         .filter(e => e.relationType === 'feedback')
         .map(e => ({
@@ -431,7 +433,7 @@ export class GraphEngine {
     }
 
     timingStart(`    │    布局计算 (ELK)`)
-    const methodLayoutOptions: ElkLayoutOptions | undefined = claimType === 'method'
+    const methodLayoutOptions: ElkLayoutOptions | undefined = isMethod
       ? { rankdir: 'LR', nodesep: 60, ranksep: 100 }
       : layoutOptions
     const positions = await applyElkLayout(nodeDataList, edgeDataList, methodLayoutOptions)
@@ -450,7 +452,7 @@ export class GraphEngine {
       this.graph.addNode(config)
     }
 
-    if (claimType === 'method') {
+    if (isMethod) {
       // 方法类：直接添加所有边，不使用 fork/trunk/branch 合并
       for (const edgeData of edgeDataList) {
         const config = buildEdge(edgeData, isChinese)
@@ -461,6 +463,132 @@ export class GraphEngine {
       for (const feedbackEdge of feedbackEdgeList) {
         const config = buildEdge(feedbackEdge, isChinese)
         // 添加 feedback 边的绕行 vertices
+        const sourceCell = this.graph.getCellById(feedbackEdge.source)
+        const targetCell = this.graph.getCellById(feedbackEdge.target)
+        if (sourceCell && targetCell && sourceCell.isNode() && targetCell.isNode()) {
+          const sourceNode = sourceCell as unknown as { getPosition: () => { x: number; y: number }; getSize: () => { width: number; height: number } }
+          const targetNode = targetCell as unknown as { getPosition: () => { x: number; y: number }; getSize: () => { width: number; height: number } }
+          const sPos = sourceNode.getPosition()
+          const sSize = sourceNode.getSize()
+          const tPos = targetNode.getPosition()
+          const tSize = targetNode.getSize()
+
+          const bottomY = Math.max(sPos.y + sSize.height, tPos.y + tSize.height) + 60
+          config.vertices = [
+            { x: sPos.x + sSize.width / 2, y: bottomY },
+            { x: tPos.x + tSize.width / 2, y: bottomY },
+          ]
+        }
+        this.graph.addEdge(config)
+      }
+    } else if (isMixed) {
+      // 混合类：结构类边使用 fork/trunk/branch 合并，方法类边直接添加
+      const methodRelationTypes = ['sequence', 'branch_true', 'branch_false', 'trigger', 'feedback', 'parallel']
+      const structureEdges = edgeDataList.filter(e => !methodRelationTypes.includes(e.relationType))
+      const methodEdges = edgeDataList.filter(e => methodRelationTypes.includes(e.relationType))
+
+      // 结构类边：使用 fork/trunk/branch 合并
+      const mergeGroupMap = new Map<string, EdgeData[]>()
+      for (const edgeData of structureEdges) {
+        const key = `${edgeData.source}||${edgeData.originalText}`
+        if (!mergeGroupMap.has(key)) {
+          mergeGroupMap.set(key, [])
+        }
+        mergeGroupMap.get(key)!.push(edgeData)
+      }
+
+      const mergedEdgeIds = new Set<string>()
+      for (const [, groupEdges] of mergeGroupMap) {
+        const uniqueTargets = new Set(groupEdges.map(e => e.target))
+        if (groupEdges.length >= 2 && uniqueTargets.size >= 2) {
+          for (const edgeData of groupEdges) {
+            mergedEdgeIds.add(edgeData.id)
+          }
+        }
+      }
+
+      const nonMergedEdges = structureEdges.filter(e => !mergedEdgeIds.has(e.id))
+      const edgeDistanceMap = new Map<string, number>()
+      for (const edgeData of nonMergedEdges) {
+        const key = `${edgeData.source}->${edgeData.target}`
+        const count = edgeDistanceMap.get(key) || 0
+        edgeDistanceMap.set(key, count + 1)
+      }
+
+      const edgeIndexMap = new Map<string, number>()
+
+      let forkGroupIndex = 0
+      for (const [, groupEdges] of mergeGroupMap) {
+        const uniqueTargets = new Set(groupEdges.map(e => e.target))
+        if (groupEdges.length >= 2 && uniqueTargets.size >= 2) {
+          const sourceId = groupEdges[0].source
+          const targetIds = [...new Set(groupEdges.map(e => e.target))]
+          const forkNodeId = `fork-${sourceId}-${forkGroupIndex}`
+          forkGroupIndex++
+
+          const forkPos = this.calculateForkPosition(sourceId, targetIds)
+
+          this.graph.addNode({
+            id: forkNodeId,
+            x: forkPos.x,
+            y: forkPos.y,
+            width: 1,
+            height: 1,
+            shape: 'rect',
+            zIndex: -10,
+            attrs: {
+              body: {
+                fill: 'transparent',
+                stroke: 'transparent',
+                strokeWidth: 0,
+              },
+            },
+            data: {
+              isForkNode: true,
+              sourceId,
+              targetIds,
+            },
+          })
+
+          const mergedIds = groupEdges.map(e => e.id)
+          const trunkConfig = buildTrunkEdge(groupEdges[0], forkNodeId, mergedIds, isChinese)
+          this.graph.addEdge(trunkConfig)
+
+          for (const edgeData of groupEdges) {
+            const branchConfig = buildBranchEdge(edgeData, forkNodeId)
+            this.graph.addEdge(branchConfig)
+          }
+        }
+      }
+
+      for (const edgeData of nonMergedEdges) {
+        const key = `${edgeData.source}->${edgeData.target}`
+        const totalCount = edgeDistanceMap.get(key) || 1
+        const currentIndex = edgeIndexMap.get(key) || 0
+        edgeIndexMap.set(key, currentIndex + 1)
+
+        const config = buildEdge(edgeData, isChinese)
+        if (totalCount > 1) {
+          const step = 1 / (totalCount + 1)
+          const distance = step * (currentIndex + 1)
+          const labels = config.labels as Record<string, unknown>[]
+          if (labels && labels.length > 0) {
+            const label = labels[0] as Record<string, unknown>
+            label.position = { distance }
+          }
+        }
+        this.graph.addEdge(config)
+      }
+
+      // 方法类边：直接添加
+      for (const edgeData of methodEdges) {
+        const config = buildEdge(edgeData, isChinese)
+        this.graph.addEdge(config)
+      }
+
+      // 混合类：添加 feedback 边
+      for (const feedbackEdge of feedbackEdgeList) {
+        const config = buildEdge(feedbackEdge, isChinese)
         const sourceCell = this.graph.getCellById(feedbackEdge.source)
         const targetCell = this.graph.getCellById(feedbackEdge.target)
         if (sourceCell && targetCell && sourceCell.isNode() && targetCell.isNode()) {
@@ -594,7 +722,7 @@ export class GraphEngine {
       }
 
       const filteredGroups = result.groups.filter(group => {
-        if (claimType === 'method') return true  // 方法类直接渲染所有 group
+        if (isMethod) return true  // 方法类直接渲染所有 group
         const groupMemberSet = new Set(group.memberNodeIds)
 
         for (const autoMemberSet of autoGroupMemberSets) {
@@ -629,6 +757,8 @@ export class GraphEngine {
 
   private renderGroups(groups: ExtractGroup[], isChinese: boolean = false, claimType: ClaimType = 'structure'): void {
     if (!this.graph) return
+    const isMethod = claimType === 'method'
+    const isMixed = claimType === 'mixed'
 
     for (const group of groups) {
       if (group.memberNodeIds.length === 0) continue
@@ -648,9 +778,9 @@ export class GraphEngine {
         : `${group.label.original}\n${group.label.chinese}`
 
       // 方法类组合框使用蓝色样式，结构类使用橙色样式
-      const groupStroke = claimType === 'method' ? '#1890FF' : '#fa8c16'
-      const groupFill = claimType === 'method' ? '#f0f5ff' : '#fafafa'
-      const groupFontColor = claimType === 'method' ? '#1890FF' : '#fa8c16'
+      const groupStroke = (isMethod || isMixed) ? '#1890FF' : '#fa8c16'
+      const groupFill = (isMethod || isMixed) ? '#f0f5ff' : '#fafafa'
+      const groupFontColor = (isMethod || isMixed) ? '#1890FF' : '#fa8c16'
 
       this.graph.addNode({
         id: group.id,
@@ -697,6 +827,8 @@ export class GraphEngine {
 
   private renderAttributeTags(attributeEdges: EdgeData[], isChinese: boolean, claimType: ClaimType = 'structure'): void {
     if (!this.graph) return
+    const isMethod = claimType === 'method'
+    const isMixed = claimType === 'mixed'
 
     // Group attribute edges by source node
     const nodeAttributesMap = new Map<string, EdgeData[]>()
@@ -729,7 +861,7 @@ export class GraphEngine {
       const stemLength = 16
 
       // 方法类：标签在节点上方；结构类：标签在节点下方
-      const isAbove = claimType === 'method'
+      const isAbove = isMethod || isMixed
 
       // Calculate starting Y position
       let currentY = isAbove

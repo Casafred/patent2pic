@@ -5,6 +5,7 @@ import { useGraphStore } from '@/stores/graph'
 import { useTranslationStore } from '@/stores/translation'
 import { streamChat } from '@/services/ai/client'
 import { buildMessages } from '@/services/ai/prompt'
+import { predictClaimType } from '@/utils/claim-type'
 import { parseExtractResult } from '@/services/ai/extractor'
 import { alignTranslationToSentences } from '@/services/claim/translation-aligner'
 import type { ExtractResult, SentencePair } from '@/types/ai'
@@ -97,7 +98,7 @@ export function useParallelExtract() {
     let streamError: string | null = null
 
     try {
-      const messages = buildMessages(claim.rawText, providerType)
+      const messages = buildMessages(claim.rawText, providerType, predictClaimType(claim.rawText))
       const isDeepSeek = providerType === 'deepseek'
 
       for await (const chunk of streamChat(

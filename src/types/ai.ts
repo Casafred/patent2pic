@@ -51,7 +51,7 @@ export interface ChatUsage {
 }
 
 export interface ExtractResult {
-  claimType: 'structure' | 'method'
+  claimType: 'structure' | 'method' | 'mixed'
   claimId: string
   nodes: ExtractNode[]
   edges: ExtractEdge[]

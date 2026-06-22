@@ -40,7 +40,8 @@ const SIGNAL_RULES: SignalRule[] = [
 
 /**
  * 预判权利要求类型
- * 基于关键词加权匹配，区分方法类和结构类权利要求
+ * 基于关键词加权匹配，区分方法类、结构类和混合类权利要求
+ * 混合类：装置/设备类权利要求中嵌套了方法/流程步骤
  */
 export function predictClaimType(text: string): ClaimType {
   let methodScore = 0
@@ -77,6 +78,20 @@ export function predictClaimType(text: string): ClaimType {
       methodScore += 6
     } else if (['apparatus', 'device', 'system'].includes(preambleType)) {
       structureScore += 6
+    }
+  }
+
+  // 混合类型判断：当结构类和方法类信号都较强时
+  // 典型场景：装置类权利要求中包含"其中处理器基于...进行分类，以及基于...确定路径"等方法步骤
+  const minScore = 4
+  if (structureScore >= minScore && methodScore >= minScore) {
+    // 前序是装置/设备/系统，但内容中有显著的方法步骤信号 → 混合型
+    if (structureScore > methodScore && methodScore >= structureScore * 0.4) {
+      return 'mixed'
+    }
+    // 前序是方法/流程，但内容中有显著的结构组件信号 → 也可能是混合型
+    if (methodScore > structureScore && structureScore >= methodScore * 0.4) {
+      return 'mixed'
     }
   }
 

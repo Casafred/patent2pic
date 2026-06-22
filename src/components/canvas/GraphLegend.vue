@@ -140,6 +140,7 @@ const claimType = computed(() => {
 })
 
 const isMethod = computed(() => claimType.value === 'method')
+const isMixed = computed(() => claimType.value === 'mixed')
 
 const structureNodeTypes = [
   { label: '部件', fill: '#e8f4fd', stroke: '#1890FF', shape: 'rect' as const },
@@ -153,7 +154,16 @@ const methodNodeTypes = [
   { label: '条件 (condition)', fill: '#fff7e6', stroke: '#fa8c16', shape: 'hexagon' as const },
 ]
 
-const nodeTypes = computed(() => isMethod.value ? methodNodeTypes : structureNodeTypes)
+const mixedNodeTypes = [
+  ...structureNodeTypes,
+  ...methodNodeTypes,
+]
+
+const nodeTypes = computed(() =>
+  isMethod.value ? methodNodeTypes
+    : isMixed.value ? mixedNodeTypes
+    : structureNodeTypes
+)
 
 const structureRelationTypes = [
   { label: '位置关系', stroke: '#1890FF', dasharray: '', arrowType: 'solid-triangle' },
@@ -173,7 +183,21 @@ const methodRelationTypes = [
   { label: '参数/阈值', stroke: '#13c2c2', dasharray: '3 3', arrowType: 'none' },
 ]
 
-const relationTypes = computed(() => isMethod.value ? methodRelationTypes : structureRelationTypes)
+const mixedRelationTypes = [
+  ...structureRelationTypes,
+  { label: '先后顺序', stroke: '#1890FF', dasharray: '', arrowType: 'solid-triangle' },
+  { label: '是 (branch_true)', stroke: '#52c41a', dasharray: '', arrowType: 'solid-triangle' },
+  { label: '否 (branch_false)', stroke: '#e63946', dasharray: '6 3', arrowType: 'solid-triangle' },
+  { label: '触发关系', stroke: '#fa8c16', dasharray: '6 3 2 3', arrowType: 'hollow-triangle' },
+  { label: '反馈回路', stroke: '#722ed1', dasharray: '4 4', arrowType: 'circle' },
+  { label: '并行执行', stroke: '#13c2c2', dasharray: '', arrowType: 'solid-triangle' },
+]
+
+const relationTypes = computed(() =>
+  isMethod.value ? methodRelationTypes
+    : isMixed.value ? mixedRelationTypes
+    : structureRelationTypes
+)
 
 const lineStyles = [
   { label: '实线', dasharray: '' },

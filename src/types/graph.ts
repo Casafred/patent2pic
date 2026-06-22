@@ -1,4 +1,4 @@
-export type ClaimType = 'structure' | 'method'
+export type ClaimType = 'structure' | 'method' | 'mixed'
 
 export type RelationType =
   // 结构类专属

@@ -85,7 +85,9 @@ function validateExtractResult(data: unknown): ExtractResult {
 
   const result = data as Record<string, unknown>
 
-  const claimType = result.claimType === 'method' ? 'method' as const : 'structure' as const
+  const claimType = result.claimType === 'method' ? 'method' as const
+    : result.claimType === 'mixed' ? 'mixed' as const
+    : 'structure' as const
   const nodes = validateNodes(result.nodes, claimType)
   const edges = validateEdges(result.edges, nodes, claimType)
   const groups = validateGroups(result.groups, nodes)
@@ -101,13 +103,16 @@ function validateExtractResult(data: unknown): ExtractResult {
   }
 }
 
-function validateNodes(raw: unknown, claimType: 'structure' | 'method'): ExtractNode[] {
+function validateNodes(raw: unknown, claimType: 'structure' | 'method' | 'mixed'): ExtractNode[] {
   if (!Array.isArray(raw)) throw new Error('nodes 必须是数组')
   const ids = new Set<string>()
 
   const structureTypes = ['component', 'subsystem', 'feature']
   const methodTypes = ['step', 'decision', 'condition']
-  const validTypes = claimType === 'method' ? methodTypes : structureTypes
+  // mixed 类型允许所有节点类型
+  const validTypes = claimType === 'method' ? methodTypes
+    : claimType === 'mixed' ? [...structureTypes, ...methodTypes]
+    : structureTypes
 
   return raw.map((item: unknown, index: number) => {
     if (!item || typeof item !== 'object') throw new Error(`nodes[${index}] 不是有效对象`)
@@ -135,13 +140,16 @@ function validateNodes(raw: unknown, claimType: 'structure' | 'method'): Extract
   })
 }
 
-function validateEdges(raw: unknown, nodes: ExtractNode[], claimType: 'structure' | 'method'): ExtractEdge[] {
+function validateEdges(raw: unknown, nodes: ExtractNode[], claimType: 'structure' | 'method' | 'mixed'): ExtractEdge[] {
   if (!Array.isArray(raw)) throw new Error('edges 必须是数组')
   const nodeIds = new Set(nodes.map(n => n.id))
 
   const structureTypes = ['position', 'action', 'containment', 'logical', 'attribute']
   const methodTypes = ['sequence', 'branch_true', 'branch_false', 'trigger', 'feedback', 'parallel', 'attribute']
-  const validTypes = claimType === 'method' ? methodTypes : structureTypes
+  // mixed 类型允许所有边类型
+  const validTypes = claimType === 'method' ? methodTypes
+    : claimType === 'mixed' ? [...structureTypes, ...methodTypes]
+    : structureTypes
 
   return raw.map((item: unknown, index: number) => {
     if (!item || typeof item !== 'object') throw new Error(`edges[${index}] 不是有效对象`)
