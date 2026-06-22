@@ -133,10 +133,10 @@ export class GraphEngine {
               return sourceCell.id === forkNodeId && targetCell.id === realTargetId
             }
 
-            if (edgeData?.originalText !== undefined) {
-              // Use stored original node IDs for validation.
-              // edge.getSourceCellId()/getTargetCellId() are unreliable because
-              // snapArrowhead updates terminals in real-time via setTerminal().
+            // Only validate against stored original IDs for existing edges
+            // that have both originalText and _origSourceId/_origTargetId set.
+            // Newly created edges (originalText is empty) should allow connection.
+            if (edgeData?.originalText !== undefined && edgeData?.originalText !== '') {
               const origSourceId = (edgeData._origSourceId as string) || edge.getSourceCellId()
               const origTargetId = (edgeData._origTargetId as string) || edge.getTargetCellId()
               return sourceCell.id === origSourceId && targetCell.id === origTargetId
@@ -147,7 +147,8 @@ export class GraphEngine {
         },
         validateEdge({ edge, type, previous }) {
           const edgeData = edge.getData() as Record<string, unknown> | undefined
-          if (edgeData?.originalText !== undefined) {
+          // Only validate for existing edges with non-empty originalText
+          if (edgeData?.originalText !== undefined && edgeData?.originalText !== '') {
             const prevTerminal = previous as unknown as Record<string, unknown>
             const prevCellId = prevTerminal?.cell as string | undefined
             if (type === 'source') {

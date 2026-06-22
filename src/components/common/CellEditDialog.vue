@@ -27,18 +27,36 @@
       <div v-if="isNode" class="form-group">
         <label>节点类型</label>
         <el-select v-model="nodeType" size="default" class="full-select">
-          <el-option label="部件 (component)" value="component" />
-          <el-option label="子系统 (subsystem)" value="subsystem" />
-          <el-option label="特征 (feature)" value="feature" />
+          <el-option-group label="结构类">
+            <el-option label="部件 (component)" value="component" />
+            <el-option label="子系统 (subsystem)" value="subsystem" />
+            <el-option label="特征 (feature)" value="feature" />
+          </el-option-group>
+          <el-option-group label="方法类">
+            <el-option label="步骤 (step)" value="step" />
+            <el-option label="判断 (decision)" value="decision" />
+            <el-option label="条件 (condition)" value="condition" />
+          </el-option-group>
         </el-select>
       </div>
       <div v-if="!isNode" class="form-group">
         <label>关系类型</label>
         <el-select v-model="relationType" size="default" class="full-select">
-          <el-option label="位置关系" value="position" />
-          <el-option label="动作关系" value="action" />
-          <el-option label="包含关系" value="containment" />
-          <el-option label="逻辑关系" value="logical" />
+          <el-option-group label="结构类">
+            <el-option label="位置关系" value="position" />
+            <el-option label="动作关系" value="action" />
+            <el-option label="包含关系" value="containment" />
+            <el-option label="逻辑关系" value="logical" />
+            <el-option label="属性关系" value="attribute" />
+          </el-option-group>
+          <el-option-group label="方法类">
+            <el-option label="先后顺序" value="sequence" />
+            <el-option label="是 (branch_true)" value="branch_true" />
+            <el-option label="否 (branch_false)" value="branch_false" />
+            <el-option label="触发关系" value="trigger" />
+            <el-option label="反馈回路" value="feedback" />
+            <el-option label="并行执行" value="parallel" />
+          </el-option-group>
         </el-select>
       </div>
     </div>

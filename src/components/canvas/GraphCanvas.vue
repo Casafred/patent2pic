@@ -69,10 +69,10 @@ import { useKeyboard } from '@/composables/useKeyboard'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
 import { getDefaultNodeStyle, getDefaultEdgeStyle } from '@/services/graph/style-registry'
-import { calculateNodeSize } from '@/services/graph/node-builder'
+import { calculateNodeSize, buildNode } from '@/services/graph/node-builder'
 import CellEditDialog from '../common/CellEditDialog.vue'
 import GraphLegend from './GraphLegend.vue'
-import type { NodeType, RelationType } from '@/types/graph'
+import type { NodeType, RelationType, NodeData } from '@/types/graph'
 
 const editorStore = useEditorStore()
 const graphStore = useGraphStore()
@@ -341,11 +341,42 @@ function handleEditSave(data: { originalText: string; chineseText: string; nodeT
     })
 
     if (data.nodeType) {
-      const style = getDefaultNodeStyle(data.nodeType)
-      engine.updateNodeStyle(editCellId.value, {
-        fill: style.fill,
-        stroke: style.stroke,
-      })
+      const prevNodeType = prevData.nodeType as NodeType | undefined
+      // If node type changed (especially between structure and method types),
+      // we need to rebuild the node because shape cannot be changed via attr
+      if (prevNodeType && prevNodeType !== data.nodeType) {
+        const pos = (cell as unknown as { getPosition: () => { x: number; y: number } }).getPosition()
+        const connectedEdges = graph.getConnectedEdges(cell)
+
+        // Build new node with updated type
+        const newNodeData: NodeData = {
+          id: editCellId.value,
+          originalText: data.originalText,
+          chineseText: data.chineseText,
+          nodeType: data.nodeType,
+          hierarchyLevel: (prevData.hierarchyLevel as number) ?? 0,
+          style: getDefaultNodeStyle(data.nodeType),
+          x: pos.x,
+          y: pos.y,
+        }
+        const newNodeConfig = buildNode(newNodeData, graphStore.activeTab?.isChinese ?? false)
+
+        // Remove old node and add new one
+        cell.remove()
+        graph.addNode(newNodeConfig)
+
+        // Re-add connected edges
+        for (const edge of connectedEdges) {
+          const edgeConfig = edge.toJSON()
+          graph.addEdge(edgeConfig)
+        }
+      } else {
+        const style = getDefaultNodeStyle(data.nodeType)
+        engine.updateNodeStyle(editCellId.value, {
+          fill: style.fill,
+          stroke: style.stroke,
+        })
+      }
     }
   } else {
     const edge = cell as unknown as { getLabels: () => unknown[]; setLabels: (labels: unknown[]) => void; setData: (data: Record<string, unknown>) => void }
