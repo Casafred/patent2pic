@@ -31,6 +31,7 @@ import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
 import { useTranslationStore } from '@/stores/translation'
+import { usePlaybackStore } from '@/stores/playback'
 import { graphEngine } from '@/services/graph/engine'
 import { parseClaims } from '@/services/claim/parser'
 
@@ -38,6 +39,7 @@ const editorStore = useEditorStore()
 const graphStore = useGraphStore()
 const claimStore = useClaimStore()
 const translationStore = useTranslationStore()
+const playback = usePlaybackStore()
 const graphCanvasRef = ref<InstanceType<typeof GraphCanvas> | null>(null)
 const leftPanelRef = ref<HTMLElement | null>(null)
 const rightPanelRef = ref<HTMLElement | null>(null)
@@ -154,8 +156,12 @@ watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
 
   if (newTab.serializedGraph && Object.keys(newTab.serializedGraph).length > 0) {
     graphEngine.fromJSON(newTab.serializedGraph)
+    playback.setFrames(newTab.extractResult?.frames || [])
   } else if (newTab.extractResult) {
     await graphEngine.batchBuild(newTab.extractResult, undefined, newTab.isChinese)
+    playback.setFrames(newTab.extractResult.frames || [])
+  } else {
+    playback.clearFrames()
   }
   // If extractResult is not available yet (parallel processing in progress),
   // the canvas stays empty. The extractResult watcher below will build the graph
@@ -175,6 +181,7 @@ watch(
       const tab = graphStore.activeTab
       if (tab) {
         await graphEngine.batchBuild(newResult, undefined, tab.isChinese)
+        playback.setFrames(newResult.frames || [])
       }
     }
   },

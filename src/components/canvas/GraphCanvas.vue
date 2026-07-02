@@ -6,6 +6,8 @@
       <span class="zoom-label">{{ Math.round(editorStore.zoom * 100) }}%</span>
     </div>
 
+    <PlaybackControls />
+
     <CellEditDialog
       v-model:visible="editDialogVisible"
       :is-node="editIsNode"
@@ -72,6 +74,7 @@ import { getDefaultNodeStyle, getDefaultEdgeStyle } from '@/services/graph/style
 import { calculateNodeSize, buildNode } from '@/services/graph/node-builder'
 import CellEditDialog from '../common/CellEditDialog.vue'
 import GraphLegend from './GraphLegend.vue'
+import PlaybackControls from './PlaybackControls.vue'
 import type { NodeType, RelationType, NodeData } from '@/types/graph'
 
 const editorStore = useEditorStore()

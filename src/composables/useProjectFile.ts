@@ -2,6 +2,7 @@ import { graphEngine } from '@/services/graph/engine'
 import { useGraphStore } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
 import { useTranslationStore } from '@/stores/translation'
+import { usePlaybackStore } from '@/stores/playback'
 import { parseClaims } from '@/services/claim/parser'
 
 function isTauri(): boolean {
@@ -12,6 +13,7 @@ export function useProjectFile() {
   const graphStore = useGraphStore()
   const claimStore = useClaimStore()
   const translationStore = useTranslationStore()
+  const playback = usePlaybackStore()
 
   async function saveProject(): Promise<void> {
     const graph = graphEngine.getGraph()
@@ -186,6 +188,7 @@ export function useProjectFile() {
             graph.clearCells()
             graphEngine.fromJSON(graphJSON)
             graphEngine.rebindGroupTracking()
+            playback.setFrames(activeTab?.extractResult?.frames || [])
             setTimeout(() => graphEngine.fitView(), 100)
           }
         }
@@ -195,6 +198,7 @@ export function useProjectFile() {
           graph.clearCells()
           graphEngine.fromJSON(data.graphJSON)
           graphEngine.rebindGroupTracking()
+          playback.clearFrames()
           setTimeout(() => graphEngine.fitView(), 100)
         }
       } else if (data.graph) {
@@ -203,8 +207,11 @@ export function useProjectFile() {
           graph.clearCells()
           graphEngine.fromJSON(data.graph)
           graphEngine.rebindGroupTracking()
+          playback.clearFrames()
           setTimeout(() => graphEngine.fitView(), 100)
         }
+      } else {
+        playback.clearFrames()
       }
 
       return true

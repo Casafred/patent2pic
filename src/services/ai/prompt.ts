@@ -1,6 +1,55 @@
 import type { ChatMessage, AIProviderType } from '@/types/ai'
 import type { ClaimType } from '@/types/graph'
 
+const FRAMES_GUIDE = `## 渐进式动画帧生成（极其重要）
+为了让复杂权利要求的图形更易理解，必须生成 frames 帧序列，实现渐进式动画讲解：
+- Frame 0（骨架主图，index=0，type="structure"）：展示最核心的整体结构，只包含 hierarchyLevel 最低的核心部件节点（如整机、主要子系统），highlightNodeIds 列出这些核心节点，highlightEdgeIds 列出它们之间的主要连接关系
+- 后续帧按叙述顺序生成：每个重要的动作阶段、逻辑条件、工作阶段生成一个帧
+- 方法类权利要求：每个主要步骤或阶段生成一个帧
+- 混合类权利要求：Frame 0=整体结构，后续依次展示各个方法/动作阶段、控制逻辑
+- 每个帧的 highlightNodeIds 必须包含该帧重点展示的所有节点ID，highlightEdgeIds 包含该帧重点展示的边ID
+- 帧数量控制在3-8个之间，不要过多
+- narration 字段用中文写一句简短的旁白说明该帧内容
+- title 字段用中文写帧标题，如"整体结构"、"压缩冲程"、"控制逻辑"等
+
+输出JSON必须包含 frames 数组，格式如下：
+"frames": [
+  {
+    "index": 0,
+    "title": "整体结构",
+    "type": "structure",
+    "narration": "展示装置的主要组成部分及其连接关系",
+    "highlightNodeIds": ["n1", "n2", "n3"],
+    "highlightEdgeIds": ["e1", "e2"]
+  }
+]`
+
+const METHOD_FRAMES_GUIDE = `## 渐进式动画帧生成（极其重要）
+为了让复杂权利要求的流程图更易理解，必须生成 frames 帧序列，实现渐进式动画讲解：
+- Frame 0（主流程骨架，index=0，type="structure"）：展示最核心的主流程步骤，只包含 hierarchyLevel 最低的核心 step 节点和主要 sequence 边
+- 后续帧按流程顺序生成：每个主要阶段或逻辑判断分支生成一个帧
+- type 字段：纯流程阶段用"process"，逻辑判断/条件分支用"logic"
+- 帧数量控制在3-8个之间，不要过多
+- narration 字段用中文写一句简短的旁白说明该帧内容
+- title 字段用中文写帧标题，如"主流程概述"、"数据获取阶段"、"判断逻辑"等
+- highlightNodeIds 必须包含该帧重点展示的所有节点ID
+- highlightEdgeIds 必须包含该帧重点展示的所有边ID
+
+输出JSON必须包含 frames 数组。`
+
+const MIXED_FRAMES_GUIDE = `## 渐进式动画帧生成（极其重要）
+为了让复杂权利要求的图形更易理解，必须生成 frames 帧序列，实现渐进式动画讲解：
+- Frame 0（整体结构骨架，index=0，type="structure"）：展示最核心的组件结构，只包含 hierarchyLevel 最低的核心组件节点和 containment 边
+- 后续帧按叙述顺序生成：每个重要的组件关系、动作阶段、逻辑条件生成一个帧
+- type 字段：组件结构展示用"structure"，动作/流程阶段用"process"，逻辑判断/条件分支用"logic"
+- 帧数量控制在3-8个之间，不要过多
+- narration 字段用中文写一句简短的旁白说明该帧内容
+- title 字段用中文写帧标题，如"整体结构"、"处理流程"、"控制逻辑"等
+- highlightNodeIds 必须包含该帧重点展示的所有节点ID
+- highlightEdgeIds 必须包含该帧重点展示的所有边ID
+
+输出JSON必须包含 frames 数组。`
+
 const DEFAULT_SYSTEM_PROMPT = `你是一个专利权利要求分析专家。你的任务是从专利独立权利要求文本中：
 1. 提取所有部件/组件名词作为节点
 2. 识别部件之间的关系作为边
@@ -83,8 +132,11 @@ sentencePairs 断句规则（极其重要）：
   "sentencePairs": [
     { "original": "原文第一句;", "translation": "中文翻译第一句；" },
     { "original": "原文第二句.", "translation": "中文翻译第二句。" }
-  ]
-}`
+  ],
+  "frames": []
+}
+
+${FRAMES_GUIDE}`
 
 const DEFAULT_USER_PROMPT_TEMPLATE = `请分析以下专利独立权利要求，提取部件节点和关系边：
 
@@ -146,6 +198,8 @@ const DEEPSEEK_SYSTEM_PROMPT = `你是一个专利权利要求分析专家。你
 - original 必须与原文对应片段完全一致（包括标点符号）
 - translation 必须与 original 一一对应，翻译准确完整
 
+${FRAMES_GUIDE}
+
 ## 输出格式
 
 严格输出以下 JSON 结构，不要输出任何其他文字、解释或 markdown 代码块标记：
@@ -189,7 +243,8 @@ const DEEPSEEK_SYSTEM_PROMPT = `你是一个专利权利要求分析专家。你
   "sentencePairs": [
     { "original": "原文第一句;", "translation": "中文翻译第一句；" },
     { "original": "原文第二句.", "translation": "中文翻译第二句。" }
-  ]
+  ],
+  "frames": []
 }`
 
 const DEEPSEEK_USER_PROMPT_TEMPLATE = `请分析以下专利独立权利要求，提取部件节点和关系边：
@@ -314,6 +369,8 @@ const METHOD_SYSTEM_PROMPT = `你是一个专利方法类权利要求分析专�
 - 中文权利要求通常在分号(；)、句号(。)、"其中"、"使得"等处断开
 - 片段按原文顺序排列，覆盖整条权利要求，不遗漏不重叠
 
+${METHOD_FRAMES_GUIDE}
+
 ## 输出格式
 
 输出严格 JSON 格式，不要输出任何其他内容：
@@ -390,7 +447,8 @@ const METHOD_SYSTEM_PROMPT = `你是一个专利方法类权利要求分析专�
   "sentencePairs": [
     { "original": "原文第一句;", "translation": "中文翻译第一句；" },
     { "original": "原文第二句.", "translation": "中文翻译第二句。" }
-  ]
+  ],
+  "frames": []
 }`
 
 const METHOD_USER_PROMPT_TEMPLATE = `请分析以下方法类专利独立权利要求，提取流程控制图要素：
@@ -455,6 +513,8 @@ const DEEPSEEK_METHOD_SYSTEM_PROMPT = `你是一个专利方法类权利要求�
 - sentencePairs 按自然语义断句，覆盖全文不遗漏不重叠
 - 原文是中文则直接返回原文
 
+${METHOD_FRAMES_GUIDE}
+
 ## 输出格式
 
 严格输出 JSON，不要输出任何其他文字、解释或 markdown 代码块标记：
@@ -464,7 +524,8 @@ const DEEPSEEK_METHOD_SYSTEM_PROMPT = `你是一个专利方法类权利要求�
   "edges": [{ "id": "e1", "source": "n1", "target": "n2", "originalText": "", "chineseText": "", "relationType": "sequence" }],
   "groups": [{ "id": "g1", "label": { "original": "", "chinese": "" }, "memberNodeIds": [] }],
   "translatedClaim": "",
-  "sentencePairs": [{ "original": "", "translation": "" }]
+  "sentencePairs": [{ "original": "", "translation": "" }],
+  "frames": []
 }`
 
 const DEEPSEEK_METHOD_USER_PROMPT_TEMPLATE = `请分析以下方法类专利独立权利要求，提取流程控制图要素：
@@ -578,6 +639,8 @@ const MIXED_SYSTEM_PROMPT = `你是一个专利权利要求分析专家。你的
 - 中文权利要求通常在分号(；)、句号(。)、"其中"、"使得"等处断开
 - 片段按原文顺序排列，覆盖整条权利要求，不遗漏不重叠
 
+${MIXED_FRAMES_GUIDE}
+
 ## 输出格式
 
 输出严格 JSON 格式，不要输出任何其他内容：
@@ -630,7 +693,8 @@ const MIXED_SYSTEM_PROMPT = `你是一个专利权利要求分析专家。你的
   "sentencePairs": [
     { "original": "原文第一句;", "translation": "中文翻译第一句；" },
     { "original": "原文第二句.", "translation": "中文翻译第二句。" }
-  ]
+  ],
+  "frames": []
 }`
 
 const MIXED_USER_PROMPT_TEMPLATE = `请分析以下混合型专利独立权利要求，同时提取组件节点和方法步骤节点：
@@ -694,6 +758,8 @@ const DEEPSEEK_MIXED_SYSTEM_PROMPT = `你是一个专利权利要求分析专家
 - sentencePairs 按自然语义断句，覆盖全文不遗漏不重叠
 - 原文是中文则直接返回原文
 
+${MIXED_FRAMES_GUIDE}
+
 ## 输出格式
 
 严格输出 JSON，不要输出任何其他文字、解释或 markdown 代码块标记：
@@ -703,7 +769,8 @@ const DEEPSEEK_MIXED_SYSTEM_PROMPT = `你是一个专利权利要求分析专家
   "edges": [{ "id": "e1", "source": "n1", "target": "n2", "originalText": "", "chineseText": "", "relationType": "action" }],
   "groups": [{ "id": "g1", "label": { "original": "", "chinese": "" }, "memberNodeIds": [] }],
   "translatedClaim": "",
-  "sentencePairs": [{ "original": "", "translation": "" }]
+  "sentencePairs": [{ "original": "", "translation": "" }],
+  "frames": []
 }`
 
 const DEEPSEEK_MIXED_USER_PROMPT_TEMPLATE = `请分析以下混合型专利独立权利要求，同时提取组件节点和方法步骤节点：

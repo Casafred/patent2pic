@@ -1,4 +1,4 @@
-import type { ExtractResult, ExtractNode, ExtractEdge, ExtractGroup, SentencePair } from '@/types/ai'
+import type { ExtractResult, ExtractNode, ExtractEdge, ExtractGroup, SentencePair, ExtractFrame } from '@/types/ai'
 
 export function parseExtractResult(raw: string): ExtractResult {
   const jsonStr = extractJSON(raw)
@@ -91,6 +91,11 @@ function validateExtractResult(data: unknown): ExtractResult {
   const nodes = validateNodes(result.nodes, claimType)
   const edges = validateEdges(result.edges, nodes, claimType)
   const groups = validateGroups(result.groups, nodes)
+  let frames = validateFrames(result.frames, nodes, edges)
+
+  if (frames.length === 0) {
+    frames = generateDefaultFrames(nodes, edges, claimType)
+  }
 
   return {
     claimType,
@@ -100,7 +105,118 @@ function validateExtractResult(data: unknown): ExtractResult {
     groups,
     translatedClaim: String(result.translatedClaim || ''),
     sentencePairs: validateSentencePairs(result.sentencePairs),
+    frames,
   }
+}
+
+function validateFrames(raw: unknown, nodes: ExtractNode[], edges: ExtractEdge[]): ExtractFrame[] {
+  if (!raw || !Array.isArray(raw)) return []
+  const nodeIds = new Set(nodes.map(n => n.id))
+  const edgeIds = new Set(edges.map(e => e.id))
+
+  return raw
+    .filter((item: unknown): item is Record<string, unknown> => {
+      if (!item || typeof item !== 'object') return false
+      const f = item as Record<string, unknown>
+      return typeof f.title === 'string'
+    })
+    .map((item: Record<string, unknown>, index: number) => {
+      const highlightNodeIdsRaw = Array.isArray(item.highlightNodeIds) ? item.highlightNodeIds as unknown[] : []
+      const highlightEdgeIdsRaw = Array.isArray(item.highlightEdgeIds) ? item.highlightEdgeIds as unknown[] : []
+
+      const highlightNodeIds = highlightNodeIdsRaw
+        .map(id => String(id))
+        .filter(id => nodeIds.has(id))
+
+      const highlightEdgeIds = highlightEdgeIdsRaw
+        .map(id => String(id))
+        .filter(id => edgeIds.has(id))
+
+      const frameTypeRaw = String(item.type || 'structure')
+      const frameType: 'structure' | 'process' | 'logic' =
+        frameTypeRaw === 'process' ? 'process'
+        : frameTypeRaw === 'logic' ? 'logic'
+        : 'structure'
+
+      return {
+        index: typeof item.index === 'number' ? item.index : index,
+        title: String(item.title),
+        type: frameType,
+        narration: item.narration ? String(item.narration) : undefined,
+        highlightNodeIds,
+        highlightEdgeIds,
+        claimSpan: Array.isArray(item.claimSpan) && item.claimSpan.length === 2
+          ? [Number(item.claimSpan[0]), Number(item.claimSpan[1])] as [number, number]
+          : undefined,
+      }
+    })
+    .filter(f => f.highlightNodeIds.length > 0 || f.highlightEdgeIds.length > 0)
+    .sort((a, b) => a.index - b.index)
+    .map((f, i) => ({ ...f, index: i }))
+}
+
+function generateDefaultFrames(
+  nodes: ExtractNode[],
+  edges: ExtractEdge[],
+  claimType: 'structure' | 'method' | 'mixed'
+): ExtractFrame[] {
+  if (nodes.length <= 5) {
+    return []
+  }
+
+  const frames: ExtractFrame[] = []
+  const minLevel = Math.min(...nodes.map(n => n.hierarchyLevel))
+  const coreNodes = nodes.filter(n => n.hierarchyLevel === minLevel)
+
+  const coreNodeIds = new Set(coreNodes.map(n => n.id))
+  const coreEdgeIds = edges
+    .filter(e => coreNodeIds.has(e.source) && coreNodeIds.has(e.target))
+    .map(e => e.id)
+
+  frames.push({
+    index: 0,
+    title: '整体结构',
+    type: 'structure',
+    narration: '展示核心部件及其主要连接关系',
+    highlightNodeIds: coreNodes.map(n => n.id),
+    highlightEdgeIds: coreEdgeIds,
+  })
+
+  if (claimType === 'method' || claimType === 'mixed') {
+    const stepNodes = nodes.filter(n => n.nodeType === 'step' || n.nodeType === 'decision' || n.nodeType === 'condition')
+    if (stepNodes.length >= 3) {
+      const mid = Math.ceil(stepNodes.length / 2)
+      const firstHalf = stepNodes.slice(0, mid)
+      const secondHalf = stepNodes.slice(mid)
+
+      const firstHalfIds = new Set(firstHalf.map(n => n.id))
+      const secondHalfIds = new Set(secondHalf.map(n => n.id))
+
+      frames.push({
+        index: 1,
+        title: '流程阶段一',
+        type: 'process',
+        narration: '展示前半部分处理步骤',
+        highlightNodeIds: [...coreNodes.map(n => n.id), ...firstHalf.map(n => n.id)],
+        highlightEdgeIds: edges.filter(e =>
+          firstHalfIds.has(e.source) || firstHalfIds.has(e.target)
+        ).map(e => e.id),
+      })
+
+      frames.push({
+        index: 2,
+        title: '流程阶段二',
+        type: 'process',
+        narration: '展示后半部分处理步骤',
+        highlightNodeIds: [...coreNodes.map(n => n.id), ...secondHalf.map(n => n.id)],
+        highlightEdgeIds: edges.filter(e =>
+          secondHalfIds.has(e.source) || secondHalfIds.has(e.target)
+        ).map(e => e.id),
+      })
+    }
+  }
+
+  return frames.length >= 2 ? frames : []
 }
 
 function validateNodes(raw: unknown, claimType: 'structure' | 'method' | 'mixed'): ExtractNode[] {

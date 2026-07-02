@@ -3,6 +3,7 @@ import { useAIStore } from '@/stores/ai'
 import { useClaimStore } from '@/stores/claim'
 import { useGraphStore } from '@/stores/graph'
 import { useTranslationStore } from '@/stores/translation'
+import { usePlaybackStore } from '@/stores/playback'
 import { streamChat } from '@/services/ai/client'
 import { buildMessages } from '@/services/ai/prompt'
 import { predictClaimType } from '@/utils/claim-type'
@@ -26,6 +27,7 @@ export function useAIExtract() {
   const claimStore = useClaimStore()
   const graphStore = useGraphStore()
   const translationStore = useTranslationStore()
+  const playback = usePlaybackStore()
   const { translateAllSentences } = useAITranslation()
   const streamContent = ref('')
   const reasoningContent = ref('')
@@ -211,6 +213,7 @@ export function useAIExtract() {
     graphStore.updateTabExtractResult(tab.id, result)
     graphStore.updateTabName(tab.id, `权利要求 ${graphStore.tabs.length}`)
     await graphEngine.batchBuild(result, undefined, isChinese)
+    playback.setFrames(result.frames || [])
     timingEnd(`  │ 图谱构建`)
 
     timingLap(`  节点数=${result.nodes.length} 边数=${result.edges.length} 组数=${result.groups.length}`, timingKey)

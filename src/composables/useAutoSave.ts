@@ -3,6 +3,7 @@ import { useGraphStore, type TabData } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
 import { useEditorStore } from '@/stores/editor'
 import { useTranslationStore } from '@/stores/translation'
+import { usePlaybackStore } from '@/stores/playback'
 import { parseClaims } from '@/services/claim/parser'
 
 const AUTOSAVE_KEY = 'patent2pic-autosave'
@@ -13,6 +14,7 @@ export function useAutoSave() {
   const claimStore = useClaimStore()
   const editorStore = useEditorStore()
   const translationStore = useTranslationStore()
+  const playback = usePlaybackStore()
 
   let intervalId: ReturnType<typeof setInterval> | null = null
 
@@ -120,6 +122,7 @@ export function useAutoSave() {
           if (graph) {
             graph.clearCells()
             graphEngine.fromJSON(activeTab.serializedGraph)
+            playback.setFrames(activeTab.extractResult?.frames || [])
             setTimeout(() => graphEngine.fitView(), 100)
           }
         } else if (activeTab?.extractResult) {
@@ -127,6 +130,8 @@ export function useAutoSave() {
           if (graph) {
             graphEngine.batchBuild(activeTab.extractResult, undefined, activeTab.isChinese).catch(console.error)
           }
+        } else {
+          playback.clearFrames()
         }
 
         return true

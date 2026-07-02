@@ -50,6 +50,18 @@ export interface ChatUsage {
   reasoningTokens?: number
 }
 
+export type SemanticLayer = 'structure' | 'process' | 'logic'
+
+export interface ExtractFrame {
+  index: number
+  title: string
+  type: SemanticLayer
+  narration?: string
+  highlightNodeIds: string[]
+  highlightEdgeIds: string[]
+  claimSpan?: [number, number]
+}
+
 export interface ExtractResult {
   claimType: 'structure' | 'method' | 'mixed'
   claimId: string
@@ -58,6 +70,7 @@ export interface ExtractResult {
   groups: ExtractGroup[]
   translatedClaim: string
   sentencePairs: SentencePair[]
+  frames?: ExtractFrame[]
 }
 
 export interface SentencePair {

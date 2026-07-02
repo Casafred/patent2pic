@@ -7,7 +7,7 @@ import { MiniMap } from '@antv/x6-plugin-minimap'
 import { Export } from '@antv/x6-plugin-export'
 import { Transform } from '@antv/x6-plugin-transform'
 import type { NodeData, EdgeData, ClaimType } from '@/types/graph'
-import type { ExtractResult, ExtractGroup } from '@/types/ai'
+import type { ExtractResult, ExtractGroup, ExtractFrame } from '@/types/ai'
 import { buildNode, updateNodeStyle, calculateNodeSize } from './node-builder'
 import { buildEdge, buildTrunkEdge, buildBranchEdge, updateEdgeStyle } from './edge-builder'
 import { applyElkLayout, type ElkLayoutOptions } from './layout'
@@ -19,6 +19,10 @@ import { timingStart, timingEnd } from '@/utils/timing'
 export class GraphEngine {
   private graph: Graph | null = null
   private initialGraphJSON: Record<string, unknown> | null = null
+  private frames: ExtractFrame[] = []
+  private currentFrameIndex = -1
+  private originalNodeStyles = new Map<string, { opacity: number; stroke: string; strokeWidth: number; fill: string }>()
+  private originalEdgeStyles = new Map<string, { opacity: number; stroke: string; strokeWidth: number; strokeDasharray: string }>()
 
   init(container: HTMLElement): void {
     setupCustomEdge()
@@ -756,6 +760,16 @@ export class GraphEngine {
     this.graph.stopBatch('build')
 
     this.initialGraphJSON = this.graph.toJSON()
+
+    this.captureOriginalStyles()
+
+    if (result.frames && result.frames.length > 0) {
+      this.frames = result.frames
+      this.applyFrame(0, false)
+    } else {
+      this.frames = []
+      this.currentFrameIndex = -1
+    }
 
     setTimeout(() => this.fitView(), 100)
 
@@ -2274,6 +2288,266 @@ export class GraphEngine {
 
   hasInitialState(): boolean {
     return this.initialGraphJSON !== null
+  }
+
+  private captureOriginalStyles(): void {
+    if (!this.graph) return
+    this.originalNodeStyles.clear()
+    this.originalEdgeStyles.clear()
+
+    const nodes = this.graph.getNodes()
+    for (const node of nodes) {
+      const data = node.getData() as Record<string, unknown> | undefined
+      if (data?.isForkNode || data?.isAttributeTag || data?.isAttributeStem) continue
+      const attrs = node.getAttrs() as Record<string, unknown>
+      const body = (attrs.body || {}) as Record<string, unknown>
+      this.originalNodeStyles.set(node.id, {
+        opacity: 1,
+        stroke: (body.stroke as string) || '#333333',
+        strokeWidth: (body.strokeWidth as number) || 1.5,
+        fill: (body.fill as string) || '#ffffff',
+      })
+    }
+
+    const edges = this.graph.getEdges()
+    for (const edge of edges) {
+      const attrs = edge.getAttrs() as Record<string, unknown>
+      const line = (attrs.line || {}) as Record<string, unknown>
+      this.originalEdgeStyles.set(edge.id, {
+        opacity: 1,
+        stroke: (line.stroke as string) || '#333333',
+        strokeWidth: (line.strokeWidth as number) || 2,
+        strokeDasharray: (line.strokeDasharray as string) || '',
+      })
+    }
+  }
+
+  setFrames(frames: ExtractFrame[]): void {
+    this.frames = frames || []
+    if (this.frames.length > 0) {
+      this.captureOriginalStyles()
+      this.applyFrame(0, false)
+    } else {
+      this.resetAllStyles()
+    }
+  }
+
+  getFrames(): ExtractFrame[] {
+    return this.frames
+  }
+
+  getCurrentFrameIndex(): number {
+    return this.currentFrameIndex
+  }
+
+  hasFrames(): boolean {
+    return this.frames.length > 0
+  }
+
+  applyFrame(frameIndex: number, animate: boolean = true): void {
+    if (!this.graph || this.frames.length === 0) return
+    const clampedIndex = Math.max(0, Math.min(frameIndex, this.frames.length - 1))
+    this.currentFrameIndex = clampedIndex
+    const frame = this.frames[clampedIndex]
+
+    this.startSkipHistory()
+    this.graph.startBatch('frame-apply')
+
+    try {
+      const highlightNodeSet = new Set(frame.highlightNodeIds || [])
+      const highlightEdgeSet = new Set(frame.highlightEdgeIds || [])
+
+      const transitionDuration = animate ? 400 : 0
+
+      const allNodes = this.graph.getNodes()
+      for (const node of allNodes) {
+        const data = node.getData() as Record<string, unknown> | undefined
+        if (data?.isForkNode || data?.isAttributeTag || data?.isAttributeStem) continue
+        const nodeId = node.id
+
+        const isHighlighted = highlightNodeSet.has(nodeId)
+        const isInCurrentOrEarlierFrame = this.isNodeInFrameUpTo(nodeId, clampedIndex)
+
+        const original = this.originalNodeStyles.get(nodeId)
+        if (!original) continue
+
+        let opacity: number
+        let stroke: string
+        let strokeWidth: number
+
+        if (frame.index === 0) {
+          opacity = isHighlighted ? 1 : 0.15
+          stroke = isHighlighted ? original.stroke : '#cccccc'
+          strokeWidth = isHighlighted ? original.strokeWidth : 1
+        } else if (isHighlighted) {
+          opacity = 1
+          stroke = '#1890FF'
+          strokeWidth = 3
+        } else if (isInCurrentOrEarlierFrame) {
+          opacity = 0.3
+          stroke = '#bbbbbb'
+          strokeWidth = 1
+        } else {
+          opacity = 0.08
+          stroke = '#dddddd'
+          strokeWidth = 0.5
+        }
+
+        if (animate) {
+          node.transition('attrs/body/opacity', opacity, { duration: transitionDuration })
+          node.transition('attrs/body/stroke', stroke, { duration: transitionDuration })
+          node.transition('attrs/body/strokeWidth', strokeWidth, { duration: transitionDuration })
+        } else {
+          node.attr('body/opacity', opacity)
+          node.attr('body/stroke', stroke)
+          node.attr('body/strokeWidth', strokeWidth)
+        }
+      }
+
+      const allEdges = this.graph.getEdges()
+      for (const edge of allEdges) {
+        const edgeId = edge.id
+        const data = edge.getData() as Record<string, unknown> | undefined
+
+        const connectedNodeIds: string[] = []
+        const sourceId = edge.getSourceCellId()
+        const targetId = edge.getTargetCellId()
+        if (sourceId) connectedNodeIds.push(sourceId)
+        if (targetId) connectedNodeIds.push(targetId)
+
+        let isHighlighted = highlightEdgeSet.has(edgeId)
+
+        if (!isHighlighted && (data?.isTrunk || data?.isBranch)) {
+          if (data.isTrunk) {
+            const mergedIds = data.mergedEdgeIds as string[] | undefined
+            if (mergedIds) {
+              for (const mid of mergedIds) {
+                if (highlightEdgeSet.has(mid)) {
+                  isHighlighted = true
+                  break
+                }
+              }
+            }
+          }
+          if (data.isBranch) {
+            const originalEdgeId = data.originalEdgeId as string | undefined
+            if (originalEdgeId && highlightEdgeSet.has(originalEdgeId)) {
+              isHighlighted = true
+            }
+          }
+        }
+
+        const edgeHighlightedByNode = connectedNodeIds.some(nid => highlightNodeSet.has(nid))
+        const isEdgeVisibleInFrame = isHighlighted || edgeHighlightedByNode
+        const isEdgeInEarlierFrame = this.isEdgeInFrameUpTo(edgeId, clampedIndex, data)
+
+        const original = this.originalEdgeStyles.get(edgeId)
+        if (!original) continue
+
+        let opacity: number
+        let stroke: string
+        let strokeWidth: number
+
+        if (frame.index === 0) {
+          opacity = isEdgeVisibleInFrame ? 1 : 0.1
+          stroke = isEdgeVisibleInFrame ? original.stroke : '#dddddd'
+          strokeWidth = isEdgeVisibleInFrame ? original.strokeWidth : 1
+        } else if (isHighlighted) {
+          opacity = 1
+          stroke = '#1890FF'
+          strokeWidth = 4
+        } else if (isEdgeInEarlierFrame) {
+          opacity = 0.25
+          stroke = '#cccccc'
+          strokeWidth = 1
+        } else {
+          opacity = 0.05
+          stroke = '#eeeeee'
+          strokeWidth = 0.5
+        }
+
+        if (animate) {
+          edge.transition('attrs/line/opacity', opacity, { duration: transitionDuration })
+          edge.transition('attrs/line/stroke', stroke, { duration: transitionDuration })
+          edge.transition('attrs/line/strokeWidth', strokeWidth, { duration: transitionDuration })
+        } else {
+          edge.attr('line/opacity', opacity)
+          edge.attr('line/stroke', stroke)
+          edge.attr('line/strokeWidth', strokeWidth)
+        }
+      }
+
+      if (frame.index > 0 && frame.highlightNodeIds.length > 0) {
+        setTimeout(() => {
+          this.zoomToFitNodes(frame.highlightNodeIds)
+        }, animate ? transitionDuration + 50 : 50)
+      }
+    } finally {
+      this.graph.stopBatch('frame-apply')
+      this.stopSkipHistory()
+    }
+  }
+
+  private isNodeInFrameUpTo(nodeId: string, frameIndex: number): boolean {
+    for (let i = 0; i <= frameIndex; i++) {
+      const f = this.frames[i]
+      if (f.highlightNodeIds?.includes(nodeId)) return true
+    }
+    return false
+  }
+
+  private isEdgeInFrameUpTo(edgeId: string, frameIndex: number, data?: Record<string, unknown>): boolean {
+    for (let i = 0; i <= frameIndex; i++) {
+      const f = this.frames[i]
+      if (f.highlightEdgeIds?.includes(edgeId)) return true
+    }
+    if (data?.isTrunk) {
+      const mergedIds = data.mergedEdgeIds as string[] | undefined
+      if (mergedIds) {
+        for (const mid of mergedIds) {
+          if (this.isEdgeInFrameUpTo(mid, frameIndex)) return true
+        }
+      }
+    }
+    return false
+  }
+
+  resetAllStyles(): void {
+    if (!this.graph) return
+    this.currentFrameIndex = -1
+    this.startSkipHistory()
+    this.graph.startBatch('frame-reset')
+    try {
+      for (const [nodeId, original] of this.originalNodeStyles) {
+        const node = this.graph.getCellById(nodeId)
+        if (node && node.isNode()) {
+          node.attr('body/opacity', original.opacity)
+          node.attr('body/stroke', original.stroke)
+          node.attr('body/strokeWidth', original.strokeWidth)
+        }
+      }
+      for (const [edgeId, original] of this.originalEdgeStyles) {
+        const edge = this.graph.getCellById(edgeId)
+        if (edge && edge.isEdge()) {
+          edge.attr('line/opacity', original.opacity)
+          edge.attr('line/stroke', original.stroke)
+          edge.attr('line/strokeWidth', original.strokeWidth)
+          edge.attr('line/strokeDasharray', original.strokeDasharray)
+        }
+      }
+    } finally {
+      this.graph.stopBatch('frame-reset')
+      this.stopSkipHistory()
+    }
+  }
+
+  private zoomToFitNodes(nodeIds: string[]): void {
+    if (!this.graph || nodeIds.length === 0) return
+    const cells = nodeIds
+      .map(id => this.graph!.getCellById(id))
+      .filter(c => c && c.isNode())
+    if (cells.length === 0) return
+    this.graph.zoomToFit({ padding: 80, maxScale: 1.2 })
   }
 }
 

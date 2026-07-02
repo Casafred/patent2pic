@@ -1,10 +1,12 @@
-import { ref, onUnmounted } from 'vue'
+import { ref, onUnmounted, watch } from 'vue'
 import { graphEngine } from '@/services/graph/engine'
 import { useEditorStore } from '@/stores/editor'
+import { usePlaybackStore } from '@/stores/playback'
 
 export function useGraph() {
   const containerRef = ref<HTMLElement | null>(null)
   const editorStore = useEditorStore()
+  const playback = usePlaybackStore()
   const isReady = ref(false)
 
   function initGraph(container: HTMLElement): void {
@@ -12,6 +14,10 @@ export function useGraph() {
     graphEngine.init(container)
     isReady.value = true
     bindEvents()
+    if (playback.hasFrames) {
+      graphEngine.setFrames(playback.frames)
+      graphEngine.applyFrame(playback.currentFrameIndex, false)
+    }
   }
 
   function bindEvents(): void {
@@ -124,6 +130,24 @@ export function useGraph() {
     graphEngine.on('scale', (args: unknown) => {
       const { sx } = args as { sx: number }
       editorStore.setZoom(sx)
+    })
+
+    watch(() => playback.frames, (frames) => {
+      if (isReady.value) {
+        graphEngine.setFrames(frames)
+      }
+    }, { deep: true })
+
+    watch(() => playback.currentFrameIndex, (frameIndex) => {
+      if (playback.hasFrames && isReady.value) {
+        graphEngine.applyFrame(frameIndex, playback.animationEnabled)
+      }
+    })
+
+    watch(() => playback.animationEnabled, (enabled) => {
+      if (!enabled && playback.hasFrames && isReady.value) {
+        graphEngine.applyFrame(playback.currentFrameIndex, false)
+      }
     })
   }
 
