@@ -122,13 +122,25 @@ export function useAutoSave() {
           if (graph) {
             graph.clearCells()
             graphEngine.fromJSON(activeTab.serializedGraph)
-            playback.setFrames(activeTab.extractResult?.frames || [])
+            if (playback.animationMode && activeTab.extractResult?.frames?.length) {
+              playback.setFrames(activeTab.extractResult.frames)
+            } else {
+              graphEngine.showFullGraph()
+              playback.clearFrames()
+            }
             setTimeout(() => graphEngine.fitView(), 100)
           }
         } else if (activeTab?.extractResult) {
           const graph = graphEngine.getGraph()
           if (graph) {
-            graphEngine.batchBuild(activeTab.extractResult, undefined, activeTab.isChinese).catch(console.error)
+            if (playback.animationMode && activeTab.extractResult.frames?.length) {
+              graphEngine.batchBuild(activeTab.extractResult, undefined, activeTab.isChinese)
+                .then(() => playback.setFrames(activeTab.extractResult!.frames || []))
+                .catch(console.error)
+            } else {
+              graphEngine.batchBuild(activeTab.extractResult, undefined, activeTab.isChinese).catch(console.error)
+              playback.clearFrames()
+            }
           }
         } else {
           playback.clearFrames()

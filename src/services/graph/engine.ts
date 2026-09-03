@@ -889,14 +889,16 @@ export class GraphEngine {
         ? pos.y - stemLength  // 上方：从节点顶部向上
         : pos.y + size.height + stemLength  // 下方：从节点底部向下
 
+      const tagMaxTextWidth = 200
+
       for (let i = 0; i < attrs.length; i++) {
         const attrEdge = attrs[i]
         const labelText = isChinese
           ? (attrEdge.chineseText || attrEdge.originalText)
           : `${attrEdge.originalText}\n${attrEdge.chineseText}`
 
-        // Measure text to determine tag size
-        const lines = labelText.split('\n')
+        // Wrap long text so the tag doesn't stretch too wide horizontally
+        const lines = this.wrapTagText(labelText, tagMaxTextWidth, tagFontSize, attrStyle.fontFamily)
         let maxTextWidth = 0
         for (const line of lines) {
           const width = this.measureTextWidth(line, tagFontSize, attrStyle.fontFamily)
@@ -927,7 +929,7 @@ export class GraphEngine {
               ry: 4,
             },
             label: {
-              text: labelText,
+              text: lines.join('\n'),
               fontSize: tagFontSize,
               fontFamily: attrStyle.fontFamily,
               fill: '#08979c',
@@ -976,6 +978,52 @@ export class GraphEngine {
         currentY = isAbove ? tagY - tagGap : tagY + tagHeight + tagGap
       }
     }
+  }
+
+  /**
+   * 将文本按最大宽度自动换行：优先在空格处断行，超长单词/中文按字符断行。
+   * 保留原有的显式换行（\n）。
+   */
+  private wrapTagText(text: string, maxWidth: number, fontSize: number, fontFamily: string): string[] {
+    const result: string[] = []
+    for (const rawLine of text.split('\n')) {
+      if (this.measureTextWidth(rawLine, fontSize, fontFamily) <= maxWidth) {
+        result.push(rawLine)
+        continue
+      }
+      const tokens = rawLine.split(/(\s+)/).filter(t => t.length > 0)
+      let current = ''
+      for (const token of tokens) {
+        if (/^\s+$/.test(token)) {
+          current += token
+          continue
+        }
+        if (this.measureTextWidth(current + token, fontSize, fontFamily) <= maxWidth) {
+          current += token
+          continue
+        }
+        if (current.trim().length > 0) {
+          result.push(current.trimEnd())
+          current = ''
+        }
+        if (this.measureTextWidth(token, fontSize, fontFamily) <= maxWidth) {
+          current = token
+        } else {
+          // 单个 token 超过最大宽度：按字符硬换行
+          for (const ch of token) {
+            if (current && this.measureTextWidth(current + ch, fontSize, fontFamily) > maxWidth) {
+              result.push(current)
+              current = ''
+            }
+            current += ch
+          }
+        }
+      }
+      if (current.trim().length > 0) {
+        result.push(current.trimEnd())
+      }
+    }
+    return result.length > 0 ? result : ['']
   }
 
   private measureTextWidth(text: string, fontSize: number, fontFamily: string): number {
@@ -2329,6 +2377,43 @@ export class GraphEngine {
       this.applyFrame(0, false)
     } else {
       this.resetAllStyles()
+    }
+  }
+
+  /**
+   * 退出动画模式，直接展示完整图：清除帧并将所有节点/边恢复为完整样式。
+   * 与 resetAllStyles 不同，本方法不依赖此前捕获的样式快照，
+   * 因此对 fromJSON 恢复的（可能带帧样式）图同样有效。
+   */
+  showFullGraph(): void {
+    this.frames = []
+    this.currentFrameIndex = -1
+    if (!this.graph) return
+    this.startSkipHistory()
+    this.graph.startBatch('show-full-graph')
+    try {
+      for (const node of this.graph.getNodes()) {
+        const data = node.getData() as Record<string, unknown> | undefined
+        if (data?.isForkNode || data?.isAttributeTag || data?.isAttributeStem) continue
+        const style = (data?.style || {}) as Record<string, unknown>
+        const stroke = typeof style.stroke === 'string' ? style.stroke : '#333333'
+        const strokeWidth = typeof style.strokeWidth === 'number' ? style.strokeWidth : 1.5
+        node.attr('body/opacity', 1)
+        node.attr('body/stroke', data?.isGroup ? '#fa8c16' : stroke)
+        node.attr('body/strokeWidth', data?.isGroup ? 1.5 : strokeWidth)
+      }
+      for (const edge of this.graph.getEdges()) {
+        const data = edge.getData() as Record<string, unknown> | undefined
+        const style = (data?.style || {}) as Record<string, unknown>
+        const stroke = typeof style.stroke === 'string' ? style.stroke : '#333333'
+        const strokeWidth = typeof style.strokeWidth === 'number' ? style.strokeWidth : 2
+        edge.attr('line/opacity', 1)
+        edge.attr('line/stroke', stroke)
+        edge.attr('line/strokeWidth', strokeWidth)
+      }
+    } finally {
+      this.graph.stopBatch('show-full-graph')
+      this.stopSkipHistory()
     }
   }
 

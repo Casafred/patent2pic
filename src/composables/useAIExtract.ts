@@ -213,7 +213,13 @@ export function useAIExtract() {
     graphStore.updateTabExtractResult(tab.id, result)
     graphStore.updateTabName(tab.id, `权利要求 ${graphStore.tabs.length}`)
     await graphEngine.batchBuild(result, undefined, isChinese)
-    playback.setFrames(result.frames || [])
+    // 动画模式开启则进入分步动画，关闭则直接展示完整图
+    if (playback.animationMode && result.frames && result.frames.length > 0) {
+      playback.setFrames(result.frames)
+    } else {
+      graphEngine.showFullGraph()
+      playback.clearFrames()
+    }
     timingEnd(`  │ 图谱构建`)
 
     timingLap(`  节点数=${result.nodes.length} 边数=${result.edges.length} 组数=${result.groups.length}`, timingKey)

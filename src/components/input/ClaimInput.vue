@@ -4,6 +4,19 @@
       <div class="section-header">
         <h3>权利要求输入</h3>
         <div class="section-header-right">
+          <el-tooltip
+            content="开启：生成后播放分步动画；关闭：直接生成完整图"
+            placement="top"
+          >
+            <div class="animation-mode-toggle">
+              <el-switch
+                :model-value="playback.animationMode"
+                size="small"
+                @update:model-value="playback.setAnimationMode"
+              />
+              <span class="animation-mode-label">动画模式</span>
+            </div>
+          </el-tooltip>
           <el-button
             v-if="hasGraphData"
             size="small"
@@ -162,6 +175,7 @@ import { Loading, ArrowDown, ArrowUp, InfoFilled, CircleCheckFilled, CircleClose
 import { useClaimStore } from '@/stores/claim'
 import { useAIStore } from '@/stores/ai'
 import { useGraphStore } from '@/stores/graph'
+import { usePlaybackStore } from '@/stores/playback'
 import { useAIExtract } from '@/composables/useAIExtract'
 import { useParallelExtract } from '@/composables/useParallelExtract'
 import { parseClaims, getClaimPreview } from '@/services/claim/parser'
@@ -169,6 +183,7 @@ import { parseClaims, getClaimPreview } from '@/services/claim/parser'
 const claimStore = useClaimStore()
 const aiStore = useAIStore()
 const graphStore = useGraphStore()
+const playback = usePlaybackStore()
 const { extractActiveClaim, error: extractError, abort } = useAIExtract()
 const parallelExtract = useParallelExtract()
 
@@ -291,6 +306,19 @@ function handleParallelAbort(): void {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.animation-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+}
+
+.animation-mode-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .section-header h3 {

@@ -188,7 +188,12 @@ export function useProjectFile() {
             graph.clearCells()
             graphEngine.fromJSON(graphJSON)
             graphEngine.rebindGroupTracking()
-            playback.setFrames(activeTab?.extractResult?.frames || [])
+            if (playback.animationMode && activeTab?.extractResult?.frames?.length) {
+              playback.setFrames(activeTab.extractResult.frames)
+            } else {
+              graphEngine.showFullGraph()
+              playback.clearFrames()
+            }
             setTimeout(() => graphEngine.fitView(), 100)
           }
         }

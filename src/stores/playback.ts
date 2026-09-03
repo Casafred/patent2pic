@@ -2,12 +2,34 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ExtractFrame } from '@/types/ai'
 
+const ANIMATION_MODE_STORAGE_KEY = 'patent2pic-animation-mode'
+
+function loadAnimationMode(): boolean {
+  try {
+    const raw = localStorage.getItem(ANIMATION_MODE_STORAGE_KEY)
+    if (raw === null) return true
+    return raw !== 'false'
+  } catch {
+    return true
+  }
+}
+
+function saveAnimationMode(enabled: boolean): void {
+  try {
+    localStorage.setItem(ANIMATION_MODE_STORAGE_KEY, enabled ? 'true' : 'false')
+  } catch {
+    // ignore
+  }
+}
+
 export const usePlaybackStore = defineStore('playback', () => {
   const frames = ref<ExtractFrame[]>([])
   const currentFrameIndex = ref(0)
   const isPlaying = ref(false)
   const playbackSpeed = ref(1)
   const animationEnabled = ref(true)
+  // 动画模式：生成时开启则播放分步动画，关闭则直接展示完整图
+  const animationMode = ref(loadAnimationMode())
   let playbackTimer: ReturnType<typeof setTimeout> | null = null
 
   const hasFrames = computed(() => frames.value.length > 0)
@@ -117,12 +139,18 @@ export const usePlaybackStore = defineStore('playback', () => {
     animationEnabled.value = enabled
   }
 
+  function setAnimationMode(enabled: boolean): void {
+    animationMode.value = enabled
+    saveAnimationMode(enabled)
+  }
+
   return {
     frames,
     currentFrameIndex,
     isPlaying,
     playbackSpeed,
     animationEnabled,
+    animationMode,
     hasFrames,
     totalFrames,
     currentFrame,
@@ -144,5 +172,6 @@ export const usePlaybackStore = defineStore('playback', () => {
     togglePlay,
     setSpeed,
     setAnimationEnabled,
+    setAnimationMode,
   }
 })

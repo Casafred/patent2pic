@@ -156,10 +156,20 @@ watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
 
   if (newTab.serializedGraph && Object.keys(newTab.serializedGraph).length > 0) {
     graphEngine.fromJSON(newTab.serializedGraph)
-    playback.setFrames(newTab.extractResult?.frames || [])
+    if (playback.animationMode && newTab.extractResult?.frames?.length) {
+      playback.setFrames(newTab.extractResult.frames)
+    } else {
+      graphEngine.showFullGraph()
+      playback.clearFrames()
+    }
   } else if (newTab.extractResult) {
     await graphEngine.batchBuild(newTab.extractResult, undefined, newTab.isChinese)
-    playback.setFrames(newTab.extractResult.frames || [])
+    if (playback.animationMode && newTab.extractResult.frames?.length) {
+      playback.setFrames(newTab.extractResult.frames)
+    } else {
+      graphEngine.showFullGraph()
+      playback.clearFrames()
+    }
   } else {
     playback.clearFrames()
   }
@@ -181,7 +191,12 @@ watch(
       const tab = graphStore.activeTab
       if (tab) {
         await graphEngine.batchBuild(newResult, undefined, tab.isChinese)
-        playback.setFrames(newResult.frames || [])
+        if (playback.animationMode && newResult.frames?.length) {
+          playback.setFrames(newResult.frames)
+        } else {
+          graphEngine.showFullGraph()
+          playback.clearFrames()
+        }
       }
     }
   },
