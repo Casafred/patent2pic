@@ -276,12 +276,14 @@ function validateEdges(raw: unknown, nodes: ExtractNode[], claimType: 'structure
     if (!nodeIds.has(source)) throw new Error(`edges[${index}] source "${source}" 不存在于节点中`)
     if (!nodeIds.has(target)) throw new Error(`edges[${index}] target "${target}" 不存在于节点中`)
 
-    const relationType = validTypes.includes(edge.relationType as string)
+    let relationType = validTypes.includes(edge.relationType as string)
       ? edge.relationType as ExtractEdge['relationType']
       : (claimType === 'method' ? 'sequence' : 'position')
 
+    // 自环边（source 与 target 相同，如"彼此可滑动地连接"）按属性处理，
+    // 渲染为节点属性标签，避免校验报错导致无法绘制
     if (source === target && relationType !== 'attribute') {
-      throw new Error(`edges[${index}] source 和 target 相同但不是 attribute 类型`)
+      relationType = 'attribute'
     }
 
     if (!edge.originalText) throw new Error(`edges[${index}] 缺少 originalText`)

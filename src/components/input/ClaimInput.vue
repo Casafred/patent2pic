@@ -4,19 +4,6 @@
       <div class="section-header">
         <h3>权利要求输入</h3>
         <div class="section-header-right">
-          <el-tooltip
-            content="开启：生成后播放分步动画；关闭：直接生成完整图"
-            placement="top"
-          >
-            <div class="animation-mode-toggle">
-              <el-switch
-                :model-value="playback.animationMode"
-                size="small"
-                @update:model-value="playback.setAnimationMode"
-              />
-              <span class="animation-mode-label">动画模式</span>
-            </div>
-          </el-tooltip>
           <el-button
             v-if="hasGraphData"
             size="small"
@@ -58,7 +45,22 @@
       />
 
       <div class="input-footer">
-        <span class="char-count">{{ claimStore.rawText.length }} 字</span>
+        <div class="input-footer-left">
+          <el-tooltip
+            content="开启：生成后播放分步动画；关闭：直接生成完整图"
+            placement="top"
+          >
+            <div class="animation-mode-toggle">
+              <span class="animation-mode-label">动画模式</span>
+              <el-switch
+                :model-value="playback.animationMode"
+                size="small"
+                @update:model-value="playback.setAnimationMode"
+              />
+            </div>
+          </el-tooltip>
+          <span class="char-count">{{ claimStore.rawText.length }} 字</span>
+        </div>
         <el-button size="small" text @click="claimStore.rawText = ''">清空</el-button>
       </div>
 
@@ -342,11 +344,20 @@ function handleParallelAbort(): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.input-footer-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  min-width: 0;
 }
 
 .char-count {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 .claim-list {
