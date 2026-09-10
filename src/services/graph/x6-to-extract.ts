@@ -24,6 +24,9 @@ const METHOD_NODE_TYPES = new Set(['step', 'decision', 'condition'])
 const STRUCTURE_NODE_TYPES = new Set(['component', 'subsystem', 'feature'])
 
 function isNodeCell(cell: X6Cell): boolean {
+  const data = cell.data
+  // 边标记优先：trunk/branch/stem 边即使缺少 source/target 字段也不应被当作节点
+  if (data?.isTrunk || data?.isBranch || data?.isAttributeStem) return false
   return !cell.source && !cell.target
 }
 
