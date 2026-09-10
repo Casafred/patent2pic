@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import { useAIStore } from '@/stores/ai'
 import { useClaimStore } from '@/stores/claim'
 import { useGraphStore } from '@/stores/graph'
@@ -67,6 +67,11 @@ export function useAIExtract() {
     } : null
 
     const tab = graphStore.addTab(undefined, isChinese, true, claimId ?? null, claimStore.rawText, JSON.parse(JSON.stringify(claimStore.claims)), claimStore.activeClaimId)
+
+    // Tab 切换 watcher（AppLayout.vue 的 watch(activeTabId)）为 pre-flush 异步执行：
+    // 必须先等它把旧 Tab 的"覆盖式保存"落地，再恢复旧 Tab 数据，
+    // 否则恢复跑在 watcher 之前，会被 watcher 用新一轮数据冲掉（即"原文被覆盖"bug）
+    await nextTick()
 
     // Restore the old tab's original claim data and translations (the watcher may have overwritten it)
     if (savedClaimData) {
@@ -251,7 +256,7 @@ export function useAIExtract() {
     if (!extractResult) return null
 
     if (extractResult.sentencePairs && extractResult.sentencePairs.length > 0) {
-      applySentencePairs(claim.id, claim.index, extractResult.sentencePairs)
+      applySentencePairs(claim.id, extractResult.sentencePairs)
     } else if (extractResult.translatedClaim && claim.sentences.length > 0) {
       const sentenceTranslations = alignTranslationToSentences(
         claim.rawText,
@@ -285,12 +290,26 @@ export function useAIExtract() {
       await translateAllSentences(claim)
     }
 
+    // 修复 D：把 AI 对齐后的句子与翻译同步进活动 Tab 快照，导出 Excel 时快照数据完整
+    syncActiveTabSnapshot(claim.id)
+
     return extractResult
   }
 
-  function applySentencePairs(claimId: string, claimIndex: number, pairs: SentencePair[]): void {
+  function syncActiveTabSnapshot(claimId: string): void {
+    const tab = graphStore.activeTab
+    if (!tab) return
+    const claim = claimStore.claims.find(c => c.id === claimId)
+    if (claim) {
+      graphStore.updateTabClaimSentences(tab.id, claimId, claim.sentences)
+    }
+    graphStore.mergeTabTranslation(tab.id, claimId, translationStore.getClaimTranslation(claimId))
+  }
+
+  function applySentencePairs(claimId: string, pairs: SentencePair[]): void {
     const newSentences: Sentence[] = pairs.map((pair, idx) => ({
-      id: `claim-${claimIndex}-sent-${idx + 1}`,
+      // 句子 ID 挂 claimId（含 sessionId，跨分析唯一），与 parser 的 ID 规则收敛
+      id: `${claimId}-sent-${idx + 1}`,
       text: pair.original,
       nodeIds: [],
       edgeIds: [],

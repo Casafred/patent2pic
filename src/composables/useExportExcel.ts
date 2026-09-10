@@ -1,5 +1,7 @@
 import { useClaimStore } from '@/stores/claim'
 import { useTranslationStore } from '@/stores/translation'
+import { useGraphStore } from '@/stores/graph'
+import type { Claim } from '@/types/claim'
 
 function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -8,9 +10,28 @@ function isTauri(): boolean {
 export function useExportExcel() {
   const claimStore = useClaimStore()
   const translationStore = useTranslationStore()
+  const graphStore = useGraphStore()
 
   async function exportToExcel(): Promise<void> {
-    const claim = claimStore.getActiveClaim()
+    // 修复 D：优先从活动 Tab 快照取数，保证导出内容属于当前 Tab 的分析，
+    // 即便全局 store 被其他分析污染也不影响；快照缺失时回退全局 store
+    const tab = graphStore.activeTab
+    let claim: Claim | undefined
+    const tabTransLookup: Record<string, string> = {}
+    if (tab && tab.claims.length > 0) {
+      // Tab.claimId 是该 Tab 分析的权利要求（并行模式各 Tab 不同），优先于 activeClaimId
+      const preferredId = tab.claimId ?? tab.activeClaimId
+      claim = tab.claims.find(c => c.id === preferredId) ?? tab.claims[0]
+      const snap = tab.translations?.[claim.id]
+      if (snap) {
+        for (const s of snap.sentences) {
+          tabTransLookup[s.sentenceId] = s.translatedText
+        }
+      }
+    }
+    if (!claim) {
+      claim = claimStore.getActiveClaim()
+    }
     if (!claim || claim.sentences.length === 0) return
 
     const XLSX = await import('xlsx')
@@ -18,8 +39,9 @@ export function useExportExcel() {
 
     for (let i = 0; i < claim.sentences.length; i++) {
       const sentence = claim.sentences[i]
-      const trans = translationStore.getSentenceTranslation(claim.id, sentence.id)
-      const translatedText = trans?.translatedText || ''
+      const tabTrans = tabTransLookup[sentence.id]
+      const storeTrans = translationStore.getSentenceTranslation(claim.id, sentence.id)
+      const translatedText = tabTrans ?? (storeTrans?.translatedText || '')
       rows.push([i + 1, sentence.text, translatedText])
     }
 
@@ -43,7 +65,12 @@ export function useExportExcel() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '权利要求翻译')
 
-    const filename = `权利要求翻译_${claim.index}.xlsx`
+    // 文件名带上 Tab 标识，多分析场景下导出文件天然可区分
+    let filename = `权利要求翻译_${claim.index}.xlsx`
+    if (tab && tab.name) {
+      const safeTabName = tab.name.replace(/[\\/:*?"<>|]/g, '_').trim()
+      filename = `权利要求翻译_${safeTabName}_${claim.index}.xlsx`
+    }
     const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
 
     if (isTauri()) {

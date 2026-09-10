@@ -4,18 +4,30 @@ const CLAIM_NUMBER_REGEX = /(?:^|\n)\s*(\d+)\s*[.、．]\s*/g
 
 const SENTENCE_SPLIT_CHARS = new Set('。；;，,！!？?：:、'.split(''))
 
-export function parseClaims(rawText: string): Claim[] {
+// 分析会话计数器：两次分析的 claimId/sentenceId 落入不同命名空间，
+// 避免翻译 store 的 Map<claimId> 与 updateClaimSentences 跨分析串扰
+let claimSessionCounter = 0
+
+export function newClaimSessionId(): number {
+  return ++claimSessionCounter
+}
+
+export function parseClaims(rawText: string, sessionId?: number): Claim[] {
   const trimmed = rawText.trim()
   if (!trimmed) return []
 
   const segments = splitByClaimNumbers(trimmed)
 
-  return segments.map((text, index) => ({
-    id: `claim-${index + 1}`,
-    index: index + 1,
-    rawText: text.trim(),
-    sentences: splitSentences(text.trim(), index + 1),
-  }))
+  return segments.map((text, index) => {
+    // 输入期不传 sessionId（保持 claim-N 稳定格式）；分析入口传入新 sessionId
+    const id = sessionId ? `claim-${sessionId}-${index + 1}` : `claim-${index + 1}`
+    return {
+      id,
+      index: index + 1,
+      rawText: text.trim(),
+      sentences: splitSentences(text.trim(), id),
+    }
+  })
 }
 
 function splitByClaimNumbers(text: string): string[] {
@@ -61,7 +73,7 @@ function findNextSplit(text: string): number {
   return -1
 }
 
-function splitSentences(claimText: string, claimIndex: number): Sentence[] {
+function splitSentences(claimText: string, claimId: string): Sentence[] {
   const parts: string[] = []
   let remaining = claimText
 
@@ -82,8 +94,9 @@ function splitSentences(claimText: string, claimIndex: number): Sentence[] {
     remaining = remaining.slice(splitEnd)
   }
 
+  // 句子 ID 挂在 claimId 之下（claimId 含 sessionId 时句子 ID 同样全局唯一）
   return parts.map((text, index) => ({
-    id: `claim-${claimIndex}-sent-${index + 1}`,
+    id: `${claimId}-sent-${index + 1}`,
     text,
     nodeIds: [],
     edgeIds: [],

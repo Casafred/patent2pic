@@ -180,7 +180,7 @@ import { useGraphStore } from '@/stores/graph'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAIExtract } from '@/composables/useAIExtract'
 import { useParallelExtract } from '@/composables/useParallelExtract'
-import { parseClaims, getClaimPreview } from '@/services/claim/parser'
+import { parseClaims, getClaimPreview, newClaimSessionId } from '@/services/claim/parser'
 
 const claimStore = useClaimStore()
 const aiStore = useAIStore()
@@ -222,6 +222,19 @@ function handleTextInput(): void {
   claimStore.setClaims(claims)
 }
 
+// 分析入口：分配新 sessionId 并重新解析，使本次分析的 claimId/sentenceId
+// 落入唯一命名空间，根治跨分析翻译串扰（修复 B）
+function beginAnalysisSession(): void {
+  const activeIndex = claimStore.getActiveClaim()?.index
+  const claims = parseClaims(claimStore.rawText, newClaimSessionId())
+  claimStore.setClaims(claims)
+  // ID 变了，按 index 保持激活的权利要求不变
+  if (claims.length > 0) {
+    const target = claims.find(c => c.index === activeIndex) ?? claims[0]
+    claimStore.setActiveClaim(target.id)
+  }
+}
+
 function handleNewAnalysis(): void {
   // Save the current tab's data before creating a new one
   const currentTab = graphStore.activeTab
@@ -254,6 +267,9 @@ async function handleGenerate(): Promise<void> {
     handleTextInput()
   }
 
+  // 分配唯一 ID 命名空间后再进入抽取链路（翻译 Map key、TabData.claimId 全程唯一）
+  beginAnalysisSession()
+
   // Ensure activeClaimId points to an existing claim
   if (claimStore.claims.length > 0) {
     const activeExists = claimStore.claims.some(c => c.id === claimStore.activeClaimId)
@@ -281,6 +297,9 @@ async function handleParallelGenerate(): Promise<void> {
   }
   if (claimStore.claims.length === 0) return
   if (!aiStore.activeApiKey) return
+
+  // 分配唯一 ID 命名空间后再进入并行抽取链路
+  beginAnalysisSession()
 
   await parallelExtract.runParallel(claimStore.claims)
 }

@@ -90,7 +90,8 @@ export const useTranslationStore = defineStore('translation', () => {
   function fromJSON(data: Record<string, { claimId: string; sentences: SentenceTranslation[]; overallStatus: TranslationStatus }>): void {
     const map = new Map<string, ClaimTranslation>()
     for (const [key, val] of Object.entries(data)) {
-      map.set(key, val)
+      // 深拷贝入参：恢复 Tab 快照时与快照切断引用，任一侧原地修改不互相穿透（修复 C）
+      map.set(key, JSON.parse(JSON.stringify(val)))
     }
     claimTranslations.value = map
   }

@@ -15,6 +15,18 @@ export interface TabData {
   claims: Claim[]
   activeClaimId: string | null
   translations: Record<string, { claimId: string; sentences: { sentenceId: string; originalText: string; translatedText: string; status: string; error: string | null }[]; overallStatus: string }> | null
+  /** AI 重构版本链：来源 Tab */
+  sourceTabId?: string
+  /** AI 重构版本链：本次重构的指令 */
+  redrawInstructions?: string
+  /** AI 重构版本链：版本号（源 Tab 为 1，重构 Tab 从 2 递增） */
+  redrawVersion?: number
+}
+
+type TabTranslations = NonNullable<TabData['translations']>
+
+function deepClone<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data))
 }
 
 export const useGraphStore = defineStore('graph', () => {
@@ -34,7 +46,7 @@ export const useGraphStore = defineStore('graph', () => {
 
   let tabCounter = 0
 
-  function addTab(name?: string, isChinese: boolean = false, activate: boolean = true, claimId: string | null = null, rawText: string = '', claims: Claim[] = [], activeClaimId: string | null = null): TabData {
+  function addTab(name?: string, isChinese: boolean = false, activate: boolean = true, claimId: string | null = null, rawText: string = '', claims: Claim[] = [], activeClaimId: string | null = null, redraw?: { sourceTabId: string; instructions: string; version: number }): TabData {
     tabCounter++
     const tab: TabData = {
       id: `tab-${Date.now()}-${tabCounter}`,
@@ -44,9 +56,13 @@ export const useGraphStore = defineStore('graph', () => {
       isChinese,
       claimId,
       rawText,
-      claims,
+      // 深拷贝入参：Tab 快照与全局 store 不共享引用，避免任一侧原地修改互相穿透
+      claims: claims ? deepClone(claims) : [],
       activeClaimId,
       translations: null,
+      sourceTabId: redraw?.sourceTabId,
+      redrawInstructions: redraw?.instructions,
+      redrawVersion: redraw?.version,
     }
     tabs.value.push(tab)
     if (activate) {
@@ -80,7 +96,8 @@ export const useGraphStore = defineStore('graph', () => {
   function updateTabExtractResult(id: string, result: ExtractResult): void {
     const tab = tabs.value.find(t => t.id === id)
     if (tab) {
-      tab.extractResult = result
+      // 深拷贝入参：Tab 快照与全局 store 不共享引用，避免任一侧原地修改互相穿透
+      tab.extractResult = result ? deepClone(result) : null
     }
   }
 
@@ -102,16 +119,36 @@ export const useGraphStore = defineStore('graph', () => {
     const tab = tabs.value.find(t => t.id === id)
     if (tab) {
       tab.rawText = rawText
-      tab.claims = claims
+      // 深拷贝入参：Tab 快照与全局 store 不共享引用，避免任一侧原地修改互相穿透
+      tab.claims = claims ? deepClone(claims) : []
       tab.activeClaimId = activeClaimId
     }
   }
 
-  function updateTabTranslations(id: string, translations: Record<string, { claimId: string; sentences: { sentenceId: string; originalText: string; translatedText: string; status: string; error: string | null }[]; overallStatus: string }> | null): void {
+  function updateTabTranslations(id: string, translations: TabTranslations | null): void {
     const tab = tabs.value.find(t => t.id === id)
     if (tab) {
-      tab.translations = translations
+      // 深拷贝入参：Tab 快照与全局 store 不共享引用，避免任一侧原地修改互相穿透
+      tab.translations = translations ? deepClone(translations) : null
     }
+  }
+
+  function updateTabClaimSentences(id: string, claimId: string, sentences: Claim['sentences']): void {
+    const tab = tabs.value.find(t => t.id === id)
+    const claim = tab?.claims.find(c => c.id === claimId)
+    if (claim) {
+      // 深拷贝入参：Tab 快照与全局 store 不共享引用，避免任一侧原地修改互相穿透
+      claim.sentences = deepClone(sentences)
+    }
+  }
+
+  function mergeTabTranslation(id: string, claimId: string, translation: TabTranslations[string] | null | undefined): void {
+    const tab = tabs.value.find(t => t.id === id)
+    if (!tab || !translation) return
+    // 定向合并单条权利要求的翻译快照，不影响 Tab 内其他条目
+    const merged: TabTranslations = { ...(tab.translations ?? {}) }
+    merged[claimId] = deepClone(translation)
+    tab.translations = merged
   }
 
   function setTabs(data: TabData[]): void {
@@ -207,6 +244,8 @@ export const useGraphStore = defineStore('graph', () => {
     updateTabName,
     updateTabClaimData,
     updateTabTranslations,
+    updateTabClaimSentences,
+    mergeTabTranslation,
     setExtractResult,
     setNodes,
     setEdges,

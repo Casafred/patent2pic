@@ -17,7 +17,8 @@ export const useClaimStore = defineStore('claim', () => {
   }
 
   function setClaims(parsed: Claim[]): void {
-    claims.value = parsed
+    // 深拷贝入参：恢复 Tab 快照时与快照切断引用，任一侧原地修改不互相穿透（修复 C）
+    claims.value = parsed ? JSON.parse(JSON.stringify(parsed)) : []
     if (parsed.length > 0) {
       // Always ensure activeClaimId points to an existing claim
       const activeExists = parsed.some(c => c.id === activeClaimId.value)

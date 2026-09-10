@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useAIStore } from '@/stores/ai'
 import { useClaimStore } from '@/stores/claim'
 import { useGraphStore } from '@/stores/graph'
@@ -193,7 +193,7 @@ export function useParallelExtract() {
 
     // Apply translations
     if (result.sentencePairs && result.sentencePairs.length > 0) {
-      applySentencePairs(claim.id, claim.index, result.sentencePairs)
+      applySentencePairs(tab.id, claim.id, result.sentencePairs)
     } else if (result.translatedClaim && claim.sentences.length > 0) {
       const sentenceTranslations = alignTranslationToSentences(
         claim.rawText,
@@ -223,6 +223,10 @@ export function useParallelExtract() {
       }
     }
 
+    // 修复 D：把翻译定向同步进该 Tab 快照，
+    // 即便分析中切走 Tab（全局态被换），也只写本 Tab 自己的数据
+    graphStore.mergeTabTranslation(tab.id, claim.id, translationStore.getClaimTranslation(claim.id))
+
     task.status = 'success'
     task.progress = 100
     task.durationMs = Date.now() - startTime
@@ -237,9 +241,10 @@ export function useParallelExtract() {
     })
   }
 
-  function applySentencePairs(claimId: string, claimIndex: number, pairs: SentencePair[]): void {
+  function applySentencePairs(tabId: string, claimId: string, pairs: SentencePair[]): void {
     const newSentences = pairs.map((pair, idx) => ({
-      id: `claim-${claimIndex}-sent-${idx + 1}`,
+      // 句子 ID 挂 claimId（含 sessionId，跨分析唯一），与 parser 的 ID 规则收敛
+      id: `${claimId}-sent-${idx + 1}`,
       text: pair.original,
       nodeIds: [] as string[],
       edgeIds: [] as string[],
@@ -269,6 +274,10 @@ export function useParallelExtract() {
     if (claimTrans) {
       claimTrans.overallStatus = 'done'
     }
+
+    // 修复 D：句子与翻译定向同步进该 Tab 快照，导出 Excel 时快照数据完整
+    graphStore.updateTabClaimSentences(tabId, claimId, newSentences)
+    graphStore.mergeTabTranslation(tabId, claimId, claimTrans)
   }
 
   async function runParallel(claims: Claim[]): Promise<void> {
@@ -337,6 +346,10 @@ export function useParallelExtract() {
 
       // Activate the first successful tab - AppLayout.vue watch will build the graph
       graphStore.setActiveTabId(firstSuccess.tabId)
+
+      // Tab 切换 watcher 为 pre-flush 异步执行：先等它把旧 Tab 的"覆盖式保存"
+      // 落地，再恢复旧 Tab 数据，否则恢复会被 watcher 冲掉（即"原文被覆盖"bug）
+      await nextTick()
 
       // Restore the old tab's original claim data and translations
       if (savedClaimData) {
