@@ -79,6 +79,14 @@
       </el-tooltip>
     </div>
 
+    <div class="toolbar-divider" />
+
+    <div class="toolbar-group">
+      <el-tooltip content="基于当前图 AI 重构，另开新版本标签页" placement="bottom">
+        <el-button size="small" type="primary" plain :disabled="!canRedraw" @click="redrawDialogVisible = true">AI 重构</el-button>
+      </el-tooltip>
+    </div>
+
     <div class="toolbar-spacer" />
 
     <div class="toolbar-group">
@@ -104,6 +112,11 @@
       :initial-node-type="addNodeType"
       @save="handleAddSave"
     />
+
+    <RedrawDialog
+      v-model:visible="redrawDialogVisible"
+      :source-tab-id="activeTabId"
+    />
   </div>
 </template>
 
@@ -114,13 +127,16 @@ import { graphEngine } from '@/services/graph/engine'
 import { useExport } from '@/composables/useExport'
 import { useProjectFile } from '@/composables/useProjectFile'
 import { useGraphStore } from '@/stores/graph'
+import { useAIStore } from '@/stores/ai'
 import type { ExportFormat } from '@/types/app'
 import type { NodeType } from '@/types/graph'
 import { getDefaultNodeStyle } from '@/services/graph/style-registry'
 import CellEditDialog from '../common/CellEditDialog.vue'
+import RedrawDialog from '../ai/RedrawDialog.vue'
 
 const engine = graphEngine
 const graphStore = useGraphStore()
+const aiStore = useAIStore()
 const globalFontSize = computed(() => Math.round((graphStore.globalNodeFontSize + graphStore.globalEdgeFontSize) / 2))
 const { downloadFile } = useExport()
 const { saveProject, loadProject } = useProjectFile()
@@ -131,6 +147,15 @@ const addOriginalText = ref('')
 const addChineseText = ref('')
 const addNodeType = ref<NodeType>('component')
 const groupsVisible = ref(true)
+const redrawDialogVisible = ref(false)
+
+const activeTabId = computed(() => graphStore.activeTab?.id ?? '')
+
+// 当前 Tab 有图（抽取结果或序列化画布）且有 API Key 时可用
+const canRedraw = computed(() => {
+  const tab = graphStore.activeTab
+  return !!(tab && (tab.extractResult || tab.serializedGraph) && aiStore.activeApiKey)
+})
 
 function handleFontSizeChange(delta: number): void {
   const newNodeSize = Math.max(10, Math.min(28, graphStore.globalNodeFontSize + delta))

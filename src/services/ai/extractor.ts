@@ -106,6 +106,10 @@ function validateExtractResult(data: unknown): ExtractResult {
     translatedClaim: String(result.translatedClaim || ''),
     sentencePairs: validateSentencePairs(result.sentencePairs),
     frames,
+    // AI 重构摘要：容忍并透传（普通抽取不产出该字段）
+    changes: Array.isArray(result.changes)
+      ? result.changes.map(c => String(c)).filter(c => c.length > 0)
+      : undefined,
   }
 }
 

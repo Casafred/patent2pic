@@ -71,6 +71,8 @@ export interface ExtractResult {
   translatedClaim: string
   sentencePairs: SentencePair[]
   frames?: ExtractFrame[]
+  /** AI 重构摘要（仅重构链路产出）：说明本次做了哪些修改与取舍 */
+  changes?: string[]
 }
 
 export interface SentencePair {
