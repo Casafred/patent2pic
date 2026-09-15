@@ -187,8 +187,8 @@ const translationEnabled = computed(() => {
 })
 
 const hasGraphData = computed(() => {
-  const tab = graphStore.activeTab
-  return !!(tab?.extractResult || tab?.serializedGraph)
+  const version = graphStore.activeVersion
+  return !!(version?.extractResult || version?.serializedGraph)
 })
 
 const translationProgressPercent = computed(() => {
@@ -203,15 +203,11 @@ const claimTrans = computed<ClaimTranslation | undefined>(() => {
 })
 
 const extractNodes = computed<ExtractNode[]>(() => {
-  const tab = graphStore.activeTab
-  if (!tab?.extractResult) return []
-  return tab.extractResult.nodes
+  return graphStore.activeVersion?.extractResult?.nodes ?? []
 })
 
 const extractGroups = computed(() => {
-  const tab = graphStore.activeTab
-  if (!tab?.extractResult) return []
-  return tab.extractResult.groups
+  return graphStore.activeVersion?.extractResult?.groups ?? []
 })
 
 const nodeHighlightMap = computed<Map<string, NodeHighlightInfo>>(() => {

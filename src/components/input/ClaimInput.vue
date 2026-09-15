@@ -190,8 +190,8 @@ const { extractActiveClaim, error: extractError, abort } = useAIExtract()
 const parallelExtract = useParallelExtract()
 
 const hasGraphData = computed(() => {
-  const tab = graphStore.activeTab
-  return !!(tab?.extractResult || tab?.serializedGraph)
+  const version = graphStore.activeVersion
+  return !!(version?.extractResult || version?.serializedGraph)
 })
 
 const activeClaimIndex = computed(() => {
@@ -236,22 +236,12 @@ function beginAnalysisSession(): void {
 }
 
 function handleNewAnalysis(): void {
-  // Save the current tab's data before creating a new one
-  const currentTab = graphStore.activeTab
-  if (currentTab) {
-    const savedClaimData = {
-      rawText: currentTab.rawText,
-      claims: JSON.parse(JSON.stringify(currentTab.claims)),
-      activeClaimId: currentTab.activeClaimId,
-    }
-    // Create a new tab with empty input
-    graphStore.addTab(undefined, false, true, null, '', [], null)
-    // Restore the old tab's original claim data (the watcher may have overwritten it)
-    graphStore.updateTabClaimData(currentTab.id, savedClaimData.rawText, savedClaimData.claims, savedClaimData.activeClaimId)
-  } else {
-    graphStore.addTab(undefined, false, true, null, '', [], null)
+  // 活动文件已有内容（输入或版本）→ 新建空白文件；空文件直接复用。
+  // 输入状态归属文件（claimStore 是活动文件的投影），无需任何快照搬运。
+  const activeFile = graphStore.activeFile
+  if (activeFile && (activeFile.rawText.trim() || activeFile.versions.length > 0)) {
+    graphStore.addFile()
   }
-  // Clear the input for the new tab
   claimStore.setText('')
   claimStore.setClaims([])
   claimStore.setActiveClaim(null)
@@ -267,7 +257,7 @@ async function handleGenerate(): Promise<void> {
     handleTextInput()
   }
 
-  // 分配唯一 ID 命名空间后再进入抽取链路（翻译 Map key、TabData.claimId 全程唯一）
+  // 分配唯一 ID 命名空间后再进入抽取链路（翻译 Map key、CanvasFile.claimId 全程唯一）
   beginAnalysisSession()
 
   // Ensure activeClaimId points to an existing claim

@@ -13,16 +13,16 @@ export function useExportExcel() {
   const graphStore = useGraphStore()
 
   async function exportToExcel(): Promise<void> {
-    // 修复 D：优先从活动 Tab 快照取数，保证导出内容属于当前 Tab 的分析，
+    // 修复 D：优先从活动文件快照取数，保证导出内容属于当前文件的分析，
     // 即便全局 store 被其他分析污染也不影响；快照缺失时回退全局 store
-    const tab = graphStore.activeTab
+    const file = graphStore.activeFile
     let claim: Claim | undefined
     const tabTransLookup: Record<string, string> = {}
-    if (tab && tab.claims.length > 0) {
-      // Tab.claimId 是该 Tab 分析的权利要求（并行模式各 Tab 不同），优先于 activeClaimId
-      const preferredId = tab.claimId ?? tab.activeClaimId
-      claim = tab.claims.find(c => c.id === preferredId) ?? tab.claims[0]
-      const snap = tab.translations?.[claim.id]
+    if (file && file.claims.length > 0) {
+      // file.claimId 是该文件分析的权利要求（并行模式各文件不同），优先于 activeClaimId
+      const preferredId = file.claimId ?? file.activeClaimId
+      claim = file.claims.find(c => c.id === preferredId) ?? file.claims[0]
+      const snap = file.translations?.[claim.id]
       if (snap) {
         for (const s of snap.sentences) {
           tabTransLookup[s.sentenceId] = s.translatedText
@@ -65,11 +65,11 @@ export function useExportExcel() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '权利要求翻译')
 
-    // 文件名带上 Tab 标识，多分析场景下导出文件天然可区分
+    // 文件名带上画布文件标识，多分析场景下导出文件天然可区分
     let filename = `权利要求翻译_${claim.index}.xlsx`
-    if (tab && tab.name) {
-      const safeTabName = tab.name.replace(/[\\/:*?"<>|]/g, '_').trim()
-      filename = `权利要求翻译_${safeTabName}_${claim.index}.xlsx`
+    if (file && file.name) {
+      const safeFileName = file.name.replace(/[\\/:*?"<>|]/g, '_').trim()
+      filename = `权利要求翻译_${safeFileName}_${claim.index}.xlsx`
     }
     const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
 

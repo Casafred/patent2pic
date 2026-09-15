@@ -1,15 +1,15 @@
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed } from 'vue'
 import { useAIStore } from '@/stores/ai'
-import { useClaimStore } from '@/stores/claim'
-import { useGraphStore } from '@/stores/graph'
+import { useGraphStore, type CanvasFile } from '@/stores/graph'
 import { useTranslationStore } from '@/stores/translation'
 import { streamChat } from '@/services/ai/client'
 import { buildMessages } from '@/services/ai/prompt'
 import { predictClaimType } from '@/utils/claim-type'
 import { parseExtractResult } from '@/services/ai/extractor'
 import { alignTranslationToSentences } from '@/services/claim/translation-aligner'
-import type { ExtractResult, SentencePair } from '@/types/ai'
-import type { Claim } from '@/types/claim'
+import type { ExtractResult } from '@/types/ai'
+import type { Claim, Sentence } from '@/types/claim'
+import type { ClaimTranslation } from '@/types/translation'
 
 export interface ParallelTask {
   claimId: string
@@ -17,7 +17,7 @@ export interface ParallelTask {
   claimPreview: string
   status: 'pending' | 'running' | 'success' | 'error' | 'aborted'
   progress: number
-  tabId: string
+  fileId: string
   errorMessage: string | null
   durationMs: number | null
 }
@@ -31,7 +31,6 @@ function isChineseText(text: string): boolean {
 
 export function useParallelExtract() {
   const aiStore = useAIStore()
-  const claimStore = useClaimStore()
   const graphStore = useGraphStore()
   const translationStore = useTranslationStore()
 
@@ -39,6 +38,8 @@ export function useParallelExtract() {
   const isRunning = ref(false)
   let abortControllers: AbortController[] = []
   let aborted = false
+  /** 本次运行中新建的文件（复用的活动文件不算），失败/终止时回滚删除 */
+  let createdFileIds: Set<string> = new Set()
 
   const maxConcurrency = computed(() => {
     // 默认并发数 3，可根据 provider 类型调整
@@ -59,17 +60,119 @@ export function useParallelExtract() {
     tasks.value.length > 0 && tasks.value.every(t => t.status === 'success' || t.status === 'error' || t.status === 'aborted')
   )
 
-  function initTasks(claims: Claim[]): void {
+  function initTasks(claims: Claim[], fileIdForClaim: Map<string, string>): void {
     tasks.value = claims.map(claim => ({
       claimId: claim.id,
       claimIndex: claim.index,
       claimPreview: claim.rawText.slice(0, 60).replace(/\n/g, ' '),
       status: 'pending',
       progress: 0,
-      tabId: '',
+      fileId: fileIdForClaim.get(claim.id) ?? '',
       errorMessage: null,
       durationMs: null,
     }))
+  }
+
+  /**
+   * 为每条权利要求分配目标画布文件：
+   * - 第一条：若活动文件尚无版本，就地复用（输入状态已在该文件上）；
+   * - 其余：新建文件，复制当前输入状态（rawText / claims），activeClaimId 指向各自权利要求。
+   */
+  function assignFiles(claims: Claim[]): Map<string, string> {
+    const mapping = new Map<string, string>()
+    const activeFile = graphStore.activeFile
+    const reusableActive = activeFile && activeFile.versions.length === 0 ? activeFile : null
+    let reused = false
+
+    for (const claim of claims) {
+      if (reusableActive && !reused) {
+        mapping.set(claim.id, reusableActive.id)
+        reused = true
+        continue
+      }
+      const file = graphStore.addFile(`权利要求 ${claim.index}`, false)
+      graphStore.updateFileClaimData(
+        file.id,
+        activeFile?.rawText ?? '',
+        claims,
+        claim.id,
+      )
+      createdFileIds.add(file.id)
+      mapping.set(claim.id, file.id)
+    }
+    return mapping
+  }
+
+  /** 构造句子与翻译快照，直接写入目标文件；活动文件额外刷新全局翻译 store 供 UI 实时展示 */
+  function applyResultData(fileId: string, claim: Claim, result: ExtractResult): void {
+    let newSentences: Sentence[] | null = null
+    let claimTrans: ClaimTranslation | null = null
+
+    if (result.sentencePairs && result.sentencePairs.length > 0) {
+      const sentences: Sentence[] = result.sentencePairs.map((pair, idx) => ({
+        // 句子 ID 挂 claimId（含 sessionId，跨分析唯一），与 parser 的 ID 规则收敛
+        id: `${claim.id}-sent-${idx + 1}`,
+        text: pair.original,
+        nodeIds: [],
+        edgeIds: [],
+      }))
+      newSentences = sentences
+      claimTrans = {
+        claimId: claim.id,
+        sentences: result.sentencePairs.map((pair, idx) => ({
+          sentenceId: sentences[idx].id,
+          originalText: pair.original,
+          translatedText: pair.translation,
+          status: 'done' as const,
+          error: null,
+        })),
+        overallStatus: 'done' as const,
+      }
+    } else if (result.translatedClaim && claim.sentences.length > 0) {
+      const sentenceTranslations = alignTranslationToSentences(
+        claim.rawText,
+        result.translatedClaim,
+        claim.sentences,
+      )
+      newSentences = claim.sentences.map(s => {
+        const matched = sentenceTranslations.find(st => st.sentenceId === s.id)
+        return matched ? { ...s, text: matched.originalText } : s
+      })
+      claimTrans = {
+        claimId: claim.id,
+        sentences: sentenceTranslations.map(st => ({
+          sentenceId: st.sentenceId,
+          originalText: st.originalText,
+          translatedText: st.translatedText,
+          status: 'done',
+          error: null,
+        })),
+        overallStatus: 'done',
+      }
+    }
+
+    if (newSentences) {
+      // 写入文件快照；若为活动文件，claimStore 投影自动带动 UI 更新
+      graphStore.updateFileClaimSentences(fileId, claim.id, newSentences)
+    }
+    if (claimTrans) {
+      graphStore.mergeFileTranslation(fileId, claim.id, claimTrans)
+    }
+
+    // 活动文件：从文件快照刷新全局翻译 store，供对照阅读实时展示
+    if (graphStore.activeFileId === fileId) {
+      const file = graphStore.files.find(f => f.id === fileId)
+      if (file?.translations) {
+        translationStore.fromJSON(file.translations)
+      }
+    }
+  }
+
+  /** 任务失败/终止时回滚：仅删除本次新建的文件，复用的活动文件保留（输入不丢） */
+  function rollbackFile(fileId: string): void {
+    if (createdFileIds.has(fileId)) {
+      graphStore.removeFile(fileId)
+    }
   }
 
   async function processSingleClaim(claim: Claim, task: ParallelTask): Promise<void> {
@@ -84,9 +187,13 @@ export function useParallelExtract() {
     task.progress = 10
 
     const isChinese = isChineseText(claim.rawText)
-    const tab = graphStore.addTab(undefined, isChinese, false, claim.id, claimStore.rawText, JSON.parse(JSON.stringify(claimStore.claims)), claimStore.activeClaimId)
-    task.tabId = tab.id
-    graphStore.updateTabName(tab.id, `权利要求 ${claim.index}`)
+    const file = graphStore.files.find(f => f.id === task.fileId)
+    if (!file) {
+      task.status = 'error'
+      task.errorMessage = '目标画布文件不存在'
+      task.progress = 100
+      return
+    }
 
     const abortController = new AbortController()
     abortControllers.push(abortController)
@@ -135,7 +242,7 @@ export function useParallelExtract() {
       task.errorMessage = '用户终止'
       task.progress = 100
       task.durationMs = Date.now() - startTime
-      graphStore.removeTab(tab.id)
+      rollbackFile(file.id)
       return
     }
 
@@ -144,7 +251,7 @@ export function useParallelExtract() {
       task.errorMessage = streamError
       task.progress = 100
       task.durationMs = Date.now() - startTime
-      graphStore.removeTab(tab.id)
+      rollbackFile(file.id)
       aiStore.addExtractLog({
         provider: providerType,
         model,
@@ -168,7 +275,7 @@ export function useParallelExtract() {
       task.errorMessage = (err as Error).message || '解析失败'
       task.progress = 100
       task.durationMs = Date.now() - startTime
-      graphStore.removeTab(tab.id)
+      rollbackFile(file.id)
       aiStore.addExtractLog({
         provider: providerType,
         model,
@@ -182,50 +289,17 @@ export function useParallelExtract() {
     }
 
     task.progress = 90
-    graphStore.updateTabExtractResult(tab.id, result)
 
-    // In parallel mode, we don't build the graph here because:
-    // 1. The graph engine is a singleton - concurrent builds would conflict
-    // 2. Tabs are created with activate=false, so they aren't the active tab
-    // 3. runParallel will activate the first successful tab after all tasks complete
-    // 4. AppLayout.vue watch will build the graph when activeTabId changes
-    // 5. Other tabs will be built on-demand when the user switches to them
-
-    // Apply translations
-    if (result.sentencePairs && result.sentencePairs.length > 0) {
-      applySentencePairs(tab.id, claim.id, result.sentencePairs)
-    } else if (result.translatedClaim && claim.sentences.length > 0) {
-      const sentenceTranslations = alignTranslationToSentences(
-        claim.rawText,
-        result.translatedClaim,
-        claim.sentences,
-      )
-      const sentenceIds = sentenceTranslations.map(st => st.sentenceId)
-      const originalTexts: Record<string, string> = {}
-      sentenceTranslations.forEach(st => {
-        originalTexts[st.sentenceId] = st.originalText
-      })
-      translationStore.initClaimTranslation(claim.id, sentenceIds, originalTexts)
-      sentenceTranslations.forEach(st => {
-        if (st.translatedText) {
-          translationStore.setSentenceTranslation(claim.id, {
-            sentenceId: st.sentenceId,
-            originalText: st.originalText,
-            translatedText: st.translatedText,
-            status: 'done',
-            error: null,
-          })
-        }
-      })
-      const claimTrans = translationStore.getClaimTranslation(claim.id)
-      if (claimTrans) {
-        claimTrans.overallStatus = 'done'
-      }
+    // 结果作为初始版本写入目标文件；若该文件处于活动态，
+    // 渲染 watcher 会自动构建画布，非活动文件在切换时按需渲染
+    graphStore.appendVersion(file.id, { label: '初始分析', extractResult: result })
+    graphStore.updateFileMeta(file.id, { isChinese, claimId: claim.id })
+    if (/^画布 \d+$/.test(file.name)) {
+      graphStore.updateFileName(file.id, `权利要求 ${claim.index}`)
     }
 
-    // 修复 D：把翻译定向同步进该 Tab 快照，
-    // 即便分析中切走 Tab（全局态被换），也只写本 Tab 自己的数据
-    graphStore.mergeTabTranslation(tab.id, claim.id, translationStore.getClaimTranslation(claim.id))
+    // 句子与翻译直接写入文件快照
+    applyResultData(file.id, claim, result)
 
     task.status = 'success'
     task.progress = 100
@@ -241,45 +315,6 @@ export function useParallelExtract() {
     })
   }
 
-  function applySentencePairs(tabId: string, claimId: string, pairs: SentencePair[]): void {
-    const newSentences = pairs.map((pair, idx) => ({
-      // 句子 ID 挂 claimId（含 sessionId，跨分析唯一），与 parser 的 ID 规则收敛
-      id: `${claimId}-sent-${idx + 1}`,
-      text: pair.original,
-      nodeIds: [] as string[],
-      edgeIds: [] as string[],
-    }))
-
-    claimStore.updateClaimSentences(claimId, newSentences)
-
-    const sentenceIds = newSentences.map(s => s.id)
-    const originalTexts: Record<string, string> = {}
-    newSentences.forEach(s => {
-      originalTexts[s.id] = s.text
-    })
-    translationStore.initClaimTranslation(claimId, sentenceIds, originalTexts)
-
-    pairs.forEach((pair, idx) => {
-      const sentenceId = newSentences[idx].id
-      translationStore.setSentenceTranslation(claimId, {
-        sentenceId,
-        originalText: pair.original,
-        translatedText: pair.translation,
-        status: 'done',
-        error: null,
-      })
-    })
-
-    const claimTrans = translationStore.getClaimTranslation(claimId)
-    if (claimTrans) {
-      claimTrans.overallStatus = 'done'
-    }
-
-    // 修复 D：句子与翻译定向同步进该 Tab 快照，导出 Excel 时快照数据完整
-    graphStore.updateTabClaimSentences(tabId, claimId, newSentences)
-    graphStore.mergeTabTranslation(tabId, claimId, claimTrans)
-  }
-
   async function runParallel(claims: Claim[]): Promise<void> {
     if (isRunning.value) return
     if (!aiStore.activeApiKey) return
@@ -287,10 +322,12 @@ export function useParallelExtract() {
     isRunning.value = true
     aborted = false
     abortControllers = []
+    createdFileIds = new Set()
     aiStore.isExtracting = true
     aiStore.extractError = null
 
-    initTasks(claims)
+    const mapping = assignFiles(claims)
+    initTasks(claims, mapping)
 
     const concurrency = effectiveConcurrency.value
     const queue = [...tasks.value]
@@ -323,46 +360,16 @@ export function useParallelExtract() {
     // Wait for remaining tasks
     await Promise.all(executing)
 
-    // After all tasks complete, activate the first successful tab
-    // and build its graph
-    const firstSuccess = tasks.value.find(t => t.status === 'success' && t.tabId)
-    if (firstSuccess && firstSuccess.tabId) {
-      // Set isExtracting to false first so the UI updates correctly
-      isRunning.value = false
-      aiStore.isExtracting = false
-      abortControllers = []
-
-      // Save the current tab's ORIGINAL claim data before activating a new tab.
-      // The tab-switch watcher will save claimStore (which may have been modified
-      // by applySentencePairs) to the old tab, overwriting its original data.
-      const currentTab = graphStore.activeTab
-      const savedClaimData = currentTab ? {
-        id: currentTab.id,
-        rawText: currentTab.rawText,
-        claims: JSON.parse(JSON.stringify(currentTab.claims)),
-        activeClaimId: currentTab.activeClaimId,
-        translations: currentTab.translations ? JSON.parse(JSON.stringify(currentTab.translations)) : null,
-      } : null
-
-      // Activate the first successful tab - AppLayout.vue watch will build the graph
-      graphStore.setActiveTabId(firstSuccess.tabId)
-
-      // Tab 切换 watcher 为 pre-flush 异步执行：先等它把旧 Tab 的"覆盖式保存"
-      // 落地，再恢复旧 Tab 数据，否则恢复会被 watcher 冲掉（即"原文被覆盖"bug）
-      await nextTick()
-
-      // Restore the old tab's original claim data and translations
-      if (savedClaimData) {
-        graphStore.updateTabClaimData(savedClaimData.id, savedClaimData.rawText, savedClaimData.claims, savedClaimData.activeClaimId)
-        if (savedClaimData.translations) {
-          graphStore.updateTabTranslations(savedClaimData.id, savedClaimData.translations)
-        }
-      }
-    } else {
-      isRunning.value = false
-      aiStore.isExtracting = false
-      abortControllers = []
+    // 全部完成后激活第一个成功的文件（复用活动文件时通常就是它自己）
+    const firstSuccess = tasks.value.find(t => t.status === 'success' && t.fileId)
+    if (firstSuccess && firstSuccess.fileId
+      && graphStore.files.some((f: CanvasFile) => f.id === firstSuccess.fileId)) {
+      graphStore.activateFile(firstSuccess.fileId)
     }
+
+    isRunning.value = false
+    aiStore.isExtracting = false
+    abortControllers = []
   }
 
   function abortAll(): void {
@@ -382,9 +389,9 @@ export function useParallelExtract() {
       if (task.status === 'pending' || task.status === 'running') {
         task.status = 'aborted'
         task.errorMessage = '用户终止'
-        // Remove tabs that were created for aborted tasks
-        if (task.tabId) {
-          graphStore.removeTab(task.tabId)
+        // 回滚该任务新建的文件（复用的活动文件保留，输入不丢）
+        if (task.fileId) {
+          rollbackFile(task.fileId)
         }
       }
     }

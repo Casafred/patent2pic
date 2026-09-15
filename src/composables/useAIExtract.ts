@@ -1,14 +1,12 @@
-import { ref, nextTick } from 'vue'
+import { ref } from 'vue'
 import { useAIStore } from '@/stores/ai'
 import { useClaimStore } from '@/stores/claim'
 import { useGraphStore } from '@/stores/graph'
 import { useTranslationStore } from '@/stores/translation'
-import { usePlaybackStore } from '@/stores/playback'
 import { streamChat } from '@/services/ai/client'
 import { buildMessages } from '@/services/ai/prompt'
 import { predictClaimType } from '@/utils/claim-type'
 import { parseExtractResult } from '@/services/ai/extractor'
-import { graphEngine } from '@/services/graph/engine'
 import { alignTranslationToSentences } from '@/services/claim/translation-aligner'
 import { timingStart, timingEnd, timingLap } from '@/utils/timing'
 import type { ChatUsage, ExtractResult, SentencePair } from '@/types/ai'
@@ -27,7 +25,6 @@ export function useAIExtract() {
   const claimStore = useClaimStore()
   const graphStore = useGraphStore()
   const translationStore = useTranslationStore()
-  const playback = usePlaybackStore()
   const { translateAllSentences } = useAITranslation()
   const streamContent = ref('')
   const reasoningContent = ref('')
@@ -38,6 +35,14 @@ export function useAIExtract() {
   async function extract(claimText: string, claimId?: string): Promise<ExtractResult | null> {
     const timingKey = `权利要求分析 [${claimText.slice(0, 30).replace(/\n/g, ' ')}...]`
     timingStart(timingKey)
+
+    // 分析目标：当前活动画布文件。输入状态已归属文件，无需任何快照搬运。
+    const file = graphStore.activeFile
+    if (!file) {
+      error.value = '没有可用的画布文件'
+      return null
+    }
+    const isFreshAnalysis = file.versions.length === 0
 
     aiStore.isExtracting = true
     aiStore.extractError = null
@@ -52,34 +57,6 @@ export function useAIExtract() {
     const claimPreview = claimText.slice(0, 80).replace(/\n/g, ' ')
     const providerType = aiStore.activeProviderType
     const model = aiStore.activeModel
-
-    // Save the current tab's ORIGINAL claim data before creating a new tab.
-    // When addTab() activates the new tab, the tab-switch watcher in AppLayout.vue
-    // will save claimStore (which now has the NEW text) to the old tab, overwriting
-    // its original data. We restore it immediately after to prevent this corruption.
-    const currentTab = graphStore.activeTab
-    const savedClaimData = currentTab ? {
-      id: currentTab.id,
-      rawText: currentTab.rawText,
-      claims: JSON.parse(JSON.stringify(currentTab.claims)),
-      activeClaimId: currentTab.activeClaimId,
-      translations: currentTab.translations ? JSON.parse(JSON.stringify(currentTab.translations)) : null,
-    } : null
-
-    const tab = graphStore.addTab(undefined, isChinese, true, claimId ?? null, claimStore.rawText, JSON.parse(JSON.stringify(claimStore.claims)), claimStore.activeClaimId)
-
-    // Tab 切换 watcher（AppLayout.vue 的 watch(activeTabId)）为 pre-flush 异步执行：
-    // 必须先等它把旧 Tab 的"覆盖式保存"落地，再恢复旧 Tab 数据，
-    // 否则恢复跑在 watcher 之前，会被 watcher 用新一轮数据冲掉（即"原文被覆盖"bug）
-    await nextTick()
-
-    // Restore the old tab's original claim data and translations (the watcher may have overwritten it)
-    if (savedClaimData) {
-      graphStore.updateTabClaimData(savedClaimData.id, savedClaimData.rawText, savedClaimData.claims, savedClaimData.activeClaimId)
-      if (savedClaimData.translations) {
-        graphStore.updateTabTranslations(savedClaimData.id, savedClaimData.translations)
-      }
-    }
 
     let fullContent = ''
     let fullReasoning = ''
@@ -163,7 +140,6 @@ export function useAIExtract() {
         durationMs: elapsed,
       })
 
-      graphStore.removeTab(tab.id)
       aiStore.extractError = streamError
       error.value = streamError
       aiStore.isExtracting = false
@@ -197,7 +173,6 @@ export function useAIExtract() {
         durationMs: elapsed,
       })
 
-      graphStore.removeTab(tab.id)
       aiStore.extractError = parseError || '解析结果为空'
       error.value = parseError || '解析结果为空'
       aiStore.isExtracting = false
@@ -214,18 +189,20 @@ export function useAIExtract() {
       durationMs: timingEnd(timingKey),
     })
 
-    timingStart(`  │ 图谱构建`)
-    graphStore.updateTabExtractResult(tab.id, result)
-    graphStore.updateTabName(tab.id, `权利要求 ${graphStore.tabs.length}`)
-    await graphEngine.batchBuild(result, undefined, isChinese)
-    // 动画模式开启则进入分步动画，关闭则直接展示完整图
-    if (playback.animationMode && result.frames && result.frames.length > 0) {
-      playback.setFrames(result.frames)
-    } else {
-      graphEngine.showFullGraph()
-      playback.clearFrames()
+    // 成功：结果作为新版本写入当前文件，激活后由渲染 watcher 构建画布
+    graphStore.appendVersion(file.id, {
+      label: isFreshAnalysis ? '初始分析' : '重新分析',
+      extractResult: result,
+    })
+    graphStore.updateFileMeta(file.id, { isChinese, claimId: claimId ?? null })
+
+    // 默认命名的文件改为权利要求名
+    if (/^画布 \d+$/.test(file.name)) {
+      const claimIndex = claimStore.claims.find(c => c.id === (claimId ?? claimStore.activeClaimId))?.index
+        ?? claimStore.claims[0]?.index
+        ?? 1
+      graphStore.updateFileName(file.id, `权利要求 ${claimIndex}`)
     }
-    timingEnd(`  │ 图谱构建`)
 
     timingLap(`  节点数=${result.nodes.length} 边数=${result.edges.length} 组数=${result.groups.length}`, timingKey)
 
@@ -290,20 +267,20 @@ export function useAIExtract() {
       await translateAllSentences(claim)
     }
 
-    // 修复 D：把 AI 对齐后的句子与翻译同步进活动 Tab 快照，导出 Excel 时快照数据完整
-    syncActiveTabSnapshot(claim.id)
+    // 把 AI 对齐后的句子与翻译同步进活动文件快照，导出 Excel 时快照数据完整
+    syncActiveFileSnapshot(claim.id)
 
     return extractResult
   }
 
-  function syncActiveTabSnapshot(claimId: string): void {
-    const tab = graphStore.activeTab
-    if (!tab) return
+  function syncActiveFileSnapshot(claimId: string): void {
+    const file = graphStore.activeFile
+    if (!file) return
     const claim = claimStore.claims.find(c => c.id === claimId)
     if (claim) {
-      graphStore.updateTabClaimSentences(tab.id, claimId, claim.sentences)
+      graphStore.updateFileClaimSentences(file.id, claimId, claim.sentences)
     }
-    graphStore.mergeTabTranslation(tab.id, claimId, translationStore.getClaimTranslation(claimId))
+    graphStore.mergeFileTranslation(file.id, claimId, translationStore.getClaimTranslation(claimId))
   }
 
   function applySentencePairs(claimId: string, pairs: SentencePair[]): void {

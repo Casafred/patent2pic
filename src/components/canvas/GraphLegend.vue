@@ -135,8 +135,7 @@ const isExpanded = ref(false)
 const graphStore = useGraphStore()
 
 const claimType = computed(() => {
-  const activeTab = graphStore.tabs.find(t => t.id === graphStore.activeTabId)
-  return activeTab?.extractResult?.claimType || 'structure'
+  return graphStore.activeVersion?.extractResult?.claimType || 'structure'
 })
 
 const isMethod = computed(() => claimType.value === 'method')

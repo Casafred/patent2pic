@@ -1,10 +1,8 @@
 import { graphEngine } from '@/services/graph/engine'
-import { useGraphStore, type TabData } from '@/stores/graph'
+import { useGraphStore, migrateLegacyTabs, type CanvasFile } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
 import { useEditorStore } from '@/stores/editor'
 import { useTranslationStore } from '@/stores/translation'
-import { usePlaybackStore } from '@/stores/playback'
-import { parseClaims } from '@/services/claim/parser'
 
 const AUTOSAVE_KEY = 'patent2pic-autosave'
 const AUTOSAVE_INTERVAL = 30_000
@@ -14,41 +12,33 @@ export function useAutoSave() {
   const claimStore = useClaimStore()
   const editorStore = useEditorStore()
   const translationStore = useTranslationStore()
-  const playback = usePlaybackStore()
 
   let intervalId: ReturnType<typeof setInterval> | null = null
 
   function saveToLocalStorage(): void {
     try {
       const graph = graphEngine.getGraph()
-      const claim = claimStore.getActiveClaim()
+      const activeFile = graphStore.activeFile
 
-      const currentTab = graphStore.activeTab
-      if (currentTab && graph) {
-        const json = graphEngine.toJSON()
-        graphStore.updateTabSerializedGraph(currentTab.id, json)
+      // 活动文件的当前画布（含手动编辑）写回其活动版本
+      if (activeFile && graph && activeFile.activeVersionId) {
+        graphStore.updateVersionSerializedGraph(
+          activeFile.id,
+          activeFile.activeVersionId,
+          graphEngine.toJSON(),
+        )
       }
 
       const data = {
-        version: '1.0.0',
-        claimText: claim?.rawText || claimStore.rawText,
-        claims: claimStore.claims,
-        activeClaimId: claimStore.activeClaimId,
+        version: '1.1.0',
         isInputCollapsed: claimStore.isInputCollapsed,
-        translations: translationStore.toJSON(),
-        tabs: graphStore.tabs.map((tab: TabData) => ({
-          ...tab,
-          serializedGraph: tab.id === graphStore.activeTabId && graph
-            ? graphEngine.toJSON()
-            : tab.serializedGraph,
-          // Save current tab's claim data from claimStore if it's the active tab
-          rawText: tab.id === graphStore.activeTabId ? claimStore.rawText : tab.rawText,
-          claims: tab.id === graphStore.activeTabId ? claimStore.claims : tab.claims,
-          activeClaimId: tab.id === graphStore.activeTabId ? claimStore.activeClaimId : tab.activeClaimId,
-          // Save current tab's translation data from translationStore if it's the active tab
-          translations: tab.id === graphStore.activeTabId ? translationStore.toJSON() : tab.translations,
-        })),
-        activeTabId: graphStore.activeTabId,
+        files: graphStore.files.map(file =>
+          file.id === activeFile?.id
+            // 活动文件的翻译以全局翻译 store 为准（切换文件时才会写回快照）
+            ? { ...file, translations: translationStore.toJSON() }
+            : file,
+        ),
+        activeFileId: graphStore.activeFileId,
         savedAt: Date.now(),
       }
 
@@ -66,19 +56,6 @@ export function useAutoSave() {
 
       const data = JSON.parse(raw)
 
-      if (data.claimText) {
-        claimStore.setText(data.claimText)
-        if (data.claims && Array.isArray(data.claims) && data.claims.length > 0) {
-          claimStore.setClaims(data.claims)
-        } else {
-          const parsed = parseClaims(data.claimText)
-          claimStore.setClaims(parsed)
-        }
-        if (data.activeClaimId) {
-          claimStore.setActiveClaim(data.activeClaimId)
-        }
-      }
-
       if (typeof data.isInputCollapsed === 'boolean') {
         if (data.isInputCollapsed) {
           claimStore.collapseInput()
@@ -87,65 +64,28 @@ export function useAutoSave() {
         }
       }
 
-      if (data.translations && typeof data.translations === 'object') {
-        translationStore.fromJSON(data.translations)
+      // 新模型：files 数组；旧模型：tabs 数组（迁移为单版本文件）
+      let files: CanvasFile[] | null = null
+      if (Array.isArray(data.files) && data.files.length > 0) {
+        files = data.files
+      } else if (Array.isArray(data.tabs) && data.tabs.length > 0) {
+        files = migrateLegacyTabs(data.tabs)
       }
 
-      if (data.tabs && Array.isArray(data.tabs) && data.tabs.length > 0) {
-        graphStore.setTabs(data.tabs)
-        graphStore.setActiveTabId(data.activeTabId || data.tabs[0].id)
+      if (files) {
+        graphStore.setFiles(files)
+        // activateFile 完成输入投影与翻译切换；画布渲染由 AppLayout 的 renderKey watcher 完成
+        graphStore.activateFile(data.activeFileId || files[0].id)
+        return true
+      }
 
-        const activeTab = graphStore.activeTab
-        // Restore claim data from the active tab
-        if (activeTab?.rawText !== undefined) {
-          claimStore.setText(activeTab.rawText)
-          if (activeTab.claims && activeTab.claims.length > 0) {
-            claimStore.setClaims(activeTab.claims)
-          } else if (activeTab.rawText) {
-            const parsed = parseClaims(activeTab.rawText)
-            claimStore.setClaims(parsed)
-          }
-          if (activeTab.activeClaimId) {
-            claimStore.setActiveClaim(activeTab.activeClaimId)
-          }
+      // 极旧格式：只有输入文本，落到默认文件
+      if (data.claimText) {
+        graphStore.ensureDefaultFile()
+        claimStore.setText(data.claimText)
+        if (data.activeClaimId) {
+          claimStore.setActiveClaim(data.activeClaimId)
         }
-
-        // Restore translation data from the active tab
-        if (activeTab?.translations && typeof activeTab.translations === 'object') {
-          translationStore.fromJSON(activeTab.translations as any)
-        } else {
-          translationStore.clearAllTranslations()
-        }
-
-        if (activeTab?.serializedGraph) {
-          const graph = graphEngine.getGraph()
-          if (graph) {
-            graph.clearCells()
-            graphEngine.fromJSON(activeTab.serializedGraph)
-            if (playback.animationMode && activeTab.extractResult?.frames?.length) {
-              playback.setFrames(activeTab.extractResult.frames)
-            } else {
-              graphEngine.showFullGraph()
-              playback.clearFrames()
-            }
-            setTimeout(() => graphEngine.fitView(), 100)
-          }
-        } else if (activeTab?.extractResult) {
-          const graph = graphEngine.getGraph()
-          if (graph) {
-            if (playback.animationMode && activeTab.extractResult.frames?.length) {
-              graphEngine.batchBuild(activeTab.extractResult, undefined, activeTab.isChinese)
-                .then(() => playback.setFrames(activeTab.extractResult!.frames || []))
-                .catch(console.error)
-            } else {
-              graphEngine.batchBuild(activeTab.extractResult, undefined, activeTab.isChinese).catch(console.error)
-              playback.clearFrames()
-            }
-          }
-        } else {
-          playback.clearFrames()
-        }
-
         return true
       }
 

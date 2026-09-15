@@ -1,8 +1,7 @@
 import { graphEngine } from '@/services/graph/engine'
-import { useGraphStore } from '@/stores/graph'
+import { useGraphStore, migrateLegacyTabs, type CanvasFile } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
 import { useTranslationStore } from '@/stores/translation'
-import { usePlaybackStore } from '@/stores/playback'
 import { parseClaims } from '@/services/claim/parser'
 
 function isTauri(): boolean {
@@ -13,35 +12,30 @@ export function useProjectFile() {
   const graphStore = useGraphStore()
   const claimStore = useClaimStore()
   const translationStore = useTranslationStore()
-  const playback = usePlaybackStore()
 
   async function saveProject(): Promise<void> {
     const graph = graphEngine.getGraph()
     if (!graph) return
 
-    const claim = claimStore.getActiveClaim()
-
-    const currentTab = graphStore.activeTab
-    if (currentTab) {
-      graphStore.updateTabSerializedGraph(currentTab.id, graphEngine.toJSON())
+    const activeFile = graphStore.activeFile
+    // 活动文件的当前画布（含手动编辑）写回其活动版本
+    if (activeFile && activeFile.activeVersionId) {
+      graphStore.updateVersionSerializedGraph(
+        activeFile.id,
+        activeFile.activeVersionId,
+        graphEngine.toJSON(),
+      )
     }
 
     const projectData = {
-      version: '1.0.0',
-      claimText: claim?.rawText || claimStore.rawText,
-      claims: claimStore.claims,
-      activeClaimId: claimStore.activeClaimId,
+      version: '1.1.0',
       isInputCollapsed: claimStore.isInputCollapsed,
-      translations: translationStore.toJSON(),
-      graphJSON: graphEngine.toJSON(),
-      tabs: graphStore.tabs.map(tab => ({
-        ...tab,
-        // Save current tab's claim data from claimStore if it's the active tab
-        rawText: tab.id === graphStore.activeTabId ? claimStore.rawText : tab.rawText,
-        claims: tab.id === graphStore.activeTabId ? claimStore.claims : tab.claims,
-        activeClaimId: tab.id === graphStore.activeTabId ? claimStore.activeClaimId : tab.activeClaimId,
-      })),
-      activeTabId: graphStore.activeTabId,
+      files: graphStore.files.map(file =>
+        file.id === activeFile?.id
+          ? { ...file, translations: translationStore.toJSON() }
+          : file,
+      ),
+      activeFileId: graphStore.activeFileId,
     }
 
     const content = JSON.stringify(projectData, null, 2)
@@ -136,19 +130,6 @@ export function useProjectFile() {
     try {
       const data = JSON.parse(text)
 
-      if (data.claimText) {
-        claimStore.setText(data.claimText)
-        if (data.claims && Array.isArray(data.claims) && data.claims.length > 0) {
-          claimStore.setClaims(data.claims)
-        } else {
-          const parsed = parseClaims(data.claimText)
-          claimStore.setClaims(parsed)
-        }
-        if (data.activeClaimId) {
-          claimStore.setActiveClaim(data.activeClaimId)
-        }
-      }
-
       if (typeof data.isInputCollapsed === 'boolean') {
         if (data.isInputCollapsed) {
           claimStore.collapseInput()
@@ -157,69 +138,70 @@ export function useProjectFile() {
         }
       }
 
-      if (data.translations && typeof data.translations === 'object') {
-        translationStore.fromJSON(data.translations)
+      // 新模型：files 数组；旧模型：tabs 数组（迁移为单版本文件）
+      let files: CanvasFile[] | null = null
+      if (Array.isArray(data.files) && data.files.length > 0) {
+        files = data.files
+      } else if (Array.isArray(data.tabs) && data.tabs.length > 0) {
+        files = migrateLegacyTabs(data.tabs)
       }
 
-      if (data.tabs && Array.isArray(data.tabs) && data.tabs.length > 0) {
-        graphStore.setTabs(data.tabs)
-        graphStore.setActiveTabId(data.activeTabId || data.tabs[0].id)
+      if (files) {
+        graphStore.setFiles(files)
+        // activateFile 完成输入投影与翻译切换；画布渲染由 AppLayout 的 renderKey watcher 完成
+        graphStore.activateFile(data.activeFileId || files[0].id)
+        return true
+      }
 
-        const activeTab = graphStore.activeTab
-        // Restore claim data from the active tab
-        if (activeTab?.rawText !== undefined) {
-          claimStore.setText(activeTab.rawText)
-          if (activeTab.claims && activeTab.claims.length > 0) {
-            claimStore.setClaims(activeTab.claims)
-          } else if (activeTab.rawText) {
-            const parsed = parseClaims(activeTab.rawText)
-            claimStore.setClaims(parsed)
+      // 旧版单图格式（graphJSON / graph）：落到一个全新文件
+      const graphJSON = data.graphJSON || data.graph
+      if (graphJSON) {
+        graphStore.setFiles([])
+        const file = graphStore.ensureDefaultFile()
+        if (data.claimText) {
+          claimStore.setText(data.claimText)
+          if (Array.isArray(data.claims) && data.claims.length > 0) {
+            claimStore.setClaims(data.claims)
+          } else {
+            claimStore.setClaims(parseClaims(data.claimText))
           }
-          if (activeTab.activeClaimId) {
-            claimStore.setActiveClaim(activeTab.activeClaimId)
-          }
-        }
-
-        const graphJSON = activeTab?.serializedGraph || data.graphJSON
-
-        if (graphJSON) {
-          const graph = graphEngine.getGraph()
-          if (graph) {
-            graph.clearCells()
-            graphEngine.fromJSON(graphJSON)
-            graphEngine.rebindGroupTracking()
-            if (playback.animationMode && activeTab?.extractResult?.frames?.length) {
-              playback.setFrames(activeTab.extractResult.frames)
-            } else {
-              graphEngine.showFullGraph()
-              playback.clearFrames()
-            }
-            setTimeout(() => graphEngine.fitView(), 100)
+          if (data.activeClaimId) {
+            claimStore.setActiveClaim(data.activeClaimId)
           }
         }
-      } else if (data.graphJSON) {
+        if (data.translations && typeof data.translations === 'object') {
+          graphStore.updateFileTranslations(file.id, data.translations)
+          translationStore.fromJSON(data.translations)
+        }
+        // renderKey 未变化（同文件无版本），手动渲染
         const graph = graphEngine.getGraph()
         if (graph) {
           graph.clearCells()
-          graphEngine.fromJSON(data.graphJSON)
+          graphEngine.fromJSON(graphJSON)
           graphEngine.rebindGroupTracking()
-          playback.clearFrames()
+          graphEngine.showFullGraph()
           setTimeout(() => graphEngine.fitView(), 100)
         }
-      } else if (data.graph) {
-        const graph = graphEngine.getGraph()
-        if (graph) {
-          graph.clearCells()
-          graphEngine.fromJSON(data.graph)
-          graphEngine.rebindGroupTracking()
-          playback.clearFrames()
-          setTimeout(() => graphEngine.fitView(), 100)
-        }
-      } else {
-        playback.clearFrames()
+        return true
       }
 
-      return true
+      // 只有输入文本的旧格式
+      if (data.claimText) {
+        graphStore.setFiles([])
+        graphStore.ensureDefaultFile()
+        claimStore.setText(data.claimText)
+        if (Array.isArray(data.claims) && data.claims.length > 0) {
+          claimStore.setClaims(data.claims)
+        } else {
+          claimStore.setClaims(parseClaims(data.claimText))
+        }
+        if (data.activeClaimId) {
+          claimStore.setActiveClaim(data.activeClaimId)
+        }
+        return true
+      }
+
+      return false
     } catch (err) {
       console.error('项目文件解析失败:', err)
       return false

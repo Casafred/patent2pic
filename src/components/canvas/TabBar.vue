@@ -1,16 +1,17 @@
 <template>
-  <div class="tab-bar" v-if="graphStore.tabs.length > 0">
+  <div class="tab-bar" v-if="graphStore.files.length > 0">
     <div class="tab-bar-scroll">
       <div
-        v-for="tab in graphStore.tabs"
-        :key="tab.id"
-        :class="['tab-item', { active: tab.id === graphStore.activeTabId }]"
-        @click="handleTabClick(tab.id)"
+        v-for="file in graphStore.files"
+        :key="file.id"
+        :class="['tab-item', { active: file.id === graphStore.activeFileId }]"
+        @click="handleFileClick(file.id)"
       >
-        <span class="tab-name" :title="tab.name">{{ tab.name }}</span>
+        <span class="tab-name" :title="file.name">{{ file.name }}</span>
+        <span v-if="file.versions.length > 1" class="tab-versions">V{{ file.versions.length }}</span>
         <span
           class="tab-close"
-          @click.stop="handleTabClose(tab.id)"
+          @click.stop="handleFileClose(file.id)"
         >×</span>
       </div>
     </div>
@@ -26,27 +27,27 @@ import { graphEngine } from '@/services/graph/engine'
 const graphStore = useGraphStore()
 const { saveProject } = useProjectFile()
 
-function handleTabClick(id: string): void {
-  graphStore.setActiveTab(id)
+function handleFileClick(id: string): void {
+  graphStore.activateFile(id)
 }
 
-async function handleTabClose(id: string): Promise<void> {
-  const tab = graphStore.tabs.find((t: { id: string }) => t.id === id)
-  if (!tab) return
+async function handleFileClose(id: string): Promise<void> {
+  const file = graphStore.files.find(f => f.id === id)
+  if (!file) return
 
-  // If this is the last tab, clear it to empty state instead of closing
-  if (graphStore.tabs.length <= 1) {
+  // 最后一个文件：清空到空状态而非关闭，保证输入始终有归属文件
+  if (graphStore.files.length <= 1) {
     const graph = graphEngine.getGraph()
     if (graph) {
       graph.clearCells()
     }
-    graphStore.clearActiveTabGraph()
+    graphStore.clearActiveFileGraph()
     return
   }
 
   try {
     await ElMessageBox.confirm(
-      '关闭标签页前是否保存当前项目？未保存的修改将会丢失。',
+      '关闭画布文件前是否保存当前项目？未保存的修改将会丢失。',
       '保存提醒',
       {
         confirmButtonText: '保存并关闭',
@@ -56,10 +57,10 @@ async function handleTabClose(id: string): Promise<void> {
       },
     )
     await saveProject()
-    graphStore.removeTab(id)
+    graphStore.removeFile(id)
   } catch (action: unknown) {
     if (action === 'cancel') {
-      graphStore.removeTab(id)
+      graphStore.removeFile(id)
     }
   }
 }
@@ -123,6 +124,16 @@ async function handleTabClose(id: string): Promise<void> {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 140px;
+}
+
+.tab-versions {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: var(--color-primary, #1890ff);
+  color: #fff;
+  flex-shrink: 0;
 }
 
 .tab-close {

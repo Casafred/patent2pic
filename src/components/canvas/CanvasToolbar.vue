@@ -115,7 +115,7 @@
 
     <RedrawDialog
       v-model:visible="redrawDialogVisible"
-      :source-tab-id="activeTabId"
+      :source-file-id="activeFileId"
     />
   </div>
 </template>
@@ -149,12 +149,11 @@ const addNodeType = ref<NodeType>('component')
 const groupsVisible = ref(true)
 const redrawDialogVisible = ref(false)
 
-const activeTabId = computed(() => graphStore.activeTab?.id ?? '')
+const activeFileId = computed(() => graphStore.activeFile?.id ?? '')
 
-// 当前 Tab 有图（抽取结果或序列化画布）且有 API Key 时可用
+// 当前文件存在可重构的版本（有版本即可：基准取当前画布或版本抽取结果）且有 API Key 时可用
 const canRedraw = computed(() => {
-  const tab = graphStore.activeTab
-  return !!(tab && (tab.extractResult || tab.serializedGraph) && aiStore.activeApiKey)
+  return !!(graphStore.activeVersion && aiStore.activeApiKey)
 })
 
 function handleFontSizeChange(delta: number): void {
@@ -187,7 +186,7 @@ function handleClearCanvas(): void {
   if (graph) {
     graph.clearCells()
   }
-  graphStore.clearActiveTabGraph()
+  graphStore.clearActiveFileGraph()
 }
 
 function handleAddNode(): void {

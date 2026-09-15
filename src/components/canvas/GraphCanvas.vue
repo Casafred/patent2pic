@@ -305,7 +305,7 @@ async function handleMenuAction(action: string): Promise<void> {
 }
 
 function getLabelText(data: { originalText: string; chineseText: string }): string {
-  const isChinese = graphStore.activeTab?.isChinese ?? false
+  const isChinese = graphStore.activeFile?.isChinese ?? false
   if (isChinese) {
     return data.chineseText || data.originalText
   }
@@ -329,7 +329,7 @@ function handleEditSave(data: { originalText: string; chineseText: string; nodeT
     const prevData = (cell.getData() as Record<string, unknown>) || {}
     node.setData({ ...prevData, originalText: data.originalText, chineseText: data.chineseText, nodeType: data.nodeType })
 
-    const isChinese = graphStore.activeTab?.isChinese ?? false
+    const isChinese = graphStore.activeFile?.isChinese ?? false
     const prevStyle = (prevData.style as Record<string, unknown>) || {}
     const fontSize = (prevStyle.fontSize as number) || 15
     const fontFamily = (prevStyle.fontFamily as string) || '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
@@ -362,7 +362,7 @@ function handleEditSave(data: { originalText: string; chineseText: string; nodeT
           x: pos.x,
           y: pos.y,
         }
-        const newNodeConfig = buildNode(newNodeData, graphStore.activeTab?.isChinese ?? false)
+        const newNodeConfig = buildNode(newNodeData, graphStore.activeFile?.isChinese ?? false)
 
         // Remove old node and add new one
         cell.remove()

@@ -3,8 +3,49 @@ import { ref, computed } from 'vue'
 import type { NodeData, EdgeData, GroupData, GraphJSON } from '@/types/graph'
 import type { ExtractResult } from '@/types/ai'
 import type { Claim } from '@/types/claim'
+import type { ClaimTranslation } from '@/types/translation'
+import { useTranslationStore } from '@/stores/translation'
 
-export interface TabData {
+/**
+ * 画布版本：一次 AI 分析或一次 AI 重构的产物。
+ * 版本是画布渲染的唯一数据源（serializedGraph 优先，extractResult 兜底）。
+ */
+export interface CanvasVersion {
+  id: string
+  /** 展示名：初始分析 / 重新分析 / 重构V{n} */
+  label: string
+  extractResult: ExtractResult | null
+  serializedGraph: Record<string, unknown> | null
+  createdAt: number
+  /** 版本链：来源版本 ID（AI 重构产生） */
+  sourceVersionId?: string
+  /** 本次 AI 重构的指令 */
+  redrawInstructions?: string
+}
+
+/** 文件级翻译快照：claimId → 翻译数据（与 translation store 的 toJSON/fromJSON 格式一致） */
+export type FileTranslations = Record<string, ClaimTranslation>
+
+/**
+ * 画布文件：一个文件 = 一份权利要求输入（rawText/claims/translations）+ 版本列表。
+ * 输入状态归属文件，切换文件即切换全部上下文。
+ */
+export interface CanvasFile {
+  id: string
+  name: string
+  isChinese: boolean
+  /** 本文件分析的权利要求 ID */
+  claimId: string | null
+  rawText: string
+  claims: Claim[]
+  activeClaimId: string | null
+  translations: FileTranslations | null
+  versions: CanvasVersion[]
+  activeVersionId: string | null
+}
+
+/** 旧版 TabData（localStorage 自动保存 / .p2p 项目文件中的历史格式），仅用于迁移 */
+export interface LegacyTabData {
   id: string
   name: string
   extractResult: ExtractResult | null
@@ -14,153 +55,259 @@ export interface TabData {
   rawText: string
   claims: Claim[]
   activeClaimId: string | null
-  translations: Record<string, { claimId: string; sentences: { sentenceId: string; originalText: string; translatedText: string; status: string; error: string | null }[]; overallStatus: string }> | null
-  /** AI 重构版本链：来源 Tab */
+  translations: FileTranslations | null
   sourceTabId?: string
-  /** AI 重构版本链：本次重构的指令 */
   redrawInstructions?: string
-  /** AI 重构版本链：版本号（源 Tab 为 1，重构 Tab 从 2 递增） */
   redrawVersion?: number
 }
-
-type TabTranslations = NonNullable<TabData['translations']>
 
 function deepClone<T>(data: T): T {
   return JSON.parse(JSON.stringify(data))
 }
 
+let fileCounter = 0
+let versionCounter = 0
+
+function nextId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${++versionCounter}`
+}
+
+/** 旧 TabData 列表 → CanvasFile 列表（每个旧 Tab 迁移为单版本文件） */
+export function migrateLegacyTabs(tabs: LegacyTabData[]): CanvasFile[] {
+  return tabs.map(tab => ({
+    id: tab.id,
+    name: tab.name,
+    isChinese: tab.isChinese,
+    claimId: tab.claimId,
+    rawText: tab.rawText,
+    claims: tab.claims ? deepClone(tab.claims) : [],
+    activeClaimId: tab.activeClaimId,
+    translations: tab.translations ? deepClone(tab.translations) : null,
+    versions: [{
+      id: nextId('version'),
+      label: tab.redrawVersion && tab.redrawVersion > 1 ? `重构V${tab.redrawVersion}` : '初始分析',
+      extractResult: tab.extractResult ? deepClone(tab.extractResult) : null,
+      serializedGraph: tab.serializedGraph ?? null,
+      createdAt: Date.now(),
+      redrawInstructions: tab.redrawInstructions,
+    }],
+    activeVersionId: null,
+  })).map(file => ({
+    ...file,
+    activeVersionId: file.versions[0]?.id ?? null,
+  }))
+}
+
 export const useGraphStore = defineStore('graph', () => {
-  const tabs = ref<TabData[]>([])
-  const activeTabId = ref<string>('')
+  const files = ref<CanvasFile[]>([])
+  const activeFileId = ref<string>('')
   const nodes = ref<NodeData[]>([])
   const edges = ref<EdgeData[]>([])
   const groups = ref<GroupData[]>([])
-  const extractResult = ref<ExtractResult | null>(null)
 
   const globalNodeFontSize = ref<number>(15)
   const globalEdgeFontSize = ref<number>(15)
 
-  const activeTab = computed(() =>
-    tabs.value.find(t => t.id === activeTabId.value) || null,
+  const activeFile = computed<CanvasFile | null>(() =>
+    files.value.find(f => f.id === activeFileId.value) || null,
   )
 
-  let tabCounter = 0
+  const activeVersion = computed<CanvasVersion | null>(() => {
+    const file = activeFile.value
+    if (!file) return null
+    return file.versions.find(v => v.id === file.activeVersionId) || null
+  })
 
-  function addTab(name?: string, isChinese: boolean = false, activate: boolean = true, claimId: string | null = null, rawText: string = '', claims: Claim[] = [], activeClaimId: string | null = null, redraw?: { sourceTabId: string; instructions: string; version: number }): TabData {
-    tabCounter++
-    const tab: TabData = {
-      id: `tab-${Date.now()}-${tabCounter}`,
-      name: name || `画布 ${tabCounter}`,
-      extractResult: null,
-      serializedGraph: null,
-      isChinese,
-      claimId,
-      rawText,
-      // 深拷贝入参：Tab 快照与全局 store 不共享引用，避免任一侧原地修改互相穿透
-      claims: claims ? deepClone(claims) : [],
-      activeClaimId,
+  function addFile(name?: string, activate: boolean = true): CanvasFile {
+    fileCounter++
+    const file: CanvasFile = {
+      id: `file-${Date.now()}-${fileCounter}`,
+      name: name || `画布 ${fileCounter}`,
+      isChinese: false,
+      claimId: null,
+      rawText: '',
+      claims: [],
+      activeClaimId: null,
       translations: null,
-      sourceTabId: redraw?.sourceTabId,
-      redrawInstructions: redraw?.instructions,
-      redrawVersion: redraw?.version,
+      versions: [],
+      activeVersionId: null,
     }
-    tabs.value.push(tab)
+    files.value.push(file)
     if (activate) {
-      activeTabId.value = tab.id
+      activateFile(file.id)
     }
-    return tab
+    return file
   }
 
-  function removeTab(id: string): void {
-    const index = tabs.value.findIndex(t => t.id === id)
+  function removeFile(id: string): void {
+    const index = files.value.findIndex(f => f.id === id)
     if (index === -1) return
 
-    tabs.value.splice(index, 1)
+    files.value.splice(index, 1)
 
-    if (activeTabId.value === id) {
-      if (tabs.value.length > 0) {
-        const newIndex = Math.min(index, tabs.value.length - 1)
-        activeTabId.value = tabs.value[newIndex].id
+    if (activeFileId.value === id) {
+      if (files.value.length > 0) {
+        const newIndex = Math.min(index, files.value.length - 1)
+        activateFile(files.value[newIndex].id)
       } else {
-        activeTabId.value = ''
+        activeFileId.value = ''
       }
     }
   }
 
-  function setActiveTab(id: string): void {
-    if (activeTabId.value !== id) {
-      activeTabId.value = id
+  /**
+   * 切换活动文件：翻译状态随文件切换（唯一入口，同步有序，
+   * 取代旧版散落在 AppLayout watcher 中的快照/恢复逻辑）。
+   */
+  function activateFile(id: string): void {
+    if (activeFileId.value === id) return
+
+    const translationStore = useTranslationStore()
+    const oldFile = files.value.find(f => f.id === activeFileId.value)
+    if (oldFile) {
+      oldFile.translations = translationStore.toJSON()
+    }
+
+    activeFileId.value = id
+
+    const newFile = files.value.find(f => f.id === id)
+    if (newFile) {
+      if (newFile.translations) {
+        translationStore.fromJSON(newFile.translations)
+      } else {
+        translationStore.clearAllTranslations()
+      }
     }
   }
 
-  function updateTabExtractResult(id: string, result: ExtractResult): void {
-    const tab = tabs.value.find(t => t.id === id)
-    if (tab) {
-      // 深拷贝入参：Tab 快照与全局 store 不共享引用，避免任一侧原地修改互相穿透
-      tab.extractResult = result ? deepClone(result) : null
+  /** 将某文件的活动版本切换为指定版本（画布渲染由监听 activeVersionId 的渲染器完成） */
+  function setActiveVersion(fileId: string, versionId: string | null): void {
+    const file = files.value.find(f => f.id === fileId)
+    if (file) {
+      file.activeVersionId = versionId
     }
   }
 
-  function updateTabSerializedGraph(id: string, json: Record<string, unknown>): void {
-    const tab = tabs.value.find(t => t.id === id)
-    if (tab) {
-      tab.serializedGraph = json
+  /**
+   * 追加版本（analyze / redraw 的统一落点）。
+   * activate 默认 true：立即激活由渲染 watcher 渲染；AI 重构流式期间传 false，
+   * 成功后再激活，避免画布在等待响应时被清空。
+   */
+  function appendVersion(
+    fileId: string,
+    opts: { label: string; extractResult: ExtractResult; sourceVersionId?: string; redrawInstructions?: string; activate?: boolean },
+  ): CanvasVersion {
+    const file = files.value.find(f => f.id === fileId)
+    if (!file) throw new Error(`appendVersion: 文件 ${fileId} 不存在`)
+
+    const version: CanvasVersion = {
+      id: nextId('version'),
+      label: opts.label,
+      // 深拷贝入参：版本快照与调用方不共享引用
+      extractResult: deepClone(opts.extractResult),
+      serializedGraph: null,
+      createdAt: Date.now(),
+      sourceVersionId: opts.sourceVersionId,
+      redrawInstructions: opts.redrawInstructions,
+    }
+    file.versions.push(version)
+    if (opts.activate !== false) {
+      file.activeVersionId = version.id
+    }
+    return version
+  }
+
+  function removeVersion(fileId: string, versionId: string): void {
+    const file = files.value.find(f => f.id === fileId)
+    if (!file) return
+    const index = file.versions.findIndex(v => v.id === versionId)
+    if (index === -1) return
+
+    file.versions.splice(index, 1)
+    if (file.activeVersionId === versionId) {
+      file.activeVersionId = file.versions.length > 0
+        ? file.versions[file.versions.length - 1].id
+        : null
     }
   }
 
-  function updateTabName(id: string, name: string): void {
-    const tab = tabs.value.find(t => t.id === id)
-    if (tab) {
-      tab.name = name
+  function updateVersionSerializedGraph(fileId: string, versionId: string, json: Record<string, unknown>): void {
+    const file = files.value.find(f => f.id === fileId)
+    const version = file?.versions.find(v => v.id === versionId)
+    if (version) {
+      version.serializedGraph = json
     }
   }
 
-  function updateTabClaimData(id: string, rawText: string, claims: Claim[], activeClaimId: string | null): void {
-    const tab = tabs.value.find(t => t.id === id)
-    if (tab) {
-      tab.rawText = rawText
-      // 深拷贝入参：Tab 快照与全局 store 不共享引用，避免任一侧原地修改互相穿透
-      tab.claims = claims ? deepClone(claims) : []
-      tab.activeClaimId = activeClaimId
+  function updateFileName(fileId: string, name: string): void {
+    const file = files.value.find(f => f.id === fileId)
+    if (file) {
+      file.name = name
     }
   }
 
-  function updateTabTranslations(id: string, translations: TabTranslations | null): void {
-    const tab = tabs.value.find(t => t.id === id)
-    if (tab) {
-      // 深拷贝入参：Tab 快照与全局 store 不共享引用，避免任一侧原地修改互相穿透
-      tab.translations = translations ? deepClone(translations) : null
+  function updateFileMeta(fileId: string, meta: { isChinese?: boolean; claimId?: string | null }): void {
+    const file = files.value.find(f => f.id === fileId)
+    if (file) {
+      if (meta.isChinese !== undefined) file.isChinese = meta.isChinese
+      if (meta.claimId !== undefined) file.claimId = meta.claimId
     }
   }
 
-  function updateTabClaimSentences(id: string, claimId: string, sentences: Claim['sentences']): void {
-    const tab = tabs.value.find(t => t.id === id)
-    const claim = tab?.claims.find(c => c.id === claimId)
+  function updateFileClaimData(fileId: string, rawText: string, claims: Claim[], activeClaimId: string | null): void {
+    const file = files.value.find(f => f.id === fileId)
+    if (file) {
+      file.rawText = rawText
+      // 深拷贝入参：文件快照与全局 store 不共享引用，避免任一侧原地修改互相穿透
+      file.claims = claims ? deepClone(claims) : []
+      file.activeClaimId = activeClaimId
+    }
+  }
+
+  function updateFileTranslations(fileId: string, translations: FileTranslations | null): void {
+    const file = files.value.find(f => f.id === fileId)
+    if (file) {
+      file.translations = translations ? deepClone(translations) : null
+    }
+  }
+
+  function updateFileClaimSentences(fileId: string, claimId: string, sentences: Claim['sentences']): void {
+    const file = files.value.find(f => f.id === fileId)
+    const claim = file?.claims.find(c => c.id === claimId)
     if (claim) {
-      // 深拷贝入参：Tab 快照与全局 store 不共享引用，避免任一侧原地修改互相穿透
       claim.sentences = deepClone(sentences)
     }
   }
 
-  function mergeTabTranslation(id: string, claimId: string, translation: TabTranslations[string] | null | undefined): void {
-    const tab = tabs.value.find(t => t.id === id)
-    if (!tab || !translation) return
-    // 定向合并单条权利要求的翻译快照，不影响 Tab 内其他条目
-    const merged: TabTranslations = { ...(tab.translations ?? {}) }
+  /** 定向合并单条权利要求的翻译快照到文件，不影响文件内其他条目 */
+  function mergeFileTranslation(fileId: string, claimId: string, translation: FileTranslations[string] | null | undefined): void {
+    const file = files.value.find(f => f.id === fileId)
+    if (!file || !translation) return
+    const merged: FileTranslations = { ...(file.translations ?? {}) }
     merged[claimId] = deepClone(translation)
-    tab.translations = merged
+    file.translations = merged
   }
 
-  function setTabs(data: TabData[]): void {
-    tabs.value = data
+  /** 批量恢复（加载 autosave / 项目文件时使用，不做翻译切换） */
+  function setFiles(data: CanvasFile[]): void {
+    files.value = data
   }
 
-  function setActiveTabId(id: string): void {
-    activeTabId.value = id
+  function setActiveFileId(id: string): void {
+    activeFileId.value = id
   }
 
-  function setExtractResult(result: ExtractResult): void {
-    extractResult.value = result
+  /** 保证至少存在一个画布文件（应用启动 / 删除最后一个文件时） */
+  function ensureDefaultFile(): CanvasFile {
+    if (files.value.length === 0) {
+      const file = addFile(undefined, false)
+      activateFile(file.id)
+      return file
+    }
+    if (!activeFileId.value || !files.value.some(f => f.id === activeFileId.value)) {
+      activateFile(files.value[0].id)
+    }
+    return files.value[0]
   }
 
   function setNodes(data: NodeData[]): void {
@@ -201,14 +348,15 @@ export const useGraphStore = defineStore('graph', () => {
     nodes.value = []
     edges.value = []
     groups.value = []
-    extractResult.value = null
   }
 
-  function clearActiveTabGraph(): void {
-    const tab = activeTab.value
-    if (tab) {
-      tab.extractResult = null
-      tab.serializedGraph = null
+  /** 清空活动文件的全部版本与画布（保留输入文本） */
+  function clearActiveFileGraph(): void {
+    const file = activeFile.value
+    if (file) {
+      file.versions = []
+      file.activeVersionId = null
+      file.claimId = null
     }
     clearGraph()
   }
@@ -225,28 +373,31 @@ export const useGraphStore = defineStore('graph', () => {
   }
 
   return {
-    tabs,
-    activeTabId,
-    activeTab,
+    files,
+    activeFileId,
+    activeFile,
+    activeVersion,
     nodes,
     edges,
     groups,
-    extractResult,
     globalNodeFontSize,
     globalEdgeFontSize,
-    addTab,
-    removeTab,
-    setActiveTab,
-    setActiveTabId,
-    setTabs,
-    updateTabExtractResult,
-    updateTabSerializedGraph,
-    updateTabName,
-    updateTabClaimData,
-    updateTabTranslations,
-    updateTabClaimSentences,
-    mergeTabTranslation,
-    setExtractResult,
+    addFile,
+    removeFile,
+    activateFile,
+    setActiveVersion,
+    appendVersion,
+    removeVersion,
+    updateVersionSerializedGraph,
+    updateFileName,
+    updateFileMeta,
+    updateFileClaimData,
+    updateFileTranslations,
+    updateFileClaimSentences,
+    mergeFileTranslation,
+    setFiles,
+    setActiveFileId,
+    ensureDefaultFile,
     setNodes,
     setEdges,
     setGroups,
@@ -255,7 +406,7 @@ export const useGraphStore = defineStore('graph', () => {
     setGlobalNodeFontSize,
     setGlobalEdgeFontSize,
     clearGraph,
-    clearActiveTabGraph,
+    clearActiveFileGraph,
     toJSON,
   }
 })

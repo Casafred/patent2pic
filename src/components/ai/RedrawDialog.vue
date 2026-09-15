@@ -107,12 +107,12 @@ import type { RedrawBase } from '@/types/redraw'
 
 const props = defineProps<{
   visible: boolean
-  sourceTabId: string
+  sourceFileId: string
 }>()
 
 const emit = defineEmits<{
   'update:visible': [value: boolean]
-  'completed': [tabId: string]
+  'completed': [fileId: string]
 }>()
 
 const graphStore = useGraphStore()
@@ -161,7 +161,7 @@ function handleVisibleChange(value: boolean): void {
 
 async function handleStart(): Promise<void> {
   if (!instructions.value.trim()) return
-  const result = await redraw(props.sourceTabId, instructions.value.trim(), {
+  const result = await redraw(props.sourceFileId, instructions.value.trim(), {
     base: base.value,
     includeClaimContext: includeClaimContext.value,
     keepFrames: keepFrames.value,
@@ -169,7 +169,7 @@ async function handleStart(): Promise<void> {
 
   if (result) {
     emit('update:visible', false)
-    emit('completed', graphStore.activeTabId)
+    emit('completed', graphStore.activeFileId)
     if (result.changes && result.changes.length > 0) {
       ElMessage({
         type: 'success',

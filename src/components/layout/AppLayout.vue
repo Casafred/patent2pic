@@ -29,16 +29,11 @@ import TabBar from '../canvas/TabBar.vue'
 import StylePanel from '../panel/StylePanel.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
-import { useClaimStore } from '@/stores/claim'
-import { useTranslationStore } from '@/stores/translation'
 import { usePlaybackStore } from '@/stores/playback'
 import { graphEngine } from '@/services/graph/engine'
-import { parseClaims } from '@/services/claim/parser'
 
 const editorStore = useEditorStore()
 const graphStore = useGraphStore()
-const claimStore = useClaimStore()
-const translationStore = useTranslationStore()
 const playback = usePlaybackStore()
 const graphCanvasRef = ref<InstanceType<typeof GraphCanvas> | null>(null)
 const leftPanelRef = ref<HTMLElement | null>(null)
@@ -99,108 +94,51 @@ onBeforeUnmount(() => {
   document.removeEventListener('mouseup', onResizeEnd)
 })
 
-watch(() => graphStore.activeTabId, async (newTabId, oldTabId) => {
-  if (newTabId === oldTabId) return
+// 启动即保证存在活动画布文件：输入状态（rawText/claims）是活动文件的投影，
+// 没有活动文件时输入框将无法写入
+graphStore.ensureDefaultFile()
 
-  if (oldTabId) {
-    const oldTab = graphStore.tabs.find(t => t.id === oldTabId)
-    if (oldTab) {
-      const json = graphEngine.toJSON()
-      graphStore.updateTabSerializedGraph(oldTabId, json)
-      // Save current claim data to the old tab
-      graphStore.updateTabClaimData(oldTabId, claimStore.rawText, claimStore.claims, claimStore.activeClaimId)
-      // Save current translation data to the old tab
-      graphStore.updateTabTranslations(oldTabId, translationStore.toJSON())
+/**
+ * 渲染键：活动文件 + 活动版本。任一变化即重渲染画布。
+ * 这是画布渲染的唯一入口（切换文件 / 切换版本 / 分析追加版本 / 重构追加版本）。
+ * 输入与翻译状态无需在此处理：输入是文件投影，翻译随 activateFile 切换。
+ */
+const renderKey = computed(() => `${graphStore.activeFileId}::${graphStore.activeFile?.activeVersionId ?? ''}`)
+
+watch(renderKey, async (_newKey, oldKey) => {
+  // 保存旧活动版本的画布快照（含手动编辑）
+  if (oldKey) {
+    const [oldFileId, oldVersionId] = oldKey.split('::')
+    const graph = graphEngine.getGraph()
+    if (oldFileId && oldVersionId && graph && graph.getCells().length > 0) {
+      graphStore.updateVersionSerializedGraph(oldFileId, oldVersionId, graphEngine.toJSON())
     }
   }
 
   const graph = graphEngine.getGraph()
   if (!graph) return
-
-  // Clear the graph engine's canvas
   graph.clearCells()
+  playback.clearFrames()
 
-  if (!newTabId) {
-    // Last tab closed - reset to empty state
-    graphStore.clearGraph()
-    return
-  }
+  const version = graphStore.activeVersion
+  if (!version) return
 
-  const newTab = graphStore.tabs.find(t => t.id === newTabId)
-  if (!newTab) return
-
-  // Restore claim data from the new tab
-  if (newTab.rawText !== undefined) {
-    claimStore.setText(newTab.rawText)
-    if (newTab.claims && newTab.claims.length > 0) {
-      claimStore.setClaims(newTab.claims)
-    } else if (newTab.rawText) {
-      claimStore.setClaims(parseClaims(newTab.rawText))
-    }
-    if (newTab.activeClaimId) {
-      claimStore.setActiveClaim(newTab.activeClaimId)
-    }
-  }
-
-  // Sync the claim store's active claim with the new tab
-  if (newTab.claimId) {
-    claimStore.setActiveClaim(newTab.claimId)
-  }
-
-  // Restore translation data from the new tab
-  if (newTab.translations) {
-    translationStore.fromJSON(newTab.translations as any)
-  } else {
-    translationStore.clearAllTranslations()
-  }
-
-  if (newTab.serializedGraph && Object.keys(newTab.serializedGraph).length > 0) {
-    graphEngine.fromJSON(newTab.serializedGraph)
-    if (playback.animationMode && newTab.extractResult?.frames?.length) {
-      playback.setFrames(newTab.extractResult.frames)
+  if (version.serializedGraph && Object.keys(version.serializedGraph).length > 0) {
+    graphEngine.fromJSON(version.serializedGraph)
+    if (playback.animationMode && version.extractResult?.frames?.length) {
+      playback.setFrames(version.extractResult.frames)
     } else {
       graphEngine.showFullGraph()
-      playback.clearFrames()
     }
-  } else if (newTab.extractResult) {
-    await graphEngine.batchBuild(newTab.extractResult, undefined, newTab.isChinese)
-    if (playback.animationMode && newTab.extractResult.frames?.length) {
-      playback.setFrames(newTab.extractResult.frames)
+  } else if (version.extractResult) {
+    await graphEngine.batchBuild(version.extractResult, undefined, graphStore.activeFile?.isChinese ?? false)
+    if (playback.animationMode && version.extractResult.frames?.length) {
+      playback.setFrames(version.extractResult.frames)
     } else {
       graphEngine.showFullGraph()
-      playback.clearFrames()
     }
-  } else {
-    playback.clearFrames()
   }
-  // If extractResult is not available yet (parallel processing in progress),
-  // the canvas stays empty. The extractResult watcher below will build the graph
-  // when it becomes available.
 })
-
-// Watch for extractResult becoming available on the active tab during parallel processing.
-// This handles the case where the user switches to a tab whose processing hasn't completed yet.
-watch(
-  () => graphStore.activeTab?.extractResult,
-  async (newResult) => {
-    if (!newResult) return
-    const graph = graphEngine.getGraph()
-    if (!graph) return
-    // Only build if the canvas is currently empty
-    if (graph.getCells().length === 0) {
-      const tab = graphStore.activeTab
-      if (tab) {
-        await graphEngine.batchBuild(newResult, undefined, tab.isChinese)
-        if (playback.animationMode && newResult.frames?.length) {
-          playback.setFrames(newResult.frames)
-        } else {
-          graphEngine.showFullGraph()
-          playback.clearFrames()
-        }
-      }
-    }
-  },
-)
 </script>
 
 <style scoped>

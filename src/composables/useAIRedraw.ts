@@ -1,7 +1,6 @@
 import { ref } from 'vue'
 import { useAIStore } from '@/stores/ai'
-import { useGraphStore, type TabData } from '@/stores/graph'
-import { usePlaybackStore } from '@/stores/playback'
+import { useGraphStore, type CanvasFile, type CanvasVersion } from '@/stores/graph'
 import { streamChat } from '@/services/ai/client'
 import { buildRedrawMessages } from '@/services/ai/redraw-prompt'
 import { parseExtractResult } from '@/services/ai/extractor'
@@ -14,7 +13,6 @@ import type { RedrawOptions } from '@/types/redraw'
 export function useAIRedraw() {
   const aiStore = useAIStore()
   const graphStore = useGraphStore()
-  const playback = usePlaybackStore()
 
   const streamContent = ref('')
   const reasoningContent = ref('')
@@ -24,53 +22,53 @@ export function useAIRedraw() {
   const error = ref<string | null>(null)
   let abortController: AbortController | null = null
 
-  /** 沿 sourceTabId 回溯版本链根节点 */
-  function findRootTabId(tab: TabData): string {
-    let current = tab
+  /** 沿 sourceVersionId 回溯版本链根版本 */
+  function findRootVersionId(file: CanvasFile, versionId: string): string {
+    let current = file.versions.find(v => v.id === versionId)
     const seen = new Set<string>()
-    while (current.sourceTabId && !seen.has(current.sourceTabId)) {
+    while (current?.sourceVersionId && !seen.has(current.sourceVersionId)) {
       seen.add(current.id)
-      const parent = graphStore.tabs.find(t => t.id === current.sourceTabId)
+      const parent = file.versions.find(v => v.id === current!.sourceVersionId)
       if (!parent) break
       current = parent
     }
-    return current.id
+    return current?.id ?? versionId
   }
 
-  /** 同一版本链上最大的重构版本号（根 Tab 视为 1） */
-  function nextChainVersion(sourceTab: TabData): number {
-    const rootId = findRootTabId(sourceTab)
-    let max = 1
-    for (const tab of graphStore.tabs) {
-      const isChain = tab.id === rootId || findRootTabId(tab) === rootId
-      if (isChain && (tab.redrawVersion ?? 1) > max) {
-        max = tab.redrawVersion ?? 1
-      }
-    }
-    return max + 1
+  /** 同一版本链上下一个重构版本号（根版本「初始分析」不计，首个重构为 V1） */
+  function nextChainVersion(file: CanvasFile, sourceVersionId: string): number {
+    const rootId = findRootVersionId(file, sourceVersionId)
+    const chainCount = file.versions.filter(
+      v => v.id === rootId || findRootVersionId(file, v.id) === rootId,
+    ).length
+    return chainCount
   }
 
-  /** 取重构基准：当前画布（含手动编辑）或原始抽取结果 */
-  function resolveBase(sourceTab: TabData, base: RedrawOptions['base']): ExtractResult | null {
-    const original = sourceTab.extractResult
+  /** 取重构基准：当前画布（含手动编辑）或源版本的抽取结果 */
+  function resolveBase(
+    file: CanvasFile,
+    sourceVersion: CanvasVersion,
+    base: RedrawOptions['base'],
+  ): ExtractResult | null {
+    const original = sourceVersion.extractResult
 
     if (base === 'current') {
-      // 源 Tab 处于激活态 → 序列化当前画布（含手动编辑）
-      if (graphStore.activeTabId === sourceTab.id) {
+      // 序列化当前画布（含手动编辑）并存回源版本，保证手动编辑不丢失
+      if (graphStore.activeFileId === file.id) {
         const json = graphEngine.toJSON()
-        graphStore.updateTabSerializedGraph(sourceTab.id, json)
+        graphStore.updateVersionSerializedGraph(file.id, sourceVersion.id, json)
         const converted = x6ToExtractResult(json, {
           frames: original?.frames,
           translatedClaim: original?.translatedClaim,
           sentencePairs: original?.sentencePairs,
         })
         if (converted.nodes.length > 0) return converted
-        // 当前画布为空但 extractResult 存在 → 自动降级（边界情况 1）
+        // 当前画布为空但 extractResult 存在 → 自动降级
         return original
       }
-      // 源 Tab 非激活态 → 用其序列化快照
-      if (sourceTab.serializedGraph && Object.keys(sourceTab.serializedGraph).length > 0) {
-        const converted = x6ToExtractResult(sourceTab.serializedGraph, {
+      // 非活动文件：用源版本的序列化快照
+      if (sourceVersion.serializedGraph && Object.keys(sourceVersion.serializedGraph).length > 0) {
+        const converted = x6ToExtractResult(sourceVersion.serializedGraph, {
           frames: original?.frames,
           translatedClaim: original?.translatedClaim,
           sentencePairs: original?.sentencePairs,
@@ -84,13 +82,18 @@ export function useAIRedraw() {
   }
 
   async function redraw(
-    sourceTabId: string,
+    sourceFileId: string,
     instructions: string,
     options: RedrawOptions,
   ): Promise<ExtractResult | null> {
-    const sourceTab = graphStore.tabs.find(t => t.id === sourceTabId)
-    if (!sourceTab) {
-      error.value = '源标签页不存在'
+    const file = graphStore.files.find(f => f.id === sourceFileId)
+    if (!file) {
+      error.value = '目标画布文件不存在'
+      return null
+    }
+    const sourceVersion = file.versions.find(v => v.id === file.activeVersionId) ?? null
+    if (!sourceVersion) {
+      error.value = '当前文件没有可重构的版本，请先执行分析'
       return null
     }
     if (!instructions.trim()) {
@@ -102,9 +105,9 @@ export function useAIRedraw() {
       return null
     }
 
-    const base = resolveBase(sourceTab, options.base)
+    const base = resolveBase(file, sourceVersion, options.base)
     if (!base || base.nodes.length === 0) {
-      error.value = '当前标签页无可用基准（无图且无抽取结果）'
+      error.value = '当前版本无可用基准（无图且无抽取结果）'
       return null
     }
 
@@ -121,26 +124,9 @@ export function useAIRedraw() {
 
     abortController = new AbortController()
 
-    // 新 Tab：复制源 Tab 的 claim/翻译数据，记录版本链元信息
-    const version = nextChainVersion(sourceTab)
-    const baseName = sourceTab.name.replace(/\s*·\s*重构V\d+$/, '')
-    const newTab = graphStore.addTab(
-      `${baseName} · 重构V${version}`,
-      sourceTab.isChinese,
-      true,
-      sourceTab.claimId,
-      sourceTab.rawText,
-      sourceTab.claims,
-      sourceTab.activeClaimId,
-      { sourceTabId, instructions, version },
-    )
-    if (sourceTab.translations) {
-      graphStore.updateTabTranslations(newTab.id, sourceTab.translations)
-    }
-
-    // 参考上下文：该 Tab 分析的权利要求原文
+    // 参考上下文：该文件分析的权利要求原文
     const claimText = options.includeClaimContext
-      ? sourceTab.claims.find(c => c.id === sourceTab.claimId)?.rawText
+      ? file.claims.find(c => c.id === file.claimId)?.rawText
       : undefined
 
     let fullContent = ''
@@ -203,8 +189,7 @@ export function useAIRedraw() {
         claimPreview,
         durationMs: timingEnd(timingKey),
       })
-      graphStore.removeTab(newTab.id)
-      graphStore.setActiveTabId(sourceTabId)
+      // 版本仅在成功时追加，失败无需清理
       aiStore.extractError = message
       error.value = message
       isRunning.value = false
@@ -224,7 +209,7 @@ export function useAIRedraw() {
       return fail((err as Error).message || '解析失败')
     }
 
-    result.claimId = sourceTab.claimId ?? ''
+    result.claimId = file.claimId ?? ''
 
     // 保留原图动画帧（节点 ID 未变的帧高亮依然有效）
     if (options.keepFrames && base.frames && base.frames.length > 0) {
@@ -240,16 +225,15 @@ export function useAIRedraw() {
       durationMs: timingEnd(timingKey),
     })
 
-    timingStart(`  │ 重构图谱构建`)
-    graphStore.updateTabExtractResult(newTab.id, result)
-    await graphEngine.batchBuild(result, undefined, sourceTab.isChinese)
-    if (playback.animationMode && result.frames && result.frames.length > 0) {
-      playback.setFrames(result.frames)
-    } else {
-      graphEngine.showFullGraph()
-      playback.clearFrames()
-    }
-    timingEnd(`  │ 重构图谱构建`)
+    // 重构结果作为新版本追加到版本链并激活；
+    // 画布渲染由 AppLayout 的 renderKey watcher 统一完成
+    const versionNo = nextChainVersion(file, sourceVersion.id)
+    graphStore.appendVersion(file.id, {
+      label: `重构V${versionNo}`,
+      extractResult: result,
+      sourceVersionId: sourceVersion.id,
+      redrawInstructions: instructions,
+    })
 
     timingLap(`  节点数=${result.nodes.length} 边数=${result.edges.length} 组数=${result.groups.length}`, timingKey)
 

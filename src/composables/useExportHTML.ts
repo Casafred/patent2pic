@@ -208,9 +208,9 @@ function collectExportData() {
   const claimStore = useClaimStore()
   const translationStore = useTranslationStore()
 
-  const tab = graphStore.activeTab
-  const nodes: ExtractNode[] = tab?.extractResult?.nodes ?? []
-  const groups = tab?.extractResult?.groups ?? []
+  const version = graphStore.activeVersion
+  const nodes: ExtractNode[] = version?.extractResult?.nodes ?? []
+  const groups = version?.extractResult?.groups ?? []
 
   const claim = claimStore.getActiveClaim() ?? null
   const sentences = claim?.sentences.map(s => ({ id: s.id, text: s.text })) ?? []
