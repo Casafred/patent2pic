@@ -35,19 +35,42 @@
         </button>
       </div>
       <div class="file-list">
-        <div
-          v-for="file in graphStore.files"
-          :key="file.id"
-          :class="['file-item', { active: file.id === graphStore.activeFileId }]"
-          @click="graphStore.activateFile(file.id)"
-        >
-          <span class="file-name" :title="file.name">{{ file.name }}</span>
-          <span v-if="file.versions.length > 1" class="file-versions">V{{ file.versions.length }}</span>
-          <span class="file-actions" @click.stop>
-            <el-icon class="action-icon" title="重命名" @click="handleRenameFile(file)"><EditPen /></el-icon>
-            <el-icon class="action-icon" title="删除" @click="handleDeleteFile(file)"><Delete /></el-icon>
-          </span>
-        </div>
+        <template v-for="file in graphStore.files" :key="file.id">
+          <div
+            :class="['file-item', { active: file.id === graphStore.activeFileId }]"
+            @click="graphStore.activateFile(file.id)"
+          >
+            <span class="file-name" :title="file.name">{{ file.name }}</span>
+            <span v-if="file.versions.length > 1" class="file-versions">V{{ file.versions.length }}</span>
+            <span class="file-actions" @click.stop>
+              <el-icon class="action-icon" title="重命名" @click="handleRenameFile(file)"><EditPen /></el-icon>
+              <el-icon class="action-icon" title="删除" @click="handleDeleteFile(file)"><Delete /></el-icon>
+            </span>
+          </div>
+
+          <!-- 版本历史：仅展开活动文件的版本链 -->
+          <div
+            v-if="file.id === graphStore.activeFileId && file.versions.length > 0"
+            class="version-list"
+          >
+            <div
+              v-for="version in reversedVersions(file)"
+              :key="version.id"
+              :class="['version-item', { active: version.id === file.activeVersionId }]"
+              :title="versionTooltip(version)"
+              @click="handleActivateVersion(file.id, version.id)"
+            >
+              <span class="version-dot" />
+              <span class="version-label">{{ version.label }}</span>
+              <span class="version-time">{{ formatTime(version.createdAt) }}</span>
+              <el-icon
+                class="action-icon version-delete"
+                title="删除该版本"
+                @click.stop="handleDeleteVersion(file, version)"
+              ><Delete /></el-icon>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -57,7 +80,7 @@
 import { computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder, ArrowDown, Plus, EditPen, Delete } from '@element-plus/icons-vue'
-import { useGraphStore, type CanvasFile } from '@/stores/graph'
+import { useGraphStore, type CanvasFile, type CanvasVersion } from '@/stores/graph'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 const graphStore = useGraphStore()
@@ -149,6 +172,58 @@ async function handleDeleteFile(file: CanvasFile): Promise<void> {
       },
     )
     graphStore.removeFile(file.id)
+  } catch {
+    // 用户取消
+  }
+}
+
+/** 版本列表倒序展示：最新版本在最上 */
+function reversedVersions(file: CanvasFile): CanvasVersion[] {
+  return [...file.versions].reverse()
+}
+
+function formatTime(timestamp: number): string {
+  const d = new Date(timestamp)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function versionTooltip(version: CanvasVersion): string {
+  const parts = [version.label, formatTime(version.createdAt)]
+  if (version.redrawInstructions) {
+    parts.push(`重构要求：${version.redrawInstructions}`)
+  }
+  if (version.sourceVersionId) {
+    parts.push('来源：AI 重构版本链')
+  }
+  return parts.join('\n')
+}
+
+/**
+ * 切换/回滚到指定版本。
+ * 当前画布的手动编辑由 AppLayout 的渲染 watcher 在切换前写回旧版本，不会丢失。
+ */
+function handleActivateVersion(fileId: string, versionId: string): void {
+  if (graphStore.activeFile?.activeVersionId === versionId) return
+  graphStore.setActiveVersion(fileId, versionId)
+}
+
+async function handleDeleteVersion(file: CanvasFile, version: CanvasVersion): Promise<void> {
+  if (file.versions.length <= 1) {
+    ElMessage.warning('至少保留一个版本')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `删除版本「${version.label}」后不可恢复，是否继续？`,
+      '删除版本',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+    graphStore.removeVersion(file.id, version.id)
   } catch {
     // 用户取消
   }
@@ -289,6 +364,78 @@ async function handleDeleteFile(file: CanvasFile): Promise<void> {
 .file-item.active .file-versions {
   background: rgba(255, 255, 255, 0.25);
   color: #fff;
+}
+
+.version-list {
+  position: relative;
+  margin: 0 0 6px 14px;
+  padding-left: 10px;
+  border-left: 1px dashed var(--border-color);
+}
+
+.version-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.version-item:hover {
+  background: var(--bg-tertiary, #e8eaed);
+}
+
+.version-item.active {
+  background: rgba(24, 144, 255, 0.12);
+}
+
+.version-dot {
+  position: absolute;
+  left: -14px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border-color);
+  flex-shrink: 0;
+}
+
+.version-item.active .version-dot {
+  background: var(--color-primary, #1890ff);
+}
+
+.version-label {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-item.active .version-label {
+  color: var(--color-primary, #1890ff);
+  font-weight: 500;
+}
+
+.version-time {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.version-delete {
+  display: none;
+  width: 16px;
+  height: 16px;
+  font-size: 11px;
+}
+
+.version-item:hover .version-delete {
+  display: inline-flex;
 }
 
 .file-item.active .action-icon {

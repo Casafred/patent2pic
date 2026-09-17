@@ -1,6 +1,50 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+/** 布局预设：用户对当前布局不满意时一键切换 */
+export type LayoutPreset = 'default' | 'focus' | 'compare' | 'review'
+
+interface LayoutState {
+  preset: LayoutPreset
+  /** 工作区侧栏是否收起 */
+  sidebarCollapsed: boolean
+  /** 输入/阅读面板是否显示 */
+  inputPanelVisible: boolean
+  /** 强制显示右侧样式面板（不看选中状态） */
+  forceStylePanel: boolean
+}
+
+const LAYOUT_KEY = 'patent2pic-layout'
+
+/** 各预设的面板组合 */
+export const LAYOUT_PRESETS: Record<LayoutPreset, Omit<LayoutState, 'preset'>> = {
+  default: { sidebarCollapsed: false, inputPanelVisible: true, forceStylePanel: false },
+  focus: { sidebarCollapsed: true, inputPanelVisible: false, forceStylePanel: false },
+  compare: { sidebarCollapsed: true, inputPanelVisible: true, forceStylePanel: false },
+  review: { sidebarCollapsed: false, inputPanelVisible: true, forceStylePanel: true },
+}
+
+function loadLayout(): LayoutState {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY)
+    if (raw) {
+      const data = JSON.parse(raw)
+      const preset: LayoutPreset = data.preset && data.preset in LAYOUT_PRESETS
+        ? data.preset
+        : 'default'
+      return {
+        preset,
+        sidebarCollapsed: !!data.sidebarCollapsed,
+        inputPanelVisible: data.inputPanelVisible !== false,
+        forceStylePanel: !!data.forceStylePanel,
+      }
+    }
+  } catch {
+    // 读取失败则用默认布局
+  }
+  return { preset: 'default', ...LAYOUT_PRESETS.default }
+}
+
 export const useEditorStore = defineStore('editor', () => {
   const selectedNodeIds = ref<string[]>([])
   const selectedEdgeIds = ref<string[]>([])
@@ -9,6 +53,35 @@ export const useEditorStore = defineStore('editor', () => {
   const activePanel = ref<'style' | 'ai' | null>(null)
   const zoom = ref(1)
   const isDirty = ref(false)
+  const layout = ref<LayoutState>(loadLayout())
+
+  function persistLayout(): void {
+    try {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout.value))
+    } catch {
+      // 持久化失败不影响使用
+    }
+  }
+
+  function applyLayoutPreset(preset: LayoutPreset): void {
+    layout.value = { preset, ...LAYOUT_PRESETS[preset] }
+    persistLayout()
+  }
+
+  function toggleSidebar(): void {
+    layout.value = { ...layout.value, sidebarCollapsed: !layout.value.sidebarCollapsed }
+    persistLayout()
+  }
+
+  function toggleInputPanel(): void {
+    layout.value = { ...layout.value, inputPanelVisible: !layout.value.inputPanelVisible }
+    persistLayout()
+  }
+
+  function toggleForceStylePanel(): void {
+    layout.value = { ...layout.value, forceStylePanel: !layout.value.forceStylePanel }
+    persistLayout()
+  }
 
   function selectNodes(ids: string[]): void {
     selectedNodeIds.value = ids
@@ -69,6 +142,7 @@ export const useEditorStore = defineStore('editor', () => {
     activePanel,
     zoom,
     isDirty,
+    layout,
     selectNodes,
     highlightNodes,
     highlightCombos,
@@ -79,5 +153,9 @@ export const useEditorStore = defineStore('editor', () => {
     setZoom,
     markDirty,
     markClean,
+    applyLayoutPreset,
+    toggleSidebar,
+    toggleInputPanel,
+    toggleForceStylePanel,
   }
 })

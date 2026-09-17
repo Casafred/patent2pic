@@ -82,8 +82,56 @@
     <div class="toolbar-divider" />
 
     <div class="toolbar-group">
-      <el-tooltip content="基于当前图 AI 重构，另开新版本标签页" placement="bottom">
+      <el-tooltip content="基于当前图 AI 重构，进入新版本" placement="bottom">
         <el-button size="small" type="primary" plain :disabled="!canRedraw" @click="redrawDialogVisible = true">AI 重构</el-button>
+      </el-tooltip>
+    </div>
+
+    <div class="toolbar-divider" />
+
+    <div class="toolbar-group">
+      <el-tooltip content="查看分析任务队列与重试" placement="bottom">
+        <el-badge
+          :value="taskBadgeCount"
+          :hidden="taskBadgeCount === 0"
+          :type="parallel.hasFailed.value ? 'danger' : 'primary'"
+          class="task-badge"
+        >
+          <el-button size="small" @click="parallel.toggleTaskPanel()">任务中心</el-button>
+        </el-badge>
+      </el-tooltip>
+    </div>
+
+    <div class="toolbar-group">
+      <el-tooltip content="一键切换面板布局（Ctrl+Shift+1~4）" placement="bottom">
+        <el-dropdown trigger="click" @command="handleLayoutCommand">
+          <el-button size="small">
+            布局 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="item in LAYOUT_ITEMS"
+                :key="item.value"
+                :command="item.value"
+              >
+                {{ item.label }}
+                <span class="layout-shortcut">{{ item.shortcut }}</span>
+              </el-dropdown-item>
+              <el-dropdown-item command="toggleSidebar" divided>
+                {{ editorStore.layout.sidebarCollapsed ? '显示工作区' : '隐藏工作区' }}
+                <span class="layout-shortcut">Ctrl+Shift+B</span>
+              </el-dropdown-item>
+              <el-dropdown-item command="toggleInputPanel">
+                {{ editorStore.layout.inputPanelVisible ? '隐藏输入面板' : '显示输入面板' }}
+                <span class="layout-shortcut">Ctrl+Shift+E</span>
+              </el-dropdown-item>
+              <el-dropdown-item command="toggleForceStylePanel">
+                {{ editorStore.layout.forceStylePanel ? '取消固定样式面板' : '固定显示样式面板' }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </el-tooltip>
     </div>
 
@@ -128,6 +176,8 @@ import { useExport } from '@/composables/useExport'
 import { useProjectFile } from '@/composables/useProjectFile'
 import { useGraphStore } from '@/stores/graph'
 import { useAIStore } from '@/stores/ai'
+import { useEditorStore, type LayoutPreset } from '@/stores/editor'
+import { useParallelExtract } from '@/composables/useParallelExtract'
 import type { ExportFormat } from '@/types/app'
 import type { NodeType } from '@/types/graph'
 import { getDefaultNodeStyle } from '@/services/graph/style-registry'
@@ -137,6 +187,28 @@ import RedrawDialog from '../ai/RedrawDialog.vue'
 const engine = graphEngine
 const graphStore = useGraphStore()
 const aiStore = useAIStore()
+const editorStore = useEditorStore()
+const parallel = useParallelExtract()
+
+/** 布局预设（与 Ctrl+Shift+1~4 对应） */
+const LAYOUT_ITEMS: Array<{ value: LayoutPreset; label: string; shortcut: string }> = [
+  { value: 'default', label: '默认（全显示）', shortcut: 'Ctrl+Shift+1' },
+  { value: 'focus', label: '专注画布', shortcut: 'Ctrl+Shift+2' },
+  { value: 'compare', label: '输入对照', shortcut: 'Ctrl+Shift+3' },
+  { value: 'review', label: '审阅（含样式面板）', shortcut: 'Ctrl+Shift+4' },
+]
+
+function handleLayoutCommand(command: string): void {
+  if (command === 'toggleSidebar') {
+    editorStore.toggleSidebar()
+  } else if (command === 'toggleInputPanel') {
+    editorStore.toggleInputPanel()
+  } else if (command === 'toggleForceStylePanel') {
+    editorStore.toggleForceStylePanel()
+  } else {
+    editorStore.applyLayoutPreset(command as LayoutPreset)
+  }
+}
 const globalFontSize = computed(() => Math.round((graphStore.globalNodeFontSize + graphStore.globalEdgeFontSize) / 2))
 const { downloadFile } = useExport()
 const { saveProject, loadProject } = useProjectFile()
@@ -150,6 +222,11 @@ const groupsVisible = ref(true)
 const redrawDialogVisible = ref(false)
 
 const activeFileId = computed(() => graphStore.activeFile?.id ?? '')
+
+// 任务中心角标：未完成任务数（含失败），失败时红色提示
+const taskBadgeCount = computed(() =>
+  parallel.tasks.value.filter(t => t.status !== 'success').length,
+)
 
 // 当前文件存在可重构的版本（有版本即可：基准取当前画布或版本抽取结果）且有 API Key 时可用
 const canRedraw = computed(() => {
@@ -234,6 +311,12 @@ function handleAddSave(data: { originalText: string; chineseText: string; nodeTy
 </script>
 
 <style scoped>
+.layout-shortcut {
+  margin-left: 12px;
+  font-size: 11px;
+  color: #999;
+}
+
 .canvas-toolbar {
   display: flex;
   align-items: center;

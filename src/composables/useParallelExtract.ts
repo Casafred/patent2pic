@@ -29,36 +29,53 @@ function isChineseText(text: string): boolean {
   return (chineseChars?.length ?? 0) / totalChars > 0.3
 }
 
+/**
+ * 模块级单例状态：输入区与任务中心共享同一份队列，
+ * 因此任务面板能实时反映并行分析进度并支持单条重试。
+ */
+const tasks = ref<ParallelTask[]>([])
+const isRunning = ref(false)
+const taskPanelVisible = ref(false)
+let abortControllers: AbortController[] = []
+let aborted = false
+/** 本次运行中新建的文件（复用的活动文件不算），失败/终止时回滚删除 */
+let createdFileIds: Set<string> = new Set()
+
+const maxConcurrency = computed(() => {
+  // 默认并发数 3，可根据 provider 类型调整
+  return 3
+})
+
+const effectiveConcurrency = computed(() => {
+  return Math.min(maxConcurrency.value, 10, tasks.value.length)
+})
+
+const isDone = (status: ParallelTask['status']): boolean =>
+  status === 'success' || status === 'error' || status === 'aborted'
+
+const completedCount = computed(() => tasks.value.filter(t => isDone(t.status)).length)
+
+const totalCount = computed(() => tasks.value.length)
+
+const allDone = computed(() => tasks.value.length > 0 && tasks.value.every(t => isDone(t.status)))
+
+const hasFailed = computed(() => tasks.value.some(t => t.status === 'error' || t.status === 'aborted'))
+
+/** 从活动文件或任一文件中找回权利要求（重试需要完整 Claim 数据） */
+function findClaimById(graphStore: ReturnType<typeof useGraphStore>, claimId: string): Claim | undefined {
+  const fromActive = graphStore.activeFile?.claims.find(c => c.id === claimId)
+  if (fromActive) return fromActive
+  for (const file of graphStore.files) {
+    const claim = file.claims.find(c => c.id === claimId)
+    if (claim) return claim
+  }
+  return undefined
+}
+
 export function useParallelExtract() {
   const aiStore = useAIStore()
   const graphStore = useGraphStore()
   const translationStore = useTranslationStore()
-
-  const tasks = ref<ParallelTask[]>([])
-  const isRunning = ref(false)
-  let abortControllers: AbortController[] = []
-  let aborted = false
-  /** 本次运行中新建的文件（复用的活动文件不算），失败/终止时回滚删除 */
-  let createdFileIds: Set<string> = new Set()
-
-  const maxConcurrency = computed(() => {
-    // 默认并发数 3，可根据 provider 类型调整
-    return 3
-  })
-
-  const effectiveConcurrency = computed(() => {
-    return Math.min(maxConcurrency.value, 10, tasks.value.length)
-  })
-
-  const completedCount = computed(() =>
-    tasks.value.filter(t => t.status === 'success' || t.status === 'error' || t.status === 'aborted').length
-  )
-
-  const totalCount = computed(() => tasks.value.length)
-
-  const allDone = computed(() =>
-    tasks.value.length > 0 && tasks.value.every(t => t.status === 'success' || t.status === 'error' || t.status === 'aborted')
-  )
 
   function initTasks(claims: Claim[], fileIdForClaim: Map<string, string>): void {
     tasks.value = claims.map(claim => ({
@@ -144,10 +161,10 @@ export function useParallelExtract() {
           sentenceId: st.sentenceId,
           originalText: st.originalText,
           translatedText: st.translatedText,
-          status: 'done',
+          status: 'done' as const,
           error: null,
         })),
-        overallStatus: 'done',
+        overallStatus: 'done' as const,
       }
     }
 
@@ -325,6 +342,8 @@ export function useParallelExtract() {
     createdFileIds = new Set()
     aiStore.isExtracting = true
     aiStore.extractError = null
+    // 并行任务可视化面板：任务下发即展开
+    taskPanelVisible.value = true
 
     const mapping = assignFiles(claims)
     initTasks(claims, mapping)
@@ -372,6 +391,67 @@ export function useParallelExtract() {
     abortControllers = []
   }
 
+  /**
+   * 单条重试：仅重跑失败/已终止的任务。
+   * 目标文件若已被回滚删除，则重新分配一个文件后再执行。
+   */
+  async function retryTask(claimId: string): Promise<void> {
+    if (isRunning.value) return
+    const task = tasks.value.find(t => t.claimId === claimId)
+    if (!task || (task.status !== 'error' && task.status !== 'aborted')) return
+    if (!aiStore.activeApiKey) return
+
+    const claim = findClaimById(graphStore, claimId)
+    if (!claim) return
+
+    // 目标文件可能已被回滚删除 → 重新分配
+    const existing = graphStore.files.find(f => f.id === task.fileId)
+    if (!existing) {
+      const source = graphStore.activeFile
+      const file = graphStore.addFile(`权利要求 ${claim.index}`, false)
+      graphStore.updateFileClaimData(
+        file.id,
+        source?.rawText ?? claim.rawText,
+        source?.claims.length ? source.claims : [claim],
+        claim.id,
+      )
+      createdFileIds.add(file.id)
+      task.fileId = file.id
+    }
+
+    isRunning.value = true
+    aborted = false
+    abortControllers = []
+    aiStore.isExtracting = true
+    aiStore.extractError = null
+    task.status = 'pending'
+    task.progress = 0
+    task.errorMessage = null
+    task.durationMs = null
+
+    await processSingleClaim(claim, task)
+
+    isRunning.value = false
+    aiStore.isExtracting = false
+    abortControllers = []
+
+    // 重新从队列读取状态：processSingleClaim 在原地改写 task.status
+    const finished = tasks.value.find(t => t.claimId === claimId)
+    if (finished?.status === 'success') {
+      // 重试成功后切到该文件，用户直接看到结果
+      graphStore.activateFile(finished.fileId)
+    }
+  }
+
+  /** 批量重试所有失败/已终止的任务（串行执行，避免并发风暴） */
+  async function retryFailed(): Promise<void> {
+    const failed = tasks.value.filter(t => t.status === 'error' || t.status === 'aborted')
+    for (const task of failed) {
+      if (aborted) break
+      await retryTask(task.claimId)
+    }
+  }
+
   function abortAll(): void {
     aborted = true
     // Abort all active HTTP requests
@@ -405,16 +485,35 @@ export function useParallelExtract() {
     isRunning.value = false
   }
 
+  function openTaskPanel(): void {
+    taskPanelVisible.value = true
+  }
+
+  function closeTaskPanel(): void {
+    taskPanelVisible.value = false
+  }
+
+  function toggleTaskPanel(): void {
+    taskPanelVisible.value = !taskPanelVisible.value
+  }
+
   return {
     tasks,
     isRunning,
+    taskPanelVisible,
     maxConcurrency,
     effectiveConcurrency,
     completedCount,
     totalCount,
     allDone,
+    hasFailed,
     runParallel,
+    retryTask,
+    retryFailed,
     abortAll,
     reset,
+    openTaskPanel,
+    closeTaskPanel,
+    toggleTaskPanel,
   }
 }

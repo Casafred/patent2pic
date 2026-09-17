@@ -2,12 +2,12 @@
   <div class="app-layout">
     <div
       class="sidebar-toggle"
-      :title="sidebarCollapsed ? '展开工作区' : '收起工作区'"
-      @click="toggleSidebar"
+      :title="editorStore.layout.sidebarCollapsed ? '展开工作区 (Ctrl+Shift+B)' : '收起工作区 (Ctrl+Shift+B)'"
+      @click="editorStore.toggleSidebar()"
     >
       <svg width="9" height="12" viewBox="0 0 9 12">
         <polyline
-          :points="sidebarCollapsed ? '1.5,1 7,6 1.5,11' : '7,1 1.5,6 7,11'"
+          :points="editorStore.layout.sidebarCollapsed ? '1.5,1 7,6 1.5,11' : '7,1 1.5,6 7,11'"
           stroke="currentColor"
           fill="none"
           stroke-width="1.5"
@@ -16,21 +16,26 @@
         />
       </svg>
     </div>
-    <WorkspaceSidebar v-if="!sidebarCollapsed" />
-    <div class="left-panel" ref="leftPanelRef" :style="{ width: leftPanelWidth + 'px' }">
+    <WorkspaceSidebar v-if="!editorStore.layout.sidebarCollapsed" />
+    <div v-show="editorStore.layout.inputPanelVisible" class="left-panel" ref="leftPanelRef" :style="{ width: leftPanelWidth + 'px' }">
       <ClaimInput />
       <ClaimReader />
     </div>
-    <div class="resize-handle resize-handle-left" @mousedown="startResizeLeft"></div>
+    <div
+      v-if="editorStore.layout.inputPanelVisible"
+      class="resize-handle resize-handle-left"
+      @mousedown="startResizeLeft"
+    ></div>
     <div class="center-panel">
       <CanvasToolbar />
       <TabBar />
       <div class="canvas-area">
         <GraphCanvas ref="graphCanvasRef" />
+        <TaskCenter />
       </div>
     </div>
-    <div class="resize-handle resize-handle-right" v-if="editorStore.activePanel === 'style' || hasSelection" @mousedown="startResizeRight"></div>
-    <div class="right-panel" v-if="editorStore.activePanel === 'style' || hasSelection" ref="rightPanelRef" :style="{ width: rightPanelWidth + 'px' }">
+    <div class="resize-handle resize-handle-right" v-if="rightPanelVisible" @mousedown="startResizeRight"></div>
+    <div class="right-panel" v-if="rightPanelVisible" ref="rightPanelRef" :style="{ width: rightPanelWidth + 'px' }">
       <StylePanel />
     </div>
   </div>
@@ -43,6 +48,7 @@ import ClaimReader from '../input/ClaimReader.vue'
 import GraphCanvas from '../canvas/GraphCanvas.vue'
 import CanvasToolbar from '../canvas/CanvasToolbar.vue'
 import TabBar from '../canvas/TabBar.vue'
+import TaskCenter from '../canvas/TaskCenter.vue'
 import StylePanel from '../panel/StylePanel.vue'
 import WorkspaceSidebar from './WorkspaceSidebar.vue'
 import { useEditorStore } from '@/stores/editor'
@@ -60,16 +66,13 @@ const rightPanelRef = ref<HTMLElement | null>(null)
 const leftPanelWidth = ref(360)
 const rightPanelWidth = ref(280)
 
-// 工作区侧栏折叠状态（持久化）
-const sidebarCollapsed = ref(localStorage.getItem('patent2pic-sidebar-collapsed') === '1')
-
-function toggleSidebar(): void {
-  sidebarCollapsed.value = !sidebarCollapsed.value
-  localStorage.setItem('patent2pic-sidebar-collapsed', sidebarCollapsed.value ? '1' : '0')
-}
-
 const hasSelection = computed(() =>
   editorStore.selectedNodeIds.length > 0 || editorStore.selectedEdgeIds.length > 0,
+)
+
+// 右侧面板：有选中、显式打开样式面板，或被布局预设强制显示时出现
+const rightPanelVisible = computed(() =>
+  editorStore.activePanel === 'style' || hasSelection.value || editorStore.layout.forceStylePanel,
 )
 
 // Resize handle logic
@@ -236,6 +239,7 @@ watch(renderKey, async (_newKey, oldKey) => {
 .canvas-area {
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 .right-panel {

@@ -1,13 +1,46 @@
 import { onMounted, onUnmounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { graphEngine } from '@/services/graph/engine'
-import { useEditorStore } from '@/stores/editor'
+import { useEditorStore, type LayoutPreset } from '@/stores/editor'
+
+/** 布局快捷键：Ctrl/Cmd+Shift+1..4 切换预设 */
+const LAYOUT_PRESET_KEYS: Record<string, LayoutPreset> = {
+  Digit1: 'default',
+  Digit2: 'focus',
+  Digit3: 'compare',
+  Digit4: 'review',
+}
 
 export function useKeyboard() {
   const editorStore = useEditorStore()
 
+  /** 布局相关快捷键，命中返回 true */
+  function handleLayoutKey(e: KeyboardEvent): boolean {
+    if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return false
+
+    const preset = LAYOUT_PRESET_KEYS[e.code]
+    if (preset) {
+      e.preventDefault()
+      editorStore.applyLayoutPreset(preset)
+      return true
+    }
+    if (e.code === 'KeyB') {
+      e.preventDefault()
+      editorStore.toggleSidebar()
+      return true
+    }
+    if (e.code === 'KeyE') {
+      e.preventDefault()
+      editorStore.toggleInputPanel()
+      return true
+    }
+    return false
+  }
+
   async function handleKeyDown(e: KeyboardEvent): Promise<void> {
     const isCtrl = e.ctrlKey || e.metaKey
+
+    if (handleLayoutKey(e)) return
 
     if (isCtrl && e.key === 'z' && !e.shiftKey) {
       e.preventDefault()

@@ -121,27 +121,27 @@
           <p class="progress-text">
             并行处理中... {{ parallelExtract.completedCount.value }}/{{ parallelExtract.totalCount.value }} 完成
           </p>
-          <el-button size="small" type="danger" @click="handleParallelAbort">终止全部</el-button>
-        </div>
-        <div class="parallel-tasks">
-          <div
-            v-for="task in parallelExtract.tasks.value"
-            :key="task.claimId"
-            :class="['parallel-task-item', task.status]"
-          >
-            <span class="task-index">{{ task.claimIndex }}</span>
-            <el-progress
-              :percentage="task.progress"
-              :stroke-width="4"
-              :show-text="false"
-              :status="task.status === 'success' ? 'success' : task.status === 'error' ? 'exception' : undefined"
-              class="task-progress"
-            />
-            <span class="task-status-text">
-              {{ task.status === 'pending' ? '等待中' : task.status === 'running' ? '处理中' : task.status === 'success' ? '完成' : task.status === 'aborted' ? '已终止' : '失败' }}
-            </span>
+          <div class="progress-actions">
+            <el-button size="small" text @click="parallelExtract.openTaskPanel()">任务中心</el-button>
+            <el-button size="small" type="danger" @click="handleParallelAbort">终止全部</el-button>
           </div>
         </div>
+      </div>
+
+      <!-- 并行任务结束但有失败/终止：提示到任务中心重试 -->
+      <div
+        v-else-if="parallelExtract.totalCount.value > 0 && parallelExtract.hasFailed.value"
+        class="extract-error"
+      >
+        <el-alert
+          :title="`${failedTaskCount} 条任务未成功，可在任务中心重试`"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
+        <el-button size="small" type="primary" style="margin-top: 8px" @click="parallelExtract.openTaskPanel()">
+          打开任务中心
+        </el-button>
       </div>
 
       <div v-if="extractError" class="extract-error">
@@ -212,6 +212,11 @@ const parallelProgress = computed(() => {
   const done = parallelExtract.completedCount.value
   return Math.round((done / total) * 100)
 })
+
+// 失败/已终止的任务数（用于提示到任务中心重试）
+const failedTaskCount = computed(() =>
+  parallelExtract.tasks.value.filter(t => t.status === 'error' || t.status === 'aborted').length,
+)
 
 function getTaskForClaim(claimId: string) {
   return parallelExtract.tasks.value.find(t => t.claimId === claimId)
@@ -464,65 +469,18 @@ function handleParallelAbort(): void {
   margin-top: var(--spacing-xs);
 }
 
+.progress-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .progress-text {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   text-align: center;
   margin-top: var(--spacing-xs);
-}
-
-.parallel-tasks {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.parallel-task-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 0;
-}
-
-.parallel-task-item .task-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  border-radius: 9px;
-  font-size: 10px;
-  font-weight: 600;
-  flex-shrink: 0;
-  background: var(--border-color);
-  color: var(--text-secondary);
-}
-
-.parallel-task-item.success .task-index {
-  background: #67c23a;
-  color: white;
-}
-
-.parallel-task-item.error .task-index {
-  background: #f56c6c;
-  color: white;
-}
-
-.parallel-task-item.running .task-index {
-  background: var(--color-primary);
-  color: white;
-}
-
-.task-progress {
-  flex: 1;
-}
-
-.task-status-text {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  min-width: 36px;
-  text-align: right;
 }
 
 .extract-error {
