@@ -1,29 +1,16 @@
 <template>
   <div class="workspace-sidebar">
-    <!-- 项目区 -->
-    <div class="project-section">
-      <el-dropdown trigger="click" class="project-dropdown" @command="handleProjectCommand">
-        <div class="project-current">
-          <el-icon class="project-icon"><Folder /></el-icon>
-          <span class="project-name" :title="activeProject?.name">{{ activeProject?.name ?? '未命名项目' }}</span>
-          <el-icon class="project-caret"><ArrowDown /></el-icon>
-        </div>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item
-              v-for="p in workspaceStore.projects"
-              :key="p.id"
-              :command="`switch:${p.id}`"
-              :disabled="p.id === workspaceStore.activeProjectId"
-            >
-              {{ p.name }}
-            </el-dropdown-item>
-            <el-dropdown-item command="new" divided :icon="Plus">新建项目</el-dropdown-item>
-            <el-dropdown-item command="rename" :icon="EditPen">重命名项目</el-dropdown-item>
-            <el-dropdown-item command="delete" :icon="Delete">删除项目</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
+    <!-- 三层树头部：新建项目 / 新建画布文件 -->
+    <div class="tree-header">
+      <span class="section-title">工作区</span>
+      <div class="tree-header-actions">
+        <button class="header-btn" title="新建项目" @click="handleNewProject">
+          <el-icon><FolderAdd /></el-icon>
+        </button>
+        <button class="header-btn" title="新建画布文件" @click="handleNewFile">
+          <el-icon><Plus /></el-icon>
+        </button>
+      </div>
     </div>
 
     <!-- 项目级搜索：跨项目 / 画布文件 / 版本检索 -->
@@ -66,74 +53,107 @@
       </div>
     </div>
 
-    <!-- 画布文件区 -->
+    <!-- 三层树：项目 → 画布文件 → 版本（逐级可折叠） -->
     <div v-else class="files-section">
-      <div class="section-header">
-        <span class="section-title">画布文件</span>
-        <button class="header-btn" title="新建画布文件" @click="handleNewFile">
-          <el-icon><Plus /></el-icon>
-        </button>
-      </div>
       <div class="file-list">
-        <template v-for="file in graphStore.files" :key="file.id">
+        <template v-for="project in workspaceStore.projects" :key="project.id">
+          <!-- 一级：项目 -->
           <div
-            :class="['file-item', { active: file.id === graphStore.activeFileId }]"
-            @click="graphStore.activateFile(file.id)"
+            :class="['tree-item', 'project-node', { active: project.id === workspaceStore.activeProjectId }]"
+            @click="handleProjectNode(project.id)"
           >
-            <span class="file-name" :title="file.name">{{ file.name }}</span>
-            <span v-if="file.versions.length > 1" class="file-versions">V{{ file.versions.length }}</span>
-            <span class="file-actions" @click.stop>
-              <el-icon class="action-icon" title="重命名" @click="handleRenameFile(file)"><EditPen /></el-icon>
-              <el-icon class="action-icon" title="删除" @click="handleDeleteFile(file)"><Delete /></el-icon>
+            <el-icon class="tree-caret" :class="{ expanded: isProjectExpanded(project.id) }">
+              <CaretRight />
+            </el-icon>
+            <el-icon class="project-icon"><Folder /></el-icon>
+            <span class="tree-label" :title="project.name">{{ project.name }}</span>
+            <span class="tree-badge">{{ projectFiles(project.id).length }}</span>
+            <span class="tree-actions" @click.stop>
+              <el-icon class="action-icon" title="重命名项目" @click="handleRenameProject(project)">
+                <EditPen />
+              </el-icon>
+              <el-icon class="action-icon" title="删除项目" @click="handleDeleteProject(project)">
+                <Delete />
+              </el-icon>
             </span>
           </div>
 
-          <!-- 版本历史：仅展开活动文件的版本链 -->
-          <div
-            v-if="file.id === graphStore.activeFileId && file.versions.length > 0"
-            class="version-list"
-          >
-            <div
-              v-for="version in reversedVersions(file)"
-              :key="version.id"
-              :class="['version-item', { active: version.id === file.activeVersionId }]"
-              :title="versionTooltip(version)"
-              @click="handleActivateVersion(file.id, version.id)"
-            >
-              <span class="version-dot" />
-              <span class="version-label">{{ version.label }}</span>
-              <span class="version-time">{{ formatTime(version.createdAt) }}</span>
-              <el-popover
-                v-if="version.snapshots && version.snapshots.length > 0"
-                trigger="click"
-                placement="right"
-                :width="240"
+          <!-- 二级：画布文件 -->
+          <template v-if="isProjectExpanded(project.id)">
+            <div v-for="file in projectFiles(project.id)" :key="file.id" class="tree-branch">
+              <div
+                :class="['tree-item', 'file-node', { active: isActiveFile(project.id, file.id) }]"
+                @click="openFile(project.id, file.id)"
               >
-                <template #reference>
-                  <span class="snapshot-chip" title="自动快照" @click.stop>
-                    {{ version.snapshots.length }}
-                  </span>
-                </template>
-                <div class="snapshot-list">
-                  <div class="snapshot-title">自动快照（点击回退）</div>
-                  <div
-                    v-for="snapshot in reversedSnapshots(version)"
-                    :key="snapshot.id"
-                    class="snapshot-item"
-                    @click="handleRestoreSnapshot(file.id, version.id, snapshot.id)"
+                <el-icon
+                  class="tree-caret"
+                  :class="{ expanded: isFileExpanded(file.id), hollow: file.versions.length === 0 }"
+                  @click.stop="toggleFileNode(file.id)"
+                >
+                  <CaretRight />
+                </el-icon>
+                <span class="tree-label" :title="file.name">{{ file.name }}</span>
+                <span class="tree-badge">{{ file.versions.length }}</span>
+                <span class="tree-actions" @click.stop>
+                  <template v-if="project.id === workspaceStore.activeProjectId">
+                    <el-icon class="action-icon" title="重命名" @click="handleRenameFile(file)">
+                      <EditPen />
+                    </el-icon>
+                    <el-icon class="action-icon" title="删除" @click="handleDeleteFile(file)">
+                      <Delete />
+                    </el-icon>
+                  </template>
+                </span>
+              </div>
+
+              <!-- 三级：版本链 -->
+              <div v-if="isFileExpanded(file.id) && file.versions.length > 0" class="version-list">
+                <div
+                  v-for="version in reversedVersions(file)"
+                  :key="version.id"
+                  :class="['version-item', { active: isActiveVersion(project.id, file.id, version.id) }]"
+                  :title="versionTooltip(version)"
+                  @click="openVersion(project.id, file.id, version.id)"
+                >
+                  <span class="version-dot" />
+                  <span class="version-label">{{ version.label }}</span>
+                  <span class="version-time">{{ formatTime(version.createdAt) }}</span>
+                  <el-popover
+                    v-if="version.snapshots && version.snapshots.length > 0"
+                    trigger="click"
+                    placement="right"
+                    :width="240"
                   >
-                    <span>{{ formatTime(snapshot.at) }}</span>
-                    <span class="snapshot-restore">回退</span>
-                  </div>
+                    <template #reference>
+                      <span class="snapshot-chip" title="自动快照" @click.stop>
+                        {{ version.snapshots.length }}
+                      </span>
+                    </template>
+                    <div class="snapshot-list">
+                      <div class="snapshot-title">自动快照（点击回退）</div>
+                      <div
+                        v-for="snapshot in reversedSnapshots(version)"
+                        :key="snapshot.id"
+                        class="snapshot-item"
+                        @click="handleRestoreSnapshot(file.id, version.id, snapshot.id)"
+                      >
+                        <span>{{ formatTime(snapshot.at) }}</span>
+                        <span class="snapshot-restore">回退</span>
+                      </div>
+                    </div>
+                  </el-popover>
+                  <el-icon
+                    v-if="project.id === workspaceStore.activeProjectId && file.id === graphStore.activeFileId"
+                    class="action-icon version-delete"
+                    title="删除该版本"
+                    @click.stop="handleDeleteVersion(file, version)"
+                  >
+                    <Delete />
+                  </el-icon>
                 </div>
-              </el-popover>
-              <el-icon
-                class="action-icon version-delete"
-                title="删除该版本"
-                @click.stop="handleDeleteVersion(file, version)"
-              ><Delete /></el-icon>
+              </div>
             </div>
-          </div>
+          </template>
         </template>
       </div>
     </div>
@@ -154,9 +174,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder, ArrowDown, Plus, EditPen, Delete, DeleteFilled, Search } from '@element-plus/icons-vue'
+import { Folder, FolderAdd, CaretRight, Plus, EditPen, Delete, DeleteFilled, Search } from '@element-plus/icons-vue'
 import { useGraphStore, type CanvasFile, type CanvasSnapshot, type CanvasVersion } from '@/stores/graph'
-import { useWorkspaceStore } from '@/stores/workspace'
+import { useWorkspaceStore, type Project } from '@/stores/workspace'
 import { useTrashStore } from '@/stores/trash'
 import TrashDialog from './TrashDialog.vue'
 
@@ -164,9 +184,128 @@ const graphStore = useGraphStore()
 const workspaceStore = useWorkspaceStore()
 const trash = useTrashStore()
 
-const activeProject = computed(() => workspaceStore.activeProject)
-
 const trashVisible = ref(false)
+
+// ===== 三层树展开状态（持久化，重启后保持） =====
+const TREE_KEY = 'patent2pic-tree'
+
+interface TreeState {
+  projects: string[]
+  files: string[]
+}
+
+function loadTreeState(): TreeState {
+  try {
+    const raw = localStorage.getItem(TREE_KEY)
+    if (raw) {
+      const data = JSON.parse(raw)
+      return {
+        projects: Array.isArray(data.projects) ? data.projects : [],
+        files: Array.isArray(data.files) ? data.files : [],
+      }
+    }
+  } catch (err) {
+    console.error('工作区树展开状态读取失败:', err)
+  }
+  return { projects: [], files: [] }
+}
+
+const initialTree = loadTreeState()
+const expandedProjects = ref<string[]>(initialTree.projects)
+const expandedFiles = ref<string[]>(initialTree.files)
+
+function persistTree(): void {
+  try {
+    localStorage.setItem(TREE_KEY, JSON.stringify({
+      projects: expandedProjects.value,
+      files: expandedFiles.value,
+    }))
+  } catch (err) {
+    console.error('工作区树展开状态持久化失败:', err)
+  }
+}
+
+function isProjectExpanded(id: string): boolean {
+  return expandedProjects.value.includes(id)
+}
+
+function isFileExpanded(id: string): boolean {
+  return expandedFiles.value.includes(id)
+}
+
+function toggleProjectNode(id: string): void {
+  expandedProjects.value = isProjectExpanded(id)
+    ? expandedProjects.value.filter(x => x !== id)
+    : [...expandedProjects.value, id]
+  persistTree()
+}
+
+function toggleFileNode(id: string): void {
+  expandedFiles.value = isFileExpanded(id)
+    ? expandedFiles.value.filter(x => x !== id)
+    : [...expandedFiles.value, id]
+  persistTree()
+}
+
+/** 项目下的画布文件（活动项目取内存实时数据，其余项目读各自槽位） */
+function projectFiles(projectId: string): CanvasFile[] {
+  return workspaceStore.getProjectFiles(projectId) ?? []
+}
+
+function isActiveFile(projectId: string, fileId: string): boolean {
+  return projectId === workspaceStore.activeProjectId && fileId === graphStore.activeFileId
+}
+
+function isActiveVersion(projectId: string, fileId: string, versionId: string): boolean {
+  return isActiveFile(projectId, fileId) && graphStore.activeFile?.activeVersionId === versionId
+}
+
+/** 点击项目节点：非活动项目先切换过去，再切换展开状态 */
+function handleProjectNode(id: string): void {
+  if (id !== workspaceStore.activeProjectId) {
+    workspaceStore.switchProject(id)
+    if (!isProjectExpanded(id)) toggleProjectNode(id)
+    return
+  }
+  toggleProjectNode(id)
+}
+
+/** 点击画布文件：跨项目时先切项目，再激活文件并展开到该文件 */
+function openFile(projectId: string, fileId: string): void {
+  if (projectId !== workspaceStore.activeProjectId) {
+    workspaceStore.switchProject(projectId)
+  }
+  graphStore.activateFile(fileId)
+  if (!isProjectExpanded(projectId)) toggleProjectNode(projectId)
+  if (!isFileExpanded(fileId)) toggleFileNode(fileId)
+}
+
+/** 点击版本：打开所属文件并切换到该版本 */
+function openVersion(projectId: string, fileId: string, versionId: string): void {
+  if (projectId !== workspaceStore.activeProjectId) {
+    workspaceStore.switchProject(projectId)
+  }
+  graphStore.activateFile(fileId)
+  graphStore.setActiveVersion(fileId, versionId)
+}
+
+// 活动项目 / 活动文件始终自动展开，保证当前上下文在树中可见
+watch(
+  () => [workspaceStore.activeProjectId, graphStore.activeFileId],
+  ([projectId, fileId]) => {
+    let changed = false
+    if (projectId && !isProjectExpanded(projectId)) {
+      expandedProjects.value = [...expandedProjects.value, projectId]
+      changed = true
+    }
+    if (fileId && !isFileExpanded(fileId)) {
+      expandedFiles.value = [...expandedFiles.value, fileId]
+      changed = true
+    }
+    if (changed) persistTree()
+  },
+  { immediate: true },
+)
 
 // ===== 项目级搜索 =====
 interface SearchResult {
@@ -308,6 +447,8 @@ function handleOpenResult(result: SearchResult): void {
   }
   if (result.fileId) {
     graphStore.activateFile(result.fileId)
+    if (!isProjectExpanded(result.projectId)) toggleProjectNode(result.projectId)
+    if (!isFileExpanded(result.fileId)) toggleFileNode(result.fileId)
   }
   if (result.versionId) {
     graphStore.setActiveVersion(result.fileId, result.versionId)
@@ -316,55 +457,59 @@ function handleOpenResult(result: SearchResult): void {
   searchResults.value = []
 }
 
-async function handleProjectCommand(cmd: string): Promise<void> {
-  const [action, id] = cmd.split(':')
+async function handleNewProject(): Promise<void> {
   try {
-    if (action === 'switch') {
-      workspaceStore.switchProject(id)
-    } else if (action === 'new') {
-      const { value } = await ElMessageBox.prompt('输入新项目名称', '新建项目', {
-        inputValue: `项目 ${workspaceStore.projects.length + 1}`,
-        confirmButtonText: '创建',
+    const { value } = await ElMessageBox.prompt('输入新项目名称', '新建项目', {
+      inputValue: `项目 ${workspaceStore.projects.length + 1}`,
+      confirmButtonText: '创建',
+      cancelButtonText: '取消',
+      inputValidator: v => !!v?.trim() || '项目名称不能为空',
+    })
+    const project = workspaceStore.createProject(value.trim())
+    if (!isProjectExpanded(project.id)) toggleProjectNode(project.id)
+    ElMessage.success('项目已创建')
+  } catch {
+    // 用户取消对话框
+  }
+}
+
+async function handleRenameProject(project: Project): Promise<void> {
+  try {
+    const { value } = await ElMessageBox.prompt('输入新的项目名称', '重命名项目', {
+      inputValue: project.name,
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputValidator: v => !!v?.trim() || '项目名称不能为空',
+    })
+    workspaceStore.renameProject(project.id, value.trim())
+  } catch {
+    // 用户取消对话框
+  }
+}
+
+async function handleDeleteProject(project: Project): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `删除项目「${project.name}」将移入回收站（含全部画布文件与历史版本），可在回收站恢复。`,
+      '删除项目',
+      {
+        confirmButtonText: '删除',
         cancelButtonText: '取消',
-        inputValidator: v => !!v?.trim() || '项目名称不能为空',
+        type: 'warning',
+      },
+    )
+    // 删除前留存完整快照到回收站
+    const snapshot = workspaceStore.readProjectSnapshot(project.id)
+    if (snapshot) {
+      trash.push('project', project.name, {
+        name: project.name,
+        files: snapshot.files,
+        activeFileId: snapshot.activeFileId,
+        isInputCollapsed: snapshot.isInputCollapsed,
       })
-      workspaceStore.createProject(value.trim())
-      ElMessage.success('项目已创建')
-    } else if (action === 'rename') {
-      const project = workspaceStore.activeProject
-      if (!project) return
-      const { value } = await ElMessageBox.prompt('输入新的项目名称', '重命名项目', {
-        inputValue: project.name,
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        inputValidator: v => !!v?.trim() || '项目名称不能为空',
-      })
-      workspaceStore.renameProject(project.id, value.trim())
-    } else if (action === 'delete') {
-      const project = workspaceStore.activeProject
-      if (!project) return
-      await ElMessageBox.confirm(
-        `删除项目「${project.name}」将移入回收站（含全部画布文件与历史版本），可在回收站恢复。`,
-        '删除项目',
-        {
-          confirmButtonText: '删除',
-          cancelButtonText: '取消',
-          type: 'warning',
-        },
-      )
-      // 删除前留存完整快照到回收站
-      const snapshot = workspaceStore.readProjectSnapshot(project.id)
-      if (snapshot) {
-        trash.push('project', project.name, {
-          name: project.name,
-          files: snapshot.files,
-          activeFileId: snapshot.activeFileId,
-          isInputCollapsed: snapshot.isInputCollapsed,
-        })
-      }
-      workspaceStore.removeProject(project.id)
-      ElMessage.success('项目已移入回收站')
     }
+    workspaceStore.removeProject(project.id)
+    ElMessage.success('项目已移入回收站')
   } catch {
     // 用户取消对话框
   }
@@ -454,15 +599,6 @@ function versionTooltip(version: CanvasVersion): string {
   return parts.join('\n')
 }
 
-/**
- * 切换/回滚到指定版本。
- * 当前画布的手动编辑由 AppLayout 的渲染 watcher 在切换前写回旧版本，不会丢失。
- */
-function handleActivateVersion(fileId: string, versionId: string): void {
-  if (graphStore.activeFile?.activeVersionId === versionId) return
-  graphStore.setActiveVersion(fileId, versionId)
-}
-
 async function handleDeleteVersion(file: CanvasFile, version: CanvasVersion): Promise<void> {
   if (file.versions.length <= 1) {
     ElMessage.warning('至少保留一个版本')
@@ -506,31 +642,96 @@ async function handleDeleteVersion(file: CanvasFile, version: CanvasVersion): Pr
   user-select: none;
 }
 
-.project-section {
-  padding: 8px;
+/* 三层树头部 */
+.tree-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border-color);
 }
 
-.project-dropdown {
-  width: 100%;
-}
-
-.project-current {
+.tree-header-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-primary, #fff);
-  cursor: pointer;
-  transition: border-color 0.15s;
+  gap: 2px;
 }
 
-.project-current:hover {
-  border-color: var(--color-primary, #1890ff);
+/* 三层树：项目 → 画布文件 → 版本 */
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.tree-item:hover {
+  background: var(--bg-tertiary, #e8eaed);
+}
+
+.tree-caret {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  transition: transform 0.15s;
+}
+
+.tree-caret.expanded {
+  transform: rotate(90deg);
+}
+
+/* 无版本的画布文件：占位保持缩进对齐 */
+.tree-caret.hollow {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tree-label {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: var(--bg-tertiary, #e8eaed);
+  color: var(--text-secondary);
+}
+
+.tree-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.tree-item:hover .tree-actions {
+  display: inline-flex;
+}
+
+.project-node {
+  margin-top: 2px;
+}
+
+.project-node .tree-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.project-node.active .tree-label,
+.project-node.active .project-icon {
+  color: var(--color-primary, #1890ff);
 }
 
 .project-icon {
@@ -538,19 +739,29 @@ async function handleDeleteVersion(file: CanvasFile, version: CanvasVersion): Pr
   flex-shrink: 0;
 }
 
-.project-name {
-  flex: 1;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.tree-branch {
+  margin-left: 12px;
+  padding-left: 2px;
+  border-left: 1px dashed var(--border-color);
 }
 
-.project-caret {
-  color: var(--text-tertiary);
-  flex-shrink: 0;
+.file-node.active {
+  background: var(--color-primary, #1890ff);
+}
+
+.file-node.active .tree-label {
+  color: #fff;
+  font-weight: 500;
+}
+
+.file-node.active .tree-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.file-node.active .tree-caret,
+.file-node.active .action-icon {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .files-section {
@@ -598,36 +809,6 @@ async function handleDeleteVersion(file: CanvasFile, version: CanvasVersion): Pr
   flex: 1;
   overflow-y: auto;
   padding: 2px 6px 8px;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 28px;
-  padding: 0 6px;
-  margin-bottom: 1px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.file-item:hover {
-  background: var(--bg-tertiary, #e8eaed);
-}
-
-.file-item.active {
-  background: var(--color-primary, #1890ff);
-}
-
-.file-item.active .file-name {
-  color: #fff;
-  font-weight: 500;
-}
-
-.file-item.active .file-versions {
-  background: rgba(255, 255, 255, 0.25);
-  color: #fff;
 }
 
 .search-section {
@@ -844,45 +1025,6 @@ async function handleDeleteVersion(file: CanvasFile, version: CanvasVersion): Pr
 }
 
 .version-item:hover .version-delete {
-  display: inline-flex;
-}
-
-.file-item.active .action-icon {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.file-item.active .action-icon:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
-}
-
-.file-name {
-  flex: 1;
-  font-size: 12px;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-versions {
-  font-size: 10px;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 6px;
-  background: var(--bg-tertiary, #e8eaed);
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
-.file-actions {
-  display: none;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.file-item:hover .file-actions {
   display: inline-flex;
 }
 

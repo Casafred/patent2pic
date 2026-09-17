@@ -338,8 +338,8 @@
   <div class="subtitle">专利功能分解图生成工具 · 用户使用说明书</div>
   <div class="divider-line"></div>
   <div class="version-info">
-    版本 V0.3.1<br/>
-    2026 年 6 月（更新）
+    版本 V0.4.0<br/>
+    2026 年 9 月（更新）
   </div>
 </div>
 
@@ -361,6 +361,7 @@
     <li class="level2"><span>3.3 左侧面板 — 权利要求输入区</span></li>
     <li class="level2"><span>3.4 中间区域 — 画布工作区</span></li>
     <li class="level2"><span>3.5 右侧面板 — 样式编辑区</span></li>
+    <li class="level2"><span>3.6 工作区抽屉 — 项目 / 画布文件 / 版本</span></li>
     <li class="level1"><span>4 快速入门</span></li>
     <li class="level2"><span>4.1 配置 AI 服务</span></li>
     <li class="level2"><span>4.2 输入权利要求</span></li>
@@ -377,10 +378,15 @@
     <li class="level2"><span>5.3.1 点击高亮交互</span></li>
     <li class="level2"><span>5.4 节点与边的编辑</span></li>
     <li class="level2"><span>5.5 样式自定义</span></li>
-    <li class="level2"><span>5.6 多标签页管理</span></li>
+    <li class="level2"><span>5.6 工作区：项目 / 画布文件 / 版本</span></li>
     <li class="level2"><span>5.7 项目保存与加载</span></li>
     <li class="level2"><span>5.8 导出功能（PNG / SVG / HTML / Excel / JSON）</span></li>
-    <li class="level2"><span>5.9 快捷键</span></li>
+    <li class="level2"><span>5.9 并行分析任务中心</span></li>
+    <li class="level2"><span>5.10 版本历史与自动快照</span></li>
+    <li class="level2"><span>5.11 回收站与误删恢复</span></li>
+    <li class="level2"><span>5.12 项目级搜索</span></li>
+    <li class="level2"><span>5.13 布局预设与视图控制</span></li>
+    <li class="level2"><span>5.14 快捷键</span></li>
     <li class="level1"><span>6 图例说明</span></li>
     <li class="level2"><span>6.1 节点类型</span></li>
     <li class="level2"><span>6.2 关系类型</span></li>
@@ -474,6 +480,22 @@
   <div class="card-title">🌐 权利要求翻译</div>
   <div class="card-desc">支持在权利要求阅读器中一句一对照呈现翻译结果，翻译与原文高亮同步，可独立配置翻译模型与目标语言。</div>
 </div>
+<div class="feature-card">
+  <div class="card-title">🗂 多项目工作区</div>
+  <div class="card-desc">以"项目 → 画布文件 → 版本"三层结构组织工作内容，每个项目独立保存，互不干扰；工作区以覆盖式抽屉呈现，展开时不压缩画布宽度。</div>
+</div>
+<div class="feature-card">
+  <div class="card-title">🕘 版本历史与自动快照</div>
+  <div class="card-desc">每次 AI 分析与 AI 重构都会生成一个版本，可随时切换查看、删除或作为 AI 重构的基础；画布手动编辑会自动留存快照，误操作后可一键回退。</div>
+</div>
+<div class="feature-card">
+  <div class="card-title">⚡ 并行分析任务中心</div>
+  <div class="card-desc">多条权利要求可并行分析，任务中心实时展示每条任务的进度与状态，失败任务支持单条重试或批量重试。</div>
+</div>
+<div class="feature-card">
+  <div class="card-title">♻️ 回收站与项目级搜索</div>
+  <div class="card-desc">删除项目、画布文件或版本时先移入回收站，可随时恢复或彻底删除；搜索框可在全部项目范围内检索项目名、权利要求正文、版本与节点内容，点击结果直接跳转。</div>
+</div>
 
 <h2>1.3 系统要求</h2>
 <table>
@@ -533,7 +555,10 @@
 <h1 class="page-break">3 界面布局</h1>
 
 <h2>3.1 整体布局结构</h2>
-<p>Patent2Pic 采用经典的三栏式布局，各区域功能明确、协作流畅：</p>
+<p>
+  Patent2Pic 采用经典的三栏式布局，各区域功能明确、协作流畅。V0.4.0 起，用于管理"项目 / 画布文件 / 版本"的工作区以<strong>覆盖式抽屉</strong>形式叠放在左侧，
+  展开时画布宽度保持不变，不会因管理工作内容而挤占绘图空间：
+</p>
 
 <div class="diagram">
   <svg width="520" height="360" viewBox="0 0 520 360">
@@ -608,15 +633,17 @@
   <li><strong>权利要求列表</strong> — 自动识别多条权利要求后，以列表形式展示，点击可切换</li>
   <li><strong>"生成分解图"按钮</strong> — 点击后调用 AI 进行分析抽取</li>
   <li><strong>抽取进度</strong> — AI 分析过程中显示进度提示</li>
-  <li><strong>"新建分析"按钮</strong> — 点击后创建新的标签页并清空输入框，开始新的权利要求分析，不影响已有分析的数据</li>
+  <li><strong>"新建分析"按钮</strong> — 点击后新建一个空白画布文件并清空输入框，开始新的权利要求分析，不影响已有分析的数据</li>
   <li><strong>"收起"按钮</strong> — 生成图形后可收起输入区，扩大画布显示空间</li>
 </ul>
 
 <h2>3.4 中间区域 — 画布工作区</h2>
 <p>中间区域是核心的图形编辑区域，由上至下包含：</p>
 <ul>
-  <li><strong>工具栏</strong> — 提供文件操作、撤销/重做、缩放、布局、导出等快捷操作</li>
-  <li><strong>标签栏</strong> — 多条权利要求对应多个标签页，可切换查看</li>
+  <li><strong>工具栏</strong> — 提供文件操作、撤销/重做、缩放、布局（视图预设与面板开关）、导出、任务中心等快捷操作</li>
+  <li><strong>标签栏</strong> — 当前项目下的画布文件对应多个标签页，可快速切换查看</li>
+  <li><strong>工作区入口</strong> — 画布左缘居中位置的抽屉标签，点击展开/收起工作区抽屉（见 3.6）</li>
+  <li><strong>任务中心</strong> — 工具栏的任务按钮带未完成数量角标，点击展开并行分析任务面板（见 5.9）</li>
   <li><strong>图形画布</strong> — 显示和编辑分解图的主要区域，支持拖拽、缩放、右键菜单等</li>
   <li><strong>图例</strong> — 画布左下角，鼠标悬停展开，显示节点类型、关系类型等图例</li>
   <li><strong>缩放比例</strong> — 画布右下角显示当前缩放百分比</li>
@@ -631,6 +658,83 @@
   <li><strong>线条样式</strong>（选中边时） — 线条颜色、粗细、类型、箭头样式</li>
   <li><strong>标签样式</strong>（选中边时） — 字号、文字颜色、背景颜色</li>
 </ul>
+
+<h2>3.6 工作区抽屉 — 项目 / 画布文件 / 版本</h2>
+<p>
+  工作区抽屉用于组织和管理全部工作内容，呈"项目 → 画布文件 → 版本"三层树结构，宽度 220px，
+  以覆盖式浮层叠放在画布左侧上层，打开与关闭都不会改变画布宽度。
+</p>
+
+<div class="diagram">
+  <svg width="520" height="245" viewBox="0 0 520 245" font-family="Noto Sans CJK SC, Noto Sans SC, sans-serif">
+    <rect x="10" y="10" width="200" height="225" rx="6" fill="#f5f6f7" stroke="#ccc" stroke-width="1"/>
+    <text x="110" y="28" text-anchor="middle" fill="#666" font-size="10">工作区抽屉（覆盖式）</text>
+
+    <rect x="20" y="38" width="180" height="24" rx="5" fill="#e8f4fd" stroke="#1890FF" stroke-width="1.2"/>
+    <text x="30" y="54" fill="#1890FF" font-size="10" font-weight="bold">▾ 项目 A（当前）</text>
+    <text x="192" y="54" text-anchor="end" fill="#1890FF" font-size="9">2</text>
+
+    <rect x="38" y="68" width="162" height="22" rx="5" fill="#1890FF"/>
+    <text x="48" y="83" fill="#fff" font-size="10">▾ 画布文件 1</text>
+    <text x="192" y="83" text-anchor="end" fill="#fff" font-size="9">3</text>
+
+    <rect x="56" y="96" width="144" height="20" rx="4" fill="#e8f4fd" stroke="#cfe6fb" stroke-width="1"/>
+    <text x="66" y="110" fill="#2d6aa6" font-size="9">● 初始分析</text>
+    <text x="192" y="110" text-anchor="end" fill="#999" font-size="8">09-17 12:50</text>
+    <rect x="56" y="118" width="144" height="20" rx="4" fill="#e8f4fd" stroke="#cfe6fb" stroke-width="1"/>
+    <text x="66" y="132" fill="#2d6aa6" font-size="9">● 重新分析</text>
+    <text x="192" y="132" text-anchor="end" fill="#999" font-size="8">09-17 12:52</text>
+    <rect x="56" y="140" width="144" height="20" rx="4" fill="#e8f4fd" stroke="#cfe6fb" stroke-width="1"/>
+    <text x="66" y="154" fill="#2d6aa6" font-size="9">● 重构 V2</text>
+    <text x="192" y="154" text-anchor="end" fill="#999" font-size="8">09-17 13:05</text>
+
+    <rect x="38" y="166" width="162" height="22" rx="5" fill="#fff" stroke="#ccc" stroke-width="1"/>
+    <text x="48" y="181" fill="#666" font-size="10">▸ 画布文件 2</text>
+
+    <rect x="20" y="196" width="180" height="22" rx="5" fill="#fff" stroke="#ccc" stroke-width="1"/>
+    <text x="30" y="211" fill="#666" font-size="10">▸ 项目 B</text>
+
+    <rect x="248" y="38" width="262" height="24" rx="4" fill="#f6ffed" stroke="#52c41a" stroke-width="1"/>
+    <text x="258" y="54" fill="#52c41a" font-size="9">一级：项目 — 独立保存槽位，可重命名 / 删除</text>
+    <rect x="248" y="68" width="262" height="22" rx="4" fill="#f6ffed" stroke="#52c41a" stroke-width="1"/>
+    <text x="258" y="83" fill="#52c41a" font-size="9">二级：画布文件 — 输入框内容归属此处</text>
+    <rect x="248" y="96" width="262" height="20" rx="4" fill="#f6ffed" stroke="#52c41a" stroke-width="1"/>
+    <text x="258" y="110" fill="#52c41a" font-size="9">三级：版本 — AI 分析 / 重构的产物，可切换</text>
+    <rect x="248" y="124" width="262" height="64" rx="4" fill="#fff7e6" stroke="#fa8c16" stroke-width="1"/>
+    <text x="258" y="142" fill="#fa8c16" font-size="9">三角箭头可逐级折叠；灰色数字为下级数量；</text>
+    <text x="258" y="158" fill="#fa8c16" font-size="9">当前项目与当前文件会自动展开，展开状态</text>
+    <text x="258" y="174" fill="#fa8c16" font-size="9">自动记忆，重启后仍然保持。</text>
+  </svg>
+  <div class="diagram-caption">图 3-2 工作区三层树结构示意</div>
+</div>
+
+<h3>打开与关闭</h3>
+<ul>
+  <li><strong>画布左缘的抽屉标签</strong> — 点击画布最左侧居中的标签即可展开/收起</li>
+  <li><strong>工具栏"布局"菜单</strong> — 选择"打开工作区 / 关闭工作区"</li>
+  <li><strong>快捷键</strong> — <span class="shortcut-key">Ctrl</span> + <span class="shortcut-key">Shift</span> + <span class="shortcut-key">B</span></li>
+  <li><strong>点击抽屉外的遮罩或按 Esc</strong> — 关闭抽屉（若同时打开了对话框，Esc 只关闭对话框）</li>
+</ul>
+
+<h3>三层结构与可执行操作</h3>
+<table>
+  <tr><th>层级</th><th>说明</th><th>可执行操作</th></tr>
+  <tr><td>项目</td><td>最外层容器，包含若干画布文件</td><td>新建、重命名、删除（移入回收站）、点击切换为当前项目</td></tr>
+  <tr><td>画布文件</td><td>一份权利要求输入及其全部版本；输入框内容属于画布文件</td><td>新建、重命名、删除（移入回收站）、点击打开</td></tr>
+  <tr><td>版本</td><td>一次 AI 分析或一次 AI 重构的产物</td><td>切换查看、删除（移入回收站）、回退自动快照（见 5.10）</td></tr>
+</table>
+
+<ul>
+  <li><strong>逐级折叠</strong> — 点击项目或画布文件左侧的三角箭头展开/收起下一级</li>
+  <li><strong>数量徽标</strong> — 项目节点显示画布文件数量，画布文件节点显示版本数量</li>
+  <li><strong>切换上下文</strong> — 点击画布文件即把输入框、翻译、画布全部切换到该文件；点击其他项目下的节点会先自动切换项目</li>
+  <li><strong>抽屉底部</strong> — 回收站入口，右侧角标显示当前回收站条目数（见 5.11）</li>
+</ul>
+
+<div class="tip-box">
+  <div class="tip-title">💡 提示</div>
+  画布上方的标签栏仍然可用，它是当前项目下各画布文件的快捷切换入口；工作区抽屉则用于跨项目管理与版本查看。
+</div>
 
 <!-- ==================== 第4章 快速入门 ==================== -->
 <h1 class="page-break">4 快速入门</h1>
@@ -738,6 +842,7 @@
   <li><strong>导出图片</strong> — 点击工具栏"导出"按钮，选择 PNG 或 SVG 格式</li>
   <li><strong>导出数据</strong> — 选择 JSON 格式导出结构化数据</li>
   <li><strong>保存项目</strong> — 点击"保存"按钮，将项目保存为 .p2p 文件，后续可重新打开编辑</li>
+  <li><strong>整理工作区</strong> — 在左侧工作区抽屉中新建项目 / 画布文件，历史版本会自动累积，随时可切换或回退（见 3.6、5.10）</li>
 </ul>
 
 <!-- ==================== 第5章 功能详解 ==================== -->
@@ -1177,8 +1282,23 @@
   <tr><td>标签背景颜色</td><td>任意颜色</td><td>标签背景填充色</td></tr>
 </table>
 
-<h2>5.6 多标签页管理</h2>
-<p>当输入多条独立权利要求并分别生成图形后，每条权利要求对应一个标签页，显示在画布上方的标签栏中。</p>
+<h2>5.6 工作区：项目 / 画布文件 / 版本</h2>
+<p>
+  Patent2Pic 以"项目 → 画布文件 → 版本"三层结构组织工作内容，各层职责如下（界面与折叠操作见 3.6）：
+</p>
+<ul>
+  <li><strong>项目</strong> — 最外层容器，例如"某某专利"，拥有独立的本地保存槽位，项目之间互不影响</li>
+  <li><strong>画布文件</strong> — 一份权利要求输入及其全部版本；输入框文本、识别出的权利要求、翻译状态都属于画布文件</li>
+  <li><strong>版本</strong> — 一次 AI 分析或一次 AI 重构的产物，记录生成时间、来源版本与重构指令</li>
+</ul>
+
+<div class="tip-box success">
+  <div class="tip-title">✓ 上下文隔离</div>
+  切换画布文件时，输入框、权利要求列表、翻译与画布会整体切换到该文件的上下文，不会与其他文件或项目相互串扰。
+</div>
+
+<h3>标签栏</h3>
+<p>当前项目下的每个画布文件都对应画布上方标签栏中的一个标签，用于在同一项目内快速切换。</p>
 
 <div class="diagram">
   <svg width="460" height="60" viewBox="0 0 460 60">
@@ -1196,39 +1316,43 @@
 </div>
 
 <ul>
-  <li><strong>切换标签</strong> — 点击标签名称切换到对应的权利要求图形</li>
-  <li><strong>关闭标签</strong> — 点击标签右侧的"×"关闭该标签页（至少保留一个标签）</li>
+  <li><strong>切换标签</strong> — 点击标签名称切换到对应的画布文件</li>
+  <li><strong>关闭标签</strong> — 点击标签右侧的"×"，确认后该画布文件移入回收站（见 5.11）；若只剩一个画布文件，则清空其内容而不关闭</li>
 </ul>
 
 <div class="tip-box">
   <div class="tip-title">💡 提示</div>
-  切换标签时，系统会自动保存当前标签的图形状态，切换回来时可恢复之前的编辑内容。
+  切换标签或画布文件时，系统会自动保存当前画布状态，切换回来时可恢复之前的编辑内容。
 </div>
 
 <h2>5.7 项目保存与加载</h2>
 
 <h3>保存项目</h3>
-<p>点击工具栏"保存"按钮，将当前项目保存为 <code>.p2p</code> 格式的项目文件。项目文件包含：</p>
+<p>点击工具栏"保存"按钮，将<strong>当前项目</strong>保存为 <code>.p2p</code> 格式的项目文件，文件名默认为 <code>patent2pic-项目名.p2p</code>。项目文件包含：</p>
 <ul>
-  <li>权利要求原文文本</li>
-  <li>所有标签页的图形数据</li>
-  <li>当前激活的标签页信息</li>
+  <li>项目名称</li>
+  <li>该项目下所有画布文件（含各自的输入文本、权利要求与翻译）</li>
+  <li>每个画布文件的全部版本（AI 分析 / 重构产物）与自动快照</li>
+  <li>当前激活的画布文件信息</li>
 </ul>
 
 <h3>打开项目</h3>
-<p>点击工具栏"打开"按钮，选择之前保存的 <code>.p2p</code> 项目文件，即可恢复完整的项目状态。</p>
+<p>
+  点击工具栏"打开"按钮，选择之前保存的 <code>.p2p</code> 项目文件，软件会<strong>新建一个项目</strong>来承载文件内容并自动切换过去，
+  不会覆盖当前正在编辑的项目。旧版本生成的单画布 / 多标签页格式文件同样可以打开，会自动迁移为三层结构。
+</p>
 
 <h3>自动保存</h3>
 <p>软件内置自动保存机制，无需手动操作：</p>
 <ul>
-  <li>每隔 <strong>30 秒</strong>自动保存一次当前状态到本地</li>
-  <li>关闭软件时自动保存</li>
-  <li>下次启动时自动恢复上次的编辑状态</li>
+  <li>每隔 <strong>30 秒</strong>自动保存一次当前项目到本地独立槽位</li>
+  <li>切换项目、导入项目、关闭软件时自动保存</li>
+  <li>下次启动时自动恢复上次活动的项目与画布状态</li>
 </ul>
 
 <div class="tip-box success">
   <div class="tip-title">✓ 保障</div>
-  自动保存功能确保您不会因意外关闭而丢失编辑内容。但建议重要项目仍手动保存为 .p2p 文件作为备份。
+  自动保存功能确保您不会因意外关闭而丢失编辑内容。每个项目使用独立的本地槽位，项目之间不会相互覆盖；建议重要项目仍手动保存为 .p2p 文件作为备份。
 </div>
 
 <h2>5.8 导出功能</h2>
@@ -1296,7 +1420,137 @@
   交互式 HTML 导出适合需要向他人展示分析结果的场景。接收方只需用浏览器打开文件，即可查看图形、点击交互、阅读对照翻译，无需安装 Patent2Pic。
 </div>
 
-<h2>5.9 快捷键</h2>
+<h2>5.9 并行分析任务中心</h2>
+<p>
+  当输入中包含多条独立权利要求时，Patent2Pic 支持将全部权利要求<strong>并行</strong>提交给 AI 分析，每条权利要求生成一个独立的画布文件。
+  最大并发数由当前模型配置决定，界面上会显示"并行处理全部（N 并发）"。
+</p>
+
+<h3>任务中心面板</h3>
+<p>并行分析期间，工具栏右侧的任务按钮会显示未完成任务的角标数量；点击该按钮可展开任务中心面板，逐条显示：</p>
+<table>
+  <tr><th>信息</th><th>说明</th></tr>
+  <tr><td>权利要求</td><td>任务对应的权利要求序号与摘要</td></tr>
+  <tr><td>状态</td><td>等待中 / 分析中 / 已完成 / 失败 / 已终止</td></tr>
+  <tr><td>进度</td><td>流式分析的完成比例</td></tr>
+  <tr><td>耗时</td><td>该任务已用时间</td></tr>
+  <tr><td>错误信息</td><td>失败任务的错误原因</td></tr>
+</table>
+
+<h3>失败重试</h3>
+<ul>
+  <li><strong>单条重试</strong> — 在失败任务上点击"重试"，只重新分析该条权利要求；若其画布文件此前已被删除，系统会自动重新分配文件</li>
+  <li><strong>批量重试</strong> — 一键按顺序重试全部失败或已终止的任务</li>
+  <li><strong>终止</strong> — 分析过程中可终止全部任务，已终止的任务同样支持重试</li>
+</ul>
+
+<div class="tip-box">
+  <div class="tip-title">💡 提示</div>
+  单条权利要求分析失败不会影响其他任务，已成功任务的结果会正常保留在各自的画布文件中。
+</div>
+
+<h2>5.10 版本历史与自动快照</h2>
+<p>
+  每个画布文件都维护一条版本链：每次"生成分解图"或"AI 重构"都会追加一个新版本，版本记录生成时间与类型标签，
+  并可通过来源版本追溯它是基于哪个版本重构而来。
+</p>
+
+<h3>版本操作</h3>
+<ul>
+  <li><strong>切换版本</strong> — 在工作区抽屉中点击版本条目，画布立即切换到该版本的图形</li>
+  <li><strong>删除版本</strong> — 悬停版本条目点击删除图标，版本移入回收站（每个画布文件至少保留一个版本）</li>
+</ul>
+
+<h3>自动快照</h3>
+<p>
+  画布上的手动编辑（拖动节点、修改样式、删除元素等）会覆盖当前版本的内容。为避免误操作无法挽回，
+  系统在覆盖前会自动留存画布快照：
+</p>
+<ul>
+  <li>快照随版本一起保存，每个版本最多保留最近 <strong>5</strong> 次</li>
+  <li>两次快照之间设有最小间隔（60 秒），避免频繁编辑产生大量冗余快照</li>
+  <li>画布内容没有实际变化时不会生成快照</li>
+</ul>
+
+<h3>回退到快照</h3>
+<ul>
+  <li>版本条目右侧出现蓝色数字徽标时，表示该版本已存有自动快照，徽标数字即快照数量</li>
+  <li>点击徽标展开快照列表（按时间倒序），点击某一项右侧的"回退"即可恢复到该时间点的画布</li>
+  <li>回退前的画布状态同样会被留存为快照，因此回退操作本身也可以再次撤回</li>
+</ul>
+
+<div class="tip-box success">
+  <div class="tip-title">✓ 保障</div>
+  版本与快照构成两级回退：版本用于在多次 AI 分析结果之间比较，快照用于在手工编辑前后兜底。
+</div>
+
+<h2>5.11 回收站与误删恢复</h2>
+<p>
+  为防止误删，删除项目、画布文件或版本时不会立即清除数据，而是先移入回收站。
+  回收站入口位于工作区抽屉底部，右侧角标显示当前条目数。
+</p>
+
+<table>
+  <tr><th>删除对象</th><th>移入回收站的内容</th></tr>
+  <tr><td>项目</td><td>项目名称及其全部画布文件、版本与快照</td></tr>
+  <tr><td>画布文件</td><td>该文件的输入文本、权利要求、翻译与全部版本</td></tr>
+  <tr><td>版本</td><td>该版本的图形数据与快照</td></tr>
+</table>
+
+<h3>回收站操作</h3>
+<ul>
+  <li><strong>恢复</strong> — 点击条目右侧"恢复"，数据回到工作区；项目恢复后会以"原名称（已恢复）"作为新项目加入</li>
+  <li><strong>彻底删除</strong> — 删除单条记录，删除后不可恢复</li>
+  <li><strong>清空回收站</strong> — 一次性清空全部记录</li>
+</ul>
+
+<div class="tip-box">
+  <div class="tip-title">💡 提示</div>
+  回收站最多保留最近 <strong>50</strong> 条记录，超出后最早的记录会被自动移除。
+</div>
+
+<h2>5.12 项目级搜索</h2>
+<p>工作区抽屉顶部的搜索框可在<strong>全部项目</strong>范围内检索内容，无需先切换到对应项目。</p>
+
+<h3>检索范围</h3>
+<ul>
+  <li>项目名称</li>
+  <li>画布文件名称与输入框中的权利要求全文</li>
+  <li>版本标签与 AI 重构指令</li>
+  <li>各版本中节点的原文与中文文本</li>
+</ul>
+
+<h3>结果与跳转</h3>
+<ul>
+  <li>结果按匹配程度排序，每条结果显示所属项目 / 画布文件、命中的版本与命中位置附近的文本片段</li>
+  <li>点击结果即自动切换到对应项目、画布文件与版本，并在工作区树中展开定位</li>
+  <li>清空搜索框后恢复显示三层树</li>
+</ul>
+
+<h2>5.13 布局预设与视图控制</h2>
+<p>工具栏"布局"菜单提供四种视图预设，并可单独控制各面板的显示，帮助您按需分配屏幕空间：</p>
+
+<table>
+  <tr><th>预设</th><th>效果</th><th>快捷键</th></tr>
+  <tr><td>默认（全显示）</td><td>显示输入面板（360px）与画布，选中元素时显示样式面板</td><td>Ctrl + Shift + 1</td></tr>
+  <tr><td>专注画布</td><td>隐藏输入面板，画布铺满窗口</td><td>Ctrl + Shift + 2</td></tr>
+  <tr><td>输入对照</td><td>显示输入面板并加宽至 480px，便于左右对照</td><td>Ctrl + Shift + 3</td></tr>
+  <tr><td>审阅（含样式面板）</td><td>固定显示右侧样式面板，便于批量调整样式</td><td>Ctrl + Shift + 4</td></tr>
+</table>
+
+<ul>
+  <li><strong>打开 / 关闭工作区</strong> — 菜单项或 <span class="shortcut-key">Ctrl</span> + <span class="shortcut-key">Shift</span> + <span class="shortcut-key">B</span></li>
+  <li><strong>显示 / 隐藏输入面板</strong> — 菜单项或 <span class="shortcut-key">Ctrl</span> + <span class="shortcut-key">Shift</span> + <span class="shortcut-key">E</span></li>
+  <li><strong>固定显示样式面板</strong> — 菜单项，手动切换右侧样式面板常驻显示</li>
+  <li><strong>拖拽分隔条</strong> — 手动调整输入面板宽度（280 ~ 600px）与右侧面板宽度</li>
+</ul>
+
+<div class="tip-box">
+  <div class="tip-title">💡 提示</div>
+  布局选择（预设与面板开关）会自动保存在本地，下次启动时沿用上次的布局。
+</div>
+
+<h2>5.14 快捷键</h2>
 <p>Patent2Pic 支持以下键盘快捷键，提升操作效率：</p>
 <table>
   <tr><th>快捷键</th><th>功能</th></tr>
@@ -1304,8 +1558,11 @@
   <tr><td><span class="shortcut-key">Ctrl</span> + <span class="shortcut-key">Shift</span> + <span class="shortcut-key">Z</span></td><td>重做（恢复撤销的操作）</td></tr>
   <tr><td><span class="shortcut-key">Ctrl</span> + <span class="shortcut-key">Y</span></td><td>重做（同上）</td></tr>
   <tr><td><span class="shortcut-key">Ctrl</span> + <span class="shortcut-key">A</span></td><td>全选画布中的所有元素</td></tr>
+  <tr><td><span class="shortcut-key">Ctrl</span> + <span class="shortcut-key">Shift</span> + <span class="shortcut-key">1</span> ~ <span class="shortcut-key">4</span></td><td>切换布局预设（默认 / 专注画布 / 输入对照 / 审阅）</td></tr>
+  <tr><td><span class="shortcut-key">Ctrl</span> + <span class="shortcut-key">Shift</span> + <span class="shortcut-key">B</span></td><td>打开 / 关闭工作区抽屉</td></tr>
+  <tr><td><span class="shortcut-key">Ctrl</span> + <span class="shortcut-key">Shift</span> + <span class="shortcut-key">E</span></td><td>显示 / 隐藏左侧输入面板</td></tr>
+  <tr><td><span class="shortcut-key">Esc</span></td><td>取消选中，清除当前选择；工作区抽屉打开时关闭抽屉</td></tr>
   <tr><td><span class="shortcut-key">Delete</span> / <span class="shortcut-key">Backspace</span></td><td>删除选中的节点或边</td></tr>
-  <tr><td><span class="shortcut-key">Esc</span></td><td>取消选中，清除当前选择</td></tr>
 </table>
 
 <!-- ==================== 第6章 图例说明 ==================== -->
@@ -1536,7 +1793,7 @@
 <h2>8.3 文件格式说明</h2>
 <table>
   <tr><th>扩展名</th><th>格式</th><th>说明</th></tr>
-  <tr><td>.p2p</td><td>JSON</td><td>Patent2Pic 项目文件，包含完整的编辑状态，可重新打开编辑</td></tr>
+  <tr><td>.p2p</td><td>JSON</td><td>Patent2Pic 项目文件，包含项目名称、该项目下全部画布文件的输入内容、版本与快照，可重新打开编辑（打开时新建项目，不覆盖当前项目）</td></tr>
   <tr><td>.png</td><td>位图</td><td>导出的图片文件，适合插入文档</td></tr>
   <tr><td>.svg</td><td>矢量图</td><td>导出的矢量图文件，适合高质量打印</td></tr>
   <tr><td>.json</td><td>JSON</td><td>导出的结构化数据，包含节点、边、分组等信息</td></tr>
@@ -1546,6 +1803,29 @@
 
 <!-- ==================== 版本更新清单 ==================== -->
 <h1 class="page-break">9 版本更新清单</h1>
+
+<h2>V0.4.0 (2026-09-17)</h2>
+
+<p class="section-intro">本版本完成数据模型重构，引入"项目 → 画布文件 → 版本"三层工作区，并新增并行分析任务中心、自动快照、回收站与项目级搜索等功能。</p>
+
+<table>
+  <tr><th>字段</th><th>内容</th></tr>
+  <tr><td>更新人</td><td>AI Assistant</td></tr>
+  <tr><td>变更类型</td><td>新增 + 修改</td></tr>
+  <tr><td>影响章节</td><td>1.2, 3.1, 3.4, 3.6, 4.5, 5.6, 5.7, 5.9 ~ 5.14, 8.3</td></tr>
+  <tr><td>变更说明</td><td>
+    数据模型重构为"项目 / 画布文件 / 版本"三层结构，输入状态归属画布文件；<br/>
+    新增工作区抽屉（覆盖式浮层，展开不挤占画布宽度）与三层树逐级折叠，展开状态持久化；<br/>
+    新增多项目工作区：项目独立保存槽位、切换、重命名、删除，.p2p 项目文件带项目名且导入时新建项目；<br/>
+    新增并行分析任务中心：进度/耗时/状态可视化，支持单条重试与批量重试；<br/>
+    新增版本历史：版本切换、删除、来源追溯；新增画布自动快照与一键回退（每版本上限 5 次，最小间隔 60 秒）；<br/>
+    新增回收站：项目 / 画布文件 / 版本软删除与恢复（上限 50 条）；<br/>
+    新增项目级搜索：跨项目检索项目名、权利要求正文、版本与节点内容并直接跳转；<br/>
+    新增布局预设（默认 / 专注画布 / 输入对照 / 审阅）与面板开关，偏好本地持久化；<br/>
+    新增布局相关快捷键 Ctrl+Shift+1~4 / B / E；标签栏关闭改为移入回收站
+  </td></tr>
+  <tr><td>图示更新</td><td>图 3-2（工作区三层树结构）为新增；图 5-5 说明文字同步更新</td></tr>
+</table>
 
 <h2>V0.3.1 (2026-06-22)</h2>
 
