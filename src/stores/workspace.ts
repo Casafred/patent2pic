@@ -165,19 +165,28 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /** 把项目数据装入 graphStore（切换项目 / 启动恢复 / 导入项目） */
   function applyProjectData(data: ProjectData | null): void {
     const files = data?.files ?? []
-    graphStore.setFiles(files)
-    // 先清空再激活：强制触发 activateFile 的翻译切换与 renderKey 渲染
-    graphStore.setActiveFileId('')
-
     const targetId = data?.activeFileId && files.some(f => f.id === data.activeFileId)
       ? data.activeFileId
       : files[0]?.id ?? ''
 
     if (targetId) {
+      graphStore.setFiles(files)
+      // 先清空再激活：强制触发 activateFile 的翻译切换与 renderKey 渲染
+      graphStore.setActiveFileId('')
       graphStore.activateFile(targetId)
     } else {
-      translationStore.clearAllTranslations()
-      graphStore.ensureDefaultFile()
+      // 目标项目为空：复用启动时创建的空白文件，避免重复新建（否则默认名会跳号）
+      const current = graphStore.activeFile
+      const reusable = current && !current.rawText.trim() && current.versions.length === 0
+        ? current
+        : null
+      graphStore.setFiles(reusable ? [reusable] : [])
+      graphStore.setActiveFileId('')
+      if (reusable) {
+        graphStore.activateFile(reusable.id)
+      } else {
+        graphStore.ensureDefaultFile()
+      }
     }
 
     if (typeof data?.isInputCollapsed === 'boolean') {
