@@ -2,6 +2,7 @@ import { graphEngine } from '@/services/graph/engine'
 import { useGraphStore, migrateLegacyTabs, type CanvasFile } from '@/stores/graph'
 import { useClaimStore } from '@/stores/claim'
 import { useTranslationStore } from '@/stores/translation'
+import { useWorkspaceStore } from '@/stores/workspace'
 import { parseClaims } from '@/services/claim/parser'
 
 function isTauri(): boolean {
@@ -12,6 +13,7 @@ export function useProjectFile() {
   const graphStore = useGraphStore()
   const claimStore = useClaimStore()
   const translationStore = useTranslationStore()
+  const workspaceStore = useWorkspaceStore()
 
   async function saveProject(): Promise<void> {
     const graph = graphEngine.getGraph()
@@ -27,8 +29,10 @@ export function useProjectFile() {
       )
     }
 
+    const projectName = workspaceStore.activeProject?.name ?? '未命名项目'
     const projectData = {
-      version: '1.1.0',
+      version: '1.2.0',
+      projectName,
       isInputCollapsed: claimStore.isInputCollapsed,
       files: graphStore.files.map(file =>
         file.id === activeFile?.id
@@ -39,11 +43,13 @@ export function useProjectFile() {
     }
 
     const content = JSON.stringify(projectData, null, 2)
+    const safeName = projectName.replace(/[\\/:*?"<>|]/g, '_').trim() || 'project'
+    const filename = `patent2pic-${safeName}.p2p`
 
     if (isTauri()) {
-      await saveViaTauri(content)
+      await saveViaTauri(content, filename)
     } else {
-      saveViaBrowser(content)
+      saveViaBrowser(content, filename)
     }
   }
 
@@ -55,13 +61,13 @@ export function useProjectFile() {
     }
   }
 
-  async function saveViaTauri(content: string): Promise<void> {
+  async function saveViaTauri(content: string, filename: string): Promise<void> {
     try {
       const { save } = await import('@tauri-apps/plugin-dialog')
       const { writeFile } = await import('@tauri-apps/plugin-fs')
 
       const path = await save({
-        defaultPath: 'patent2pic-project.p2p',
+        defaultPath: filename,
         filters: [{ name: 'Patent2Pic 项目', extensions: ['p2p'] }],
       })
 
@@ -71,16 +77,16 @@ export function useProjectFile() {
       await writeFile(path, encoder.encode(content))
     } catch (err) {
       console.error('Tauri 保存失败，回退到浏览器:', err)
-      saveViaBrowser(content)
+      saveViaBrowser(content, filename)
     }
   }
 
-  function saveViaBrowser(content: string): void {
+  function saveViaBrowser(content: string, filename: string): void {
     const blob = new Blob([content], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'patent2pic-project.p2p'
+    a.download = filename
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -126,17 +132,11 @@ export function useProjectFile() {
     })
   }
 
+  /** 导入项目文件：作为新项目导入并切换（不覆盖当前项目） */
   function applyProjectData(text: string): boolean {
     try {
       const data = JSON.parse(text)
-
-      if (typeof data.isInputCollapsed === 'boolean') {
-        if (data.isInputCollapsed) {
-          claimStore.collapseInput()
-        } else {
-          claimStore.expandInput()
-        }
-      }
+      const isCollapsed = typeof data.isInputCollapsed === 'boolean' ? data.isInputCollapsed : false
 
       // 新模型：files 数组；旧模型：tabs 数组（迁移为单版本文件）
       let files: CanvasFile[] | null = null
@@ -147,57 +147,49 @@ export function useProjectFile() {
       }
 
       if (files) {
-        graphStore.setFiles(files)
-        // activateFile 完成输入投影与翻译切换；画布渲染由 AppLayout 的 renderKey watcher 完成
-        graphStore.activateFile(data.activeFileId || files[0].id)
+        workspaceStore.importProject(
+          data.projectName || '导入项目',
+          files,
+          data.activeFileId || data.activeTabId || '',
+          isCollapsed,
+        )
         return true
       }
 
-      // 旧版单图格式（graphJSON / graph）：落到一个全新文件
+      // 旧版单图格式（graphJSON / graph）：包装为单文件项目导入
       const graphJSON = data.graphJSON || data.graph
-      if (graphJSON) {
-        graphStore.setFiles([])
-        const file = graphStore.ensureDefaultFile()
-        if (data.claimText) {
-          claimStore.setText(data.claimText)
-          if (Array.isArray(data.claims) && data.claims.length > 0) {
-            claimStore.setClaims(data.claims)
-          } else {
-            claimStore.setClaims(parseClaims(data.claimText))
-          }
-          if (data.activeClaimId) {
-            claimStore.setActiveClaim(data.activeClaimId)
-          }
-        }
-        if (data.translations && typeof data.translations === 'object') {
-          graphStore.updateFileTranslations(file.id, data.translations)
-          translationStore.fromJSON(data.translations)
-        }
-        // renderKey 未变化（同文件无版本），手动渲染
-        const graph = graphEngine.getGraph()
-        if (graph) {
-          graph.clearCells()
-          graphEngine.fromJSON(graphJSON)
-          graphEngine.rebindGroupTracking()
-          graphEngine.showFullGraph()
-          setTimeout(() => graphEngine.fitView(), 100)
-        }
-        return true
-      }
+      const rawText = typeof data.claimText === 'string' ? data.claimText : ''
+      const claims = Array.isArray(data.claims) && data.claims.length > 0
+        ? data.claims
+        : (rawText ? parseClaims(rawText) : [])
+      const activeClaimId = data.activeClaimId
+        && claims.some((c: { id: string }) => c.id === data.activeClaimId)
+        ? data.activeClaimId
+        : claims[0]?.id ?? null
 
-      // 只有输入文本的旧格式
-      if (data.claimText) {
-        graphStore.setFiles([])
-        graphStore.ensureDefaultFile()
-        claimStore.setText(data.claimText)
-        if (Array.isArray(data.claims) && data.claims.length > 0) {
-          claimStore.setClaims(data.claims)
-        } else {
-          claimStore.setClaims(parseClaims(data.claimText))
+      if (graphJSON || rawText) {
+        const versionId = `version-imported-${Date.now()}`
+        const file: CanvasFile = {
+          id: `file-imported-${Date.now()}`,
+          name: data.projectName || '导入画布',
+          isChinese: false,
+          claimId: null,
+          rawText,
+          claims,
+          activeClaimId,
+          translations: data.translations && typeof data.translations === 'object' ? data.translations : null,
+          versions: graphJSON
+            ? [{
+                id: versionId,
+                label: '导入',
+                extractResult: null,
+                serializedGraph: graphJSON,
+                createdAt: Date.now(),
+              }]
+            : [],
+          activeVersionId: graphJSON ? versionId : null,
         }
-        if (data.activeClaimId) {
-          claimStore.setActiveClaim(data.activeClaimId)
-        }
+        workspaceStore.importProject(data.projectName || '导入项目', [file], file.id, isCollapsed)
         return true
       }
 

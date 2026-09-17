@@ -1,5 +1,22 @@
 <template>
   <div class="app-layout">
+    <div
+      class="sidebar-toggle"
+      :title="sidebarCollapsed ? '展开工作区' : '收起工作区'"
+      @click="toggleSidebar"
+    >
+      <svg width="9" height="12" viewBox="0 0 9 12">
+        <polyline
+          :points="sidebarCollapsed ? '1.5,1 7,6 1.5,11' : '7,1 1.5,6 7,11'"
+          stroke="currentColor"
+          fill="none"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </div>
+    <WorkspaceSidebar v-if="!sidebarCollapsed" />
     <div class="left-panel" ref="leftPanelRef" :style="{ width: leftPanelWidth + 'px' }">
       <ClaimInput />
       <ClaimReader />
@@ -27,6 +44,7 @@ import GraphCanvas from '../canvas/GraphCanvas.vue'
 import CanvasToolbar from '../canvas/CanvasToolbar.vue'
 import TabBar from '../canvas/TabBar.vue'
 import StylePanel from '../panel/StylePanel.vue'
+import WorkspaceSidebar from './WorkspaceSidebar.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGraphStore } from '@/stores/graph'
 import { usePlaybackStore } from '@/stores/playback'
@@ -41,6 +59,14 @@ const rightPanelRef = ref<HTMLElement | null>(null)
 
 const leftPanelWidth = ref(360)
 const rightPanelWidth = ref(280)
+
+// 工作区侧栏折叠状态（持久化）
+const sidebarCollapsed = ref(localStorage.getItem('patent2pic-sidebar-collapsed') === '1')
+
+function toggleSidebar(): void {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  localStorage.setItem('patent2pic-sidebar-collapsed', sidebarCollapsed.value ? '1' : '0')
+}
 
 const hasSelection = computed(() =>
   editorStore.selectedNodeIds.length > 0 || editorStore.selectedEdgeIds.length > 0,
@@ -146,6 +172,23 @@ watch(renderKey, async (_newKey, oldKey) => {
   display: flex;
   height: 100%;
   overflow: hidden;
+}
+
+.sidebar-toggle {
+  width: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  background: transparent;
+  transition: background 0.2s, color 0.2s;
+}
+
+.sidebar-toggle:hover {
+  background: var(--bg-tertiary, #e8eaed);
+  color: var(--color-primary, #1890ff);
 }
 
 .left-panel {

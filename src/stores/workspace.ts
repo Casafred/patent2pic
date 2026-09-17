@@ -1,7 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { useGraphStore, migrateLegacyTabs, type CanvasFile } from '@/stores/graph'
+import { useClaimStore } from '@/stores/claim'
+import { useTranslationStore } from '@/stores/translation'
+import { graphEngine } from '@/services/graph/engine'
 
-/** 项目：画布文件的容器（P1 为单项目模型，P2 引入多项目 UI 与隔离） */
+/** 项目：画布文件的容器，每个项目独立持久化槽位 */
 export interface Project {
   id: string
   name: string
@@ -9,39 +13,187 @@ export interface Project {
   updatedAt: number
 }
 
-const WORKSPACE_KEY = 'patent2pic-workspace'
+/** 项目数据槽位（每个项目一个 localStorage key） */
+interface ProjectData {
+  version: string
+  files: CanvasFile[]
+  activeFileId: string
+  isInputCollapsed: boolean
+  savedAt: number
+}
 
-function loadProjects(): Project[] {
+const WORKSPACE_KEY = 'patent2pic-workspace'
+const PROJECT_KEY_PREFIX = 'patent2pic-project-'
+const LEGACY_AUTOSAVE_KEY = 'patent2pic-autosave'
+const DATA_VERSION = '1.1.0'
+
+function projectKey(id: string): string {
+  return `${PROJECT_KEY_PREFIX}${id}`
+}
+
+function loadWorkspaceMeta(): { projects: Project[]; activeProjectId: string } {
   try {
     const raw = localStorage.getItem(WORKSPACE_KEY)
-    if (!raw) return []
-    const data = JSON.parse(raw)
-    if (Array.isArray(data.projects)) {
-      return data.projects
+    if (raw) {
+      const data = JSON.parse(raw)
+      if (Array.isArray(data.projects)) {
+        return { projects: data.projects, activeProjectId: data.activeProjectId || '' }
+      }
     }
-    return []
-  } catch {
-    return []
+  } catch (err) {
+    console.error('工作区元数据读取失败:', err)
+  }
+  return { projects: [], activeProjectId: '' }
+}
+
+function persistWorkspaceMeta(projects: Project[], activeProjectId: string): void {
+  try {
+    localStorage.setItem(WORKSPACE_KEY, JSON.stringify({
+      version: DATA_VERSION,
+      projects,
+      activeProjectId,
+    }))
+  } catch (err) {
+    console.error('工作区元数据持久化失败:', err)
   }
 }
 
-function persistProjects(projects: Project[]): void {
+function loadProjectData(id: string): ProjectData | null {
   try {
-    localStorage.setItem(WORKSPACE_KEY, JSON.stringify({ version: '1.0.0', projects }))
+    const raw = localStorage.getItem(projectKey(id))
+    if (!raw) return null
+    return JSON.parse(raw) as ProjectData
   } catch (err) {
-    console.error('工作区持久化失败:', err)
+    console.error(`项目 ${id} 数据读取失败:`, err)
+    return null
+  }
+}
+
+function persistProjectData(id: string, data: ProjectData): void {
+  try {
+    localStorage.setItem(projectKey(id), JSON.stringify(data))
+  } catch (err) {
+    console.error(`项目 ${id} 数据持久化失败:`, err)
+  }
+}
+
+function removeProjectData(id: string): void {
+  localStorage.removeItem(projectKey(id))
+}
+
+/** 旧版单槽位自动保存数据（tabs 或早期 files 格式）迁移为项目数据 */
+function migrateLegacyAutosave(): ProjectData | null {
+  try {
+    const raw = localStorage.getItem(LEGACY_AUTOSAVE_KEY)
+    if (!raw) return null
+    const data = JSON.parse(raw)
+
+    let files: CanvasFile[] | null = null
+    if (Array.isArray(data.files) && data.files.length > 0) {
+      files = data.files
+    } else if (Array.isArray(data.tabs) && data.tabs.length > 0) {
+      files = migrateLegacyTabs(data.tabs)
+    }
+    if (!files) return null
+
+    return {
+      version: DATA_VERSION,
+      files,
+      activeFileId: data.activeFileId && files.some(f => f.id === data.activeFileId)
+        ? data.activeFileId
+        : files[0].id,
+      isInputCollapsed: typeof data.isInputCollapsed === 'boolean' ? data.isInputCollapsed : false,
+      savedAt: Date.now(),
+    }
+  } catch {
+    return null
   }
 }
 
 export const useWorkspaceStore = defineStore('workspace', () => {
-  const projects = ref<Project[]>(loadProjects())
-  const activeProjectId = ref<string>('')
+  const graphStore = useGraphStore()
+  const claimStore = useClaimStore()
+  const translationStore = useTranslationStore()
+
+  const meta = loadWorkspaceMeta()
+  const projects = ref<Project[]>(meta.projects)
+  const activeProjectId = ref<string>(meta.activeProjectId)
 
   const activeProject = computed<Project | null>(() =>
     projects.value.find(p => p.id === activeProjectId.value) || null,
   )
 
-  function createProject(name?: string): Project {
+  function persistMeta(): void {
+    persistWorkspaceMeta(projects.value, activeProjectId.value)
+  }
+
+  /** 把 graphStore 当前状态持久化到活动项目槽位（含当前画布快照） */
+  function saveActiveProject(): void {
+    const id = activeProjectId.value
+    if (!id) return
+
+    // 活动文件的当前画布（含手动编辑）写回其活动版本
+    const graph = graphEngine.getGraph()
+    const activeFile = graphStore.activeFile
+    if (graph && activeFile?.activeVersionId) {
+      graphStore.updateVersionSerializedGraph(
+        activeFile.id,
+        activeFile.activeVersionId,
+        graphEngine.toJSON(),
+      )
+    }
+
+    persistProjectData(id, {
+      version: DATA_VERSION,
+      files: graphStore.files.map(file =>
+        file.id === activeFile?.id
+          ? { ...file, translations: translationStore.toJSON() }
+          : file,
+      ),
+      activeFileId: graphStore.activeFileId,
+      isInputCollapsed: claimStore.isInputCollapsed,
+      savedAt: Date.now(),
+    })
+
+    const project = projects.value.find(p => p.id === id)
+    if (project) {
+      project.updatedAt = Date.now()
+      persistMeta()
+    }
+  }
+
+  /** 把项目数据装入 graphStore（切换项目 / 启动恢复 / 导入项目） */
+  function applyProjectData(data: ProjectData | null): void {
+    const files = data?.files ?? []
+    graphStore.setFiles(files)
+    // 先清空再激活：强制触发 activateFile 的翻译切换与 renderKey 渲染
+    graphStore.setActiveFileId('')
+
+    const targetId = data?.activeFileId && files.some(f => f.id === data.activeFileId)
+      ? data.activeFileId
+      : files[0]?.id ?? ''
+
+    if (targetId) {
+      graphStore.activateFile(targetId)
+    } else {
+      translationStore.clearAllTranslations()
+      graphStore.ensureDefaultFile()
+    }
+
+    if (typeof data?.isInputCollapsed === 'boolean') {
+      if (data.isInputCollapsed) {
+        claimStore.collapseInput()
+      } else {
+        claimStore.expandInput()
+      }
+    }
+  }
+
+  function createProject(name?: string, activate = true): Project {
+    // 切换前先保存当前项目
+    if (activate) {
+      saveActiveProject()
+    }
     const project: Project = {
       id: `project-${Date.now()}-${projects.value.length + 1}`,
       name: name || `项目 ${projects.value.length + 1}`,
@@ -49,49 +201,126 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       updatedAt: Date.now(),
     }
     projects.value.push(project)
-    persistProjects(projects.value)
+    if (activate) {
+      activeProjectId.value = project.id
+      applyProjectData(null)
+    }
+    persistMeta()
     return project
   }
 
-  function renameProject(id: string, name: string): void {
-    const project = projects.value.find(p => p.id === id)
-    if (project) {
-      project.name = name
-      project.updatedAt = Date.now()
-      persistProjects(projects.value)
-    }
+  function switchProject(id: string): void {
+    if (id === activeProjectId.value) return
+    if (!projects.value.some(p => p.id === id)) return
+    saveActiveProject()
+    activeProjectId.value = id
+    persistMeta()
+    applyProjectData(loadProjectData(id))
   }
 
   function removeProject(id: string): void {
     const index = projects.value.findIndex(p => p.id === id)
     if (index === -1) return
+
     projects.value.splice(index, 1)
-    persistProjects(projects.value)
+    removeProjectData(id)
+
     if (activeProjectId.value === id) {
-      activeProjectId.value = projects.value[0]?.id ?? ''
+      const next = projects.value[0]
+      if (next) {
+        activeProjectId.value = next.id
+        persistMeta()
+        applyProjectData(loadProjectData(next.id))
+      } else {
+        // 最后一个项目被删除：重建默认项目
+        const project: Project = {
+          id: `project-${Date.now()}-1`,
+          name: '默认项目',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }
+        projects.value.push(project)
+        activeProjectId.value = project.id
+        persistMeta()
+        applyProjectData(null)
+      }
+    } else {
+      persistMeta()
     }
   }
 
-  function setActiveProject(id: string): void {
-    activeProjectId.value = id
+  function renameProject(id: string, name: string): void {
     const project = projects.value.find(p => p.id === id)
-    if (project) {
+    if (project && name.trim()) {
+      project.name = name.trim()
       project.updatedAt = Date.now()
-      persistProjects(projects.value)
+      persistMeta()
     }
   }
 
-  /** 应用启动时保证存在活动项目 */
-  function ensureDefaultProject(): Project {
-    let project = projects.value.find(p => p.id === activeProjectId.value)
-    if (!project) {
-      project = projects.value[0]
+  /** 导入项目（.p2p 项目文件）：创建新项目并切换过去 */
+  function importProject(
+    name: string,
+    files: CanvasFile[],
+    activeFileId: string,
+    isInputCollapsed = false,
+  ): Project {
+    saveActiveProject()
+    const project: Project = {
+      id: `project-${Date.now()}-${projects.value.length + 1}`,
+      name: name || `导入项目`,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     }
-    if (!project) {
-      project = createProject('默认项目')
-    }
+    projects.value.push(project)
     activeProjectId.value = project.id
+
+    const data: ProjectData = {
+      version: DATA_VERSION,
+      files,
+      activeFileId: activeFileId && files.some(f => f.id === activeFileId)
+        ? activeFileId
+        : files[0]?.id ?? '',
+      isInputCollapsed,
+      savedAt: Date.now(),
+    }
+    persistProjectData(project.id, data)
+    persistMeta()
+    applyProjectData(data)
     return project
+  }
+
+  /**
+   * 应用启动初始化：恢复活动项目数据到 graphStore。
+   * 首次启动（无项目）时迁移旧版 autosave 或创建默认项目。
+   */
+  function initWorkspace(): boolean {
+    if (projects.value.length === 0) {
+      const migrated = migrateLegacyAutosave()
+      const project: Project = {
+        id: `project-${Date.now()}-1`,
+        name: '默认项目',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+      projects.value.push(project)
+      activeProjectId.value = project.id
+      persistMeta()
+      if (migrated) {
+        persistProjectData(project.id, migrated)
+        applyProjectData(migrated)
+      } else {
+        applyProjectData(null)
+      }
+      return !!migrated
+    }
+
+    if (!projects.value.some(p => p.id === activeProjectId.value)) {
+      activeProjectId.value = projects.value[0].id
+      persistMeta()
+    }
+    applyProjectData(loadProjectData(activeProjectId.value))
+    return true
   }
 
   return {
@@ -99,9 +328,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     activeProjectId,
     activeProject,
     createProject,
-    renameProject,
+    switchProject,
     removeProject,
-    setActiveProject,
-    ensureDefaultProject,
+    renameProject,
+    importProject,
+    saveActiveProject,
+    initWorkspace,
   }
 })
