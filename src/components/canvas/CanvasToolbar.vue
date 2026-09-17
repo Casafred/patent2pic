@@ -118,8 +118,8 @@
                 {{ item.label }}
                 <span class="layout-shortcut">{{ item.shortcut }}</span>
               </el-dropdown-item>
-              <el-dropdown-item command="toggleSidebar" divided>
-                {{ editorStore.layout.sidebarCollapsed ? '显示工作区' : '隐藏工作区' }}
+              <el-dropdown-item command="toggleDrawer" divided>
+                {{ editorStore.layout.drawerOpen ? '关闭工作区' : '打开工作区' }}
                 <span class="layout-shortcut">Ctrl+Shift+B</span>
               </el-dropdown-item>
               <el-dropdown-item command="toggleInputPanel">
@@ -199,8 +199,8 @@ const LAYOUT_ITEMS: Array<{ value: LayoutPreset; label: string; shortcut: string
 ]
 
 function handleLayoutCommand(command: string): void {
-  if (command === 'toggleSidebar') {
-    editorStore.toggleSidebar()
+  if (command === 'toggleDrawer') {
+    editorStore.toggleWorkspaceDrawer()
   } else if (command === 'toggleInputPanel') {
     editorStore.toggleInputPanel()
   } else if (command === 'toggleForceStylePanel') {

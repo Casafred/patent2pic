@@ -20,11 +20,15 @@
 
 <script setup lang="ts">
 import { useGraphStore } from '@/stores/graph'
+import { useWorkspaceStore } from '@/stores/workspace'
+import { useTrashStore } from '@/stores/trash'
 import { ElMessageBox } from 'element-plus'
 import { useProjectFile } from '@/composables/useProjectFile'
 import { graphEngine } from '@/services/graph/engine'
 
 const graphStore = useGraphStore()
+const workspaceStore = useWorkspaceStore()
+const trash = useTrashStore()
 const { saveProject } = useProjectFile()
 
 function handleFileClick(id: string): void {
@@ -57,11 +61,20 @@ async function handleFileClose(id: string): Promise<void> {
       },
     )
     await saveProject()
-    graphStore.removeFile(id)
+    closeFileToTrash(id)
   } catch (action: unknown) {
     if (action === 'cancel') {
-      graphStore.removeFile(id)
+      closeFileToTrash(id)
     }
+  }
+}
+
+/** 关闭画布文件统一走回收站，误关可恢复 */
+function closeFileToTrash(id: string): void {
+  const projectId = workspaceStore.activeProjectId
+  const removed = graphStore.removeFile(id)
+  if (removed) {
+    trash.push('file', removed.name, { projectId, file: removed })
   }
 }
 </script>

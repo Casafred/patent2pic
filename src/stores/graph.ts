@@ -6,6 +6,13 @@ import type { Claim } from '@/types/claim'
 import type { ClaimTranslation } from '@/types/translation'
 import { useTranslationStore } from '@/stores/translation'
 
+/** 画布快照：手动编辑会覆盖当前版本，快照提供自动回退点 */
+export interface CanvasSnapshot {
+  id: string
+  at: number
+  serializedGraph: Record<string, unknown>
+}
+
 /**
  * 画布版本：一次 AI 分析或一次 AI 重构的产物。
  * 版本是画布渲染的唯一数据源（serializedGraph 优先，extractResult 兜底）。
@@ -21,6 +28,8 @@ export interface CanvasVersion {
   sourceVersionId?: string
   /** 本次 AI 重构的指令 */
   redrawInstructions?: string
+  /** 自动快照（最近若干次画布状态，用于手动编辑误操作后回退） */
+  snapshots?: CanvasSnapshot[]
 }
 
 /** 文件级翻译快照：claimId → 翻译数据（与 translation store 的 toJSON/fromJSON 格式一致） */
@@ -68,6 +77,10 @@ function deepClone<T>(data: T): T {
 let fileCounter = 0
 let versionCounter = 0
 
+/** 每个版本保留的快照上限与最小快照间隔（避免频繁写盘与存储膨胀） */
+const SNAPSHOT_MAX = 5
+const SNAPSHOT_MIN_INTERVAL = 60_000
+
 function nextId(prefix: string): string {
   return `${prefix}-${Date.now()}-${++versionCounter}`
 }
@@ -104,6 +117,8 @@ export const useGraphStore = defineStore('graph', () => {
   const nodes = ref<NodeData[]>([])
   const edges = ref<EdgeData[]>([])
   const groups = ref<GroupData[]>([])
+  /** 画布重渲染修订号：快照回退等"目标不变但内容变化"的场景靠它触发重渲染 */
+  const graphRevision = ref(0)
 
   const globalNodeFontSize = ref<number>(15)
   const globalEdgeFontSize = ref<number>(15)
@@ -139,11 +154,11 @@ export const useGraphStore = defineStore('graph', () => {
     return file
   }
 
-  function removeFile(id: string): void {
+  function removeFile(id: string): CanvasFile | null {
     const index = files.value.findIndex(f => f.id === id)
-    if (index === -1) return
+    if (index === -1) return null
 
-    files.value.splice(index, 1)
+    const [removed] = files.value.splice(index, 1)
 
     if (activeFileId.value === id) {
       if (files.value.length > 0) {
@@ -153,6 +168,7 @@ export const useGraphStore = defineStore('graph', () => {
         activeFileId.value = ''
       }
     }
+    return removed
   }
 
   /**
@@ -217,26 +233,68 @@ export const useGraphStore = defineStore('graph', () => {
     return version
   }
 
-  function removeVersion(fileId: string, versionId: string): void {
+  function removeVersion(fileId: string, versionId: string): CanvasVersion | null {
     const file = files.value.find(f => f.id === fileId)
-    if (!file) return
+    if (!file) return null
     const index = file.versions.findIndex(v => v.id === versionId)
-    if (index === -1) return
+    if (index === -1) return null
 
-    file.versions.splice(index, 1)
+    const [removed] = file.versions.splice(index, 1)
     if (file.activeVersionId === versionId) {
       file.activeVersionId = file.versions.length > 0
         ? file.versions[file.versions.length - 1].id
         : null
     }
+    return removed
   }
 
   function updateVersionSerializedGraph(fileId: string, versionId: string, json: Record<string, unknown>): void {
     const file = files.value.find(f => f.id === fileId)
     const version = file?.versions.find(v => v.id === versionId)
-    if (version) {
-      version.serializedGraph = json
+    if (!version) return
+    // 覆盖前留存上一版画布快照：手动编辑不可逆，快照提供自动回退点
+    captureSnapshot(version, json)
+    version.serializedGraph = json
+  }
+
+  /** 画布内容发生变化时留存旧状态快照（受最小间隔与数量上限约束） */
+  function captureSnapshot(
+    version: CanvasVersion,
+    next: Record<string, unknown>,
+    force = false,
+  ): void {
+    const prev = version.serializedGraph
+    if (!prev || Object.keys(prev).length === 0) return
+
+    const snapshots = version.snapshots ?? []
+    const last = snapshots[snapshots.length - 1]
+    if (!force && last && Date.now() - last.at < SNAPSHOT_MIN_INTERVAL) return
+    if (!force && JSON.stringify(prev) === JSON.stringify(next)) return
+
+    snapshots.push({
+      id: nextId('snapshot'),
+      at: Date.now(),
+      serializedGraph: deepClone(prev),
+    })
+    if (snapshots.length > SNAPSHOT_MAX) {
+      snapshots.splice(0, snapshots.length - SNAPSHOT_MAX)
     }
+    version.snapshots = snapshots
+  }
+
+  /** 回退到某个自动快照（回退前的状态同样会被留存为快照，可再次撤回） */
+  function restoreSnapshot(fileId: string, versionId: string, snapshotId: string): boolean {
+    const file = files.value.find(f => f.id === fileId)
+    const version = file?.versions.find(v => v.id === versionId)
+    const snapshot = version?.snapshots?.find(s => s.id === snapshotId)
+    if (!file || !version || !snapshot) return false
+
+    captureSnapshot(version, snapshot.serializedGraph, true)
+    version.serializedGraph = deepClone(snapshot.serializedGraph)
+    file.activeVersionId = versionId
+    // 目标版本可能已是活动版本，需用修订号强制触发画布重渲染
+    graphRevision.value++
+    return true
   }
 
   function updateFileName(fileId: string, name: string): void {
@@ -377,6 +435,7 @@ export const useGraphStore = defineStore('graph', () => {
     activeFileId,
     activeFile,
     activeVersion,
+    graphRevision,
     nodes,
     edges,
     groups,
@@ -389,6 +448,7 @@ export const useGraphStore = defineStore('graph', () => {
     appendVersion,
     removeVersion,
     updateVersionSerializedGraph,
+    restoreSnapshot,
     updateFileName,
     updateFileMeta,
     updateFileClaimData,

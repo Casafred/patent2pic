@@ -1,23 +1,23 @@
 <template>
   <div class="app-layout">
+    <!-- 工作区抽屉：覆盖式浮层，不挤占画布宽度 -->
+    <transition name="drawer-fade">
+      <div
+        v-if="editorStore.layout.drawerOpen"
+        class="drawer-backdrop"
+        @click="editorStore.closeWorkspaceDrawer()"
+      ></div>
+    </transition>
+    <transition name="drawer-slide">
+      <WorkspaceSidebar v-if="editorStore.layout.drawerOpen" class="workspace-drawer" />
+    </transition>
+
     <div
-      class="sidebar-toggle"
-      :title="editorStore.layout.sidebarCollapsed ? '展开工作区 (Ctrl+Shift+B)' : '收起工作区 (Ctrl+Shift+B)'"
-      @click="editorStore.toggleSidebar()"
+      v-show="editorStore.layout.inputPanelVisible"
+      class="left-panel"
+      ref="leftPanelRef"
+      :style="{ width: editorStore.layout.inputPanelWidth + 'px' }"
     >
-      <svg width="9" height="12" viewBox="0 0 9 12">
-        <polyline
-          :points="editorStore.layout.sidebarCollapsed ? '1.5,1 7,6 1.5,11' : '7,1 1.5,6 7,11'"
-          stroke="currentColor"
-          fill="none"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    </div>
-    <WorkspaceSidebar v-if="!editorStore.layout.sidebarCollapsed" />
-    <div v-show="editorStore.layout.inputPanelVisible" class="left-panel" ref="leftPanelRef" :style="{ width: leftPanelWidth + 'px' }">
       <ClaimInput />
       <ClaimReader />
     </div>
@@ -30,6 +30,24 @@
       <CanvasToolbar />
       <TabBar />
       <div class="canvas-area">
+        <div
+          class="drawer-tab"
+          :class="{ open: editorStore.layout.drawerOpen }"
+          role="button"
+          tabindex="0"
+          aria-label="工作区"
+          title="工作区（项目 / 画布文件 / 版本）"
+          @click="editorStore.toggleWorkspaceDrawer()"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M1.5 3.5A1.5 1.5 0 0 1 3 2h3l1.5 2h5A1.5 1.5 0 0 1 14 5.5v7A1.5 1.5 0 0 1 12.5 14h-9A1.5 1.5 0 0 1 2 12.5v-9Z"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </div>
         <GraphCanvas ref="graphCanvasRef" />
         <TaskCenter />
       </div>
@@ -63,7 +81,6 @@ const graphCanvasRef = ref<InstanceType<typeof GraphCanvas> | null>(null)
 const leftPanelRef = ref<HTMLElement | null>(null)
 const rightPanelRef = ref<HTMLElement | null>(null)
 
-const leftPanelWidth = ref(360)
 const rightPanelWidth = ref(280)
 
 const hasSelection = computed(() =>
@@ -83,7 +100,7 @@ let startWidth = 0
 function startResizeLeft(e: MouseEvent): void {
   resizingSide = 'left'
   startX = e.clientX
-  startWidth = leftPanelWidth.value
+  startWidth = editorStore.layout.inputPanelWidth
   document.addEventListener('mousemove', onResizeMove)
   document.addEventListener('mouseup', onResizeEnd)
   document.body.style.cursor = 'col-resize'
@@ -103,7 +120,7 @@ function startResizeRight(e: MouseEvent): void {
 function onResizeMove(e: MouseEvent): void {
   if (resizingSide === 'left') {
     const delta = e.clientX - startX
-    leftPanelWidth.value = Math.max(280, Math.min(600, startWidth + delta))
+    editorStore.setInputPanelWidth(Math.max(280, Math.min(600, startWidth + delta)))
   } else if (resizingSide === 'right') {
     const delta = startX - e.clientX
     rightPanelWidth.value = Math.max(200, Math.min(500, startWidth + delta))
@@ -116,30 +133,49 @@ function onResizeEnd(): void {
   document.removeEventListener('mouseup', onResizeEnd)
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
+  // 拖拽结束后才写盘，避免 mousemove 高频写 localStorage
+  editorStore.persistLayout()
+}
+
+/** Esc 关闭工作区抽屉（覆盖式浮层需要快捷退出） */
+function onDrawerKeyDown(e: KeyboardEvent): void {
+  if (e.key !== 'Escape' || !editorStore.layout.drawerOpen) return
+  // 有弹窗/对话框时 Esc 只应关闭弹窗，避免连带关闭抽屉
+  if (document.querySelector('.el-overlay')) return
+  editorStore.closeWorkspaceDrawer()
 }
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onResizeMove)
   document.removeEventListener('mouseup', onResizeEnd)
+  window.removeEventListener('keydown', onDrawerKeyDown)
 })
+
+window.addEventListener('keydown', onDrawerKeyDown)
 
 // 启动即保证存在活动画布文件：输入状态（rawText/claims）是活动文件的投影，
 // 没有活动文件时输入框将无法写入
 graphStore.ensureDefaultFile()
 
 /**
- * 渲染键：活动文件 + 活动版本。任一变化即重渲染画布。
- * 这是画布渲染的唯一入口（切换文件 / 切换版本 / 分析追加版本 / 重构追加版本）。
+ * 渲染键：活动文件 + 活动版本 + 修订号。任一变化即重渲染画布。
+ * 这是画布渲染的唯一入口（切换文件 / 切换版本 / 分析追加版本 / 重构追加版本 / 快照回退）。
  * 输入与翻译状态无需在此处理：输入是文件投影，翻译随 activateFile 切换。
  */
-const renderKey = computed(() => `${graphStore.activeFileId}::${graphStore.activeFile?.activeVersionId ?? ''}`)
+const renderKey = computed(() =>
+  `${graphStore.activeFileId}::${graphStore.activeFile?.activeVersionId ?? ''}::${graphStore.graphRevision}`,
+)
 
-watch(renderKey, async (_newKey, oldKey) => {
-  // 保存旧活动版本的画布快照（含手动编辑）
+watch(renderKey, async (newKey, oldKey) => {
+  const [newFileId, newVersionId] = newKey.split('::')
+
+  // 目标（文件+版本）未变、仅修订号变化时说明画布内容已被外部改写（如快照回退），
+  // 此时不能把当前画布回写旧版本，否则会覆盖刚恢复的内容
   if (oldKey) {
     const [oldFileId, oldVersionId] = oldKey.split('::')
+    const targetChanged = oldFileId !== newFileId || oldVersionId !== newVersionId
     const graph = graphEngine.getGraph()
-    if (oldFileId && oldVersionId && graph && graph.getCells().length > 0) {
+    if (targetChanged && oldFileId && oldVersionId && graph && graph.getCells().length > 0) {
       graphStore.updateVersionSerializedGraph(oldFileId, oldVersionId, graphEngine.toJSON())
     }
   }
@@ -175,23 +211,72 @@ watch(renderKey, async (_newKey, oldKey) => {
   display: flex;
   height: 100%;
   overflow: hidden;
+  position: relative;
 }
 
-.sidebar-toggle {
-  width: 14px;
-  flex-shrink: 0;
+/* 工作区抽屉：覆盖式浮层，画布保持完整宽度 */
+.workspace-drawer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 31;
+  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.16);
+}
+
+.drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.drawer-fade-enter-active,
+.drawer-fade-leave-active {
+  transition: opacity 0.2s;
+}
+
+.drawer-fade-enter-from,
+.drawer-fade-leave-to {
+  opacity: 0;
+}
+
+.drawer-slide-enter-active,
+.drawer-slide-leave-active {
+  transition: transform 0.2s ease;
+}
+
+.drawer-slide-enter-from,
+.drawer-slide-leave-to {
+  transform: translateX(-100%);
+}
+
+/* 画布左缘的工作区入口：不占用布局宽度 */
+.drawer-tab {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 40;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  width: 20px;
+  height: 46px;
+  border: 1px solid var(--border-color);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  background: var(--bg-primary, #fff);
   color: var(--text-tertiary);
-  background: transparent;
-  transition: background 0.2s, color 0.2s;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
 
-.sidebar-toggle:hover {
-  background: var(--bg-tertiary, #e8eaed);
-  color: var(--color-primary, #1890ff);
+.drawer-tab:hover,
+.drawer-tab.open {
+  background: var(--color-primary, #1890ff);
+  border-color: var(--color-primary, #1890ff);
+  color: #fff;
 }
 
 .left-panel {

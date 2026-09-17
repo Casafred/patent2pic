@@ -26,8 +26,48 @@
       </el-dropdown>
     </div>
 
+    <!-- 项目级搜索：跨项目 / 画布文件 / 版本检索 -->
+    <div class="search-section">
+      <el-input
+        v-model="query"
+        size="small"
+        placeholder="搜索项目 / 画布 / 版本内容"
+        clearable
+      >
+        <template #prefix>
+          <el-icon><Search /></el-icon>
+        </template>
+      </el-input>
+    </div>
+
+    <!-- 搜索结果 -->
+    <div v-if="isSearching" class="files-section">
+      <div class="section-header">
+        <span class="section-title">搜索结果（{{ searchResults.length }}）</span>
+      </div>
+      <div class="file-list">
+        <div
+          v-for="result in searchResults"
+          :key="result.key"
+          class="search-item"
+          @click="handleOpenResult(result)"
+        >
+          <div class="search-title" :title="`${result.projectName} / ${result.fileName}`">
+            <span class="search-project">{{ result.projectName }}</span>
+            <span class="search-sep">/</span>
+            <span class="search-file">{{ result.fileName }}</span>
+          </div>
+          <div v-if="result.versionLabel" class="search-version">{{ result.versionLabel }}</div>
+          <div class="search-snippet">{{ result.snippet }}</div>
+        </div>
+        <div v-if="query.trim() && searchResults.length === 0" class="search-empty">
+          没有匹配的内容
+        </div>
+      </div>
+    </div>
+
     <!-- 画布文件区 -->
-    <div class="files-section">
+    <div v-else class="files-section">
       <div class="section-header">
         <span class="section-title">画布文件</span>
         <button class="header-btn" title="新建画布文件" @click="handleNewFile">
@@ -63,6 +103,30 @@
               <span class="version-dot" />
               <span class="version-label">{{ version.label }}</span>
               <span class="version-time">{{ formatTime(version.createdAt) }}</span>
+              <el-popover
+                v-if="version.snapshots && version.snapshots.length > 0"
+                trigger="click"
+                placement="right"
+                :width="240"
+              >
+                <template #reference>
+                  <span class="snapshot-chip" title="自动快照" @click.stop>
+                    {{ version.snapshots.length }}
+                  </span>
+                </template>
+                <div class="snapshot-list">
+                  <div class="snapshot-title">自动快照（点击回退）</div>
+                  <div
+                    v-for="snapshot in reversedSnapshots(version)"
+                    :key="snapshot.id"
+                    class="snapshot-item"
+                    @click="handleRestoreSnapshot(file.id, version.id, snapshot.id)"
+                  >
+                    <span>{{ formatTime(snapshot.at) }}</span>
+                    <span class="snapshot-restore">回退</span>
+                  </div>
+                </div>
+              </el-popover>
               <el-icon
                 class="action-icon version-delete"
                 title="删除该版本"
@@ -73,20 +137,184 @@
         </template>
       </div>
     </div>
+
+    <!-- 回收站入口 -->
+    <div class="sidebar-footer">
+      <button class="footer-btn" title="打开回收站" @click="trashVisible = true">
+        <el-icon><DeleteFilled /></el-icon>
+        <span>回收站</span>
+        <span v-if="trash.count > 0" class="footer-badge">{{ trash.count }}</span>
+      </button>
+    </div>
+
+    <TrashDialog v-model:visible="trashVisible" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder, ArrowDown, Plus, EditPen, Delete } from '@element-plus/icons-vue'
-import { useGraphStore, type CanvasFile, type CanvasVersion } from '@/stores/graph'
+import { Folder, ArrowDown, Plus, EditPen, Delete, DeleteFilled, Search } from '@element-plus/icons-vue'
+import { useGraphStore, type CanvasFile, type CanvasSnapshot, type CanvasVersion } from '@/stores/graph'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { useTrashStore } from '@/stores/trash'
+import TrashDialog from './TrashDialog.vue'
 
 const graphStore = useGraphStore()
 const workspaceStore = useWorkspaceStore()
+const trash = useTrashStore()
 
 const activeProject = computed(() => workspaceStore.activeProject)
+
+const trashVisible = ref(false)
+
+// ===== 项目级搜索 =====
+interface SearchResult {
+  key: string
+  projectId: string
+  projectName: string
+  fileId: string
+  fileName: string
+  versionId: string | null
+  versionLabel: string
+  snippet: string
+  score: number
+}
+
+const query = ref('')
+const searchResults = ref<SearchResult[]>([])
+const isSearching = computed(() => query.value.trim().length > 0)
+
+const MAX_RESULTS = 40
+const SNIPPET_RADIUS = 30
+
+/** 截取命中位置附近的片段，便于在结果列表中定位 */
+function buildSnippet(text: string, lower: string, keyword: string): string {
+  const index = lower.indexOf(keyword)
+  if (index === -1) return text.slice(0, 60)
+  const start = Math.max(0, index - SNIPPET_RADIUS)
+  const end = Math.min(text.length, index + keyword.length + SNIPPET_RADIUS)
+  return `${start > 0 ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`.replace(/\s+/g, ' ')
+}
+
+function collectFromFiles(
+  results: SearchResult[],
+  projectId: string,
+  projectName: string,
+  files: CanvasFile[],
+  keyword: string,
+): void {
+  for (const file of files) {
+    if (results.length >= MAX_RESULTS) return
+
+    const nameHit = file.name.toLowerCase().includes(keyword)
+    const textHit = file.rawText.toLowerCase().includes(keyword)
+    const claimHit = file.claims.some(c => c.rawText.toLowerCase().includes(keyword))
+
+    if (nameHit || textHit || claimHit) {
+      results.push({
+        key: `file:${file.id}`,
+        projectId,
+        projectName,
+        fileId: file.id,
+        fileName: file.name,
+        versionId: file.activeVersionId,
+        versionLabel: '',
+        snippet: nameHit
+          ? `文件名匹配：${file.name}`
+          : buildSnippet(file.rawText, file.rawText.toLowerCase(), keyword),
+        score: nameHit ? 0 : 1,
+      })
+    }
+
+    for (const version of file.versions) {
+      if (results.length >= MAX_RESULTS) return
+
+      const labelText = `${version.label} ${version.redrawInstructions ?? ''}`
+      const labelHit = labelText.toLowerCase().includes(keyword)
+      const nodes = version.extractResult?.nodes ?? []
+      const nodeHit = nodes.find(
+        n => n.originalText?.toLowerCase().includes(keyword)
+          || n.chineseText?.toLowerCase().includes(keyword),
+      )
+
+      if (labelHit || nodeHit) {
+        const nodeText = nodeHit?.chineseText || nodeHit?.originalText || ''
+        results.push({
+          key: `version:${file.id}:${version.id}`,
+          projectId,
+          projectName,
+          fileId: file.id,
+          fileName: file.name,
+          versionId: version.id,
+          versionLabel: version.label,
+          snippet: nodeHit
+            ? `节点匹配：${buildSnippet(nodeText, nodeText.toLowerCase(), keyword)}`
+            : `版本：${version.label}${version.redrawInstructions ? ` · ${version.redrawInstructions}` : ''}`,
+          score: labelHit ? 2 : 3,
+        })
+      }
+    }
+  }
+}
+
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+function runSearch(): void {
+  const keyword = query.value.trim().toLowerCase()
+  if (!keyword) {
+    searchResults.value = []
+    return
+  }
+
+  // 先落盘当前项目，保证搜索覆盖最新改动
+  workspaceStore.saveActiveProject()
+
+  const results: SearchResult[] = []
+  for (const project of workspaceStore.projects) {
+    if (results.length >= MAX_RESULTS) break
+    const projectNameHit = project.name.toLowerCase().includes(keyword)
+    const files = workspaceStore.getProjectFiles(project.id)
+    if (!files) continue
+
+    if (projectNameHit) {
+      results.push({
+        key: `project:${project.id}`,
+        projectId: project.id,
+        projectName: project.name,
+        fileId: files[0]?.id ?? '',
+        fileName: '（项目）',
+        versionId: null,
+        versionLabel: '',
+        snippet: `项目名称匹配：${project.name}`,
+        score: 0,
+      })
+    }
+    collectFromFiles(results, project.id, project.name, files, keyword)
+  }
+
+  results.sort((a, b) => a.score - b.score)
+  searchResults.value = results.slice(0, MAX_RESULTS)
+}
+
+watch(query, () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(runSearch, 250)
+})
+
+function handleOpenResult(result: SearchResult): void {
+  if (result.projectId !== workspaceStore.activeProjectId) {
+    workspaceStore.switchProject(result.projectId)
+  }
+  if (result.fileId) {
+    graphStore.activateFile(result.fileId)
+  }
+  if (result.versionId) {
+    graphStore.setActiveVersion(result.fileId, result.versionId)
+  }
+  query.value = ''
+  searchResults.value = []
+}
 
 async function handleProjectCommand(cmd: string): Promise<void> {
   const [action, id] = cmd.split(':')
@@ -116,7 +344,7 @@ async function handleProjectCommand(cmd: string): Promise<void> {
       const project = workspaceStore.activeProject
       if (!project) return
       await ElMessageBox.confirm(
-        `删除项目「${project.name}」将同时删除其全部画布文件与历史版本，且不可恢复。`,
+        `删除项目「${project.name}」将移入回收站（含全部画布文件与历史版本），可在回收站恢复。`,
         '删除项目',
         {
           confirmButtonText: '删除',
@@ -124,8 +352,18 @@ async function handleProjectCommand(cmd: string): Promise<void> {
           type: 'warning',
         },
       )
+      // 删除前留存完整快照到回收站
+      const snapshot = workspaceStore.readProjectSnapshot(project.id)
+      if (snapshot) {
+        trash.push('project', project.name, {
+          name: project.name,
+          files: snapshot.files,
+          activeFileId: snapshot.activeFileId,
+          isInputCollapsed: snapshot.isInputCollapsed,
+        })
+      }
       workspaceStore.removeProject(project.id)
-      ElMessage.success('项目已删除')
+      ElMessage.success('项目已移入回收站')
     }
   } catch {
     // 用户取消对话框
@@ -163,7 +401,7 @@ async function handleDeleteFile(file: CanvasFile): Promise<void> {
   }
   try {
     await ElMessageBox.confirm(
-      `删除画布文件「${file.name}」将同时删除其全部版本，是否继续？`,
+      `删除画布文件「${file.name}」将移入回收站（含其全部版本），可在回收站恢复。`,
       '删除画布文件',
       {
         confirmButtonText: '删除',
@@ -171,7 +409,11 @@ async function handleDeleteFile(file: CanvasFile): Promise<void> {
         type: 'warning',
       },
     )
-    graphStore.removeFile(file.id)
+    const projectId = workspaceStore.activeProjectId
+    const removed = graphStore.removeFile(file.id)
+    if (removed) {
+      trash.push('file', `${removed.name}`, { projectId, file: removed })
+    }
   } catch {
     // 用户取消
   }
@@ -180,6 +422,19 @@ async function handleDeleteFile(file: CanvasFile): Promise<void> {
 /** 版本列表倒序展示：最新版本在最上 */
 function reversedVersions(file: CanvasFile): CanvasVersion[] {
   return [...file.versions].reverse()
+}
+
+/** 快照倒序展示：最新快照在最上 */
+function reversedSnapshots(version: CanvasVersion): CanvasSnapshot[] {
+  return [...(version.snapshots ?? [])].reverse()
+}
+
+function handleRestoreSnapshot(fileId: string, versionId: string, snapshotId: string): void {
+  if (graphStore.restoreSnapshot(fileId, versionId, snapshotId)) {
+    ElMessage.success('已回退到该快照，原状态已保留为快照')
+  } else {
+    ElMessage.error('快照已不存在')
+  }
 }
 
 function formatTime(timestamp: number): string {
@@ -215,7 +470,7 @@ async function handleDeleteVersion(file: CanvasFile, version: CanvasVersion): Pr
   }
   try {
     await ElMessageBox.confirm(
-      `删除版本「${version.label}」后不可恢复，是否继续？`,
+      `删除版本「${version.label}」将移入回收站，可在回收站恢复。`,
       '删除版本',
       {
         confirmButtonText: '删除',
@@ -223,7 +478,16 @@ async function handleDeleteVersion(file: CanvasFile, version: CanvasVersion): Pr
         type: 'warning',
       },
     )
-    graphStore.removeVersion(file.id, version.id)
+    const projectId = workspaceStore.activeProjectId
+    const removed = graphStore.removeVersion(file.id, version.id)
+    if (removed) {
+      trash.push('version', `${file.name} · ${removed.label}`, {
+        projectId,
+        fileId: file.id,
+        fileName: file.name,
+        version: removed,
+      })
+    }
   } catch {
     // 用户取消
   }
@@ -363,6 +627,151 @@ async function handleDeleteVersion(file: CanvasFile, version: CanvasVersion): Pr
 
 .file-item.active .file-versions {
   background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.search-section {
+  padding: 0 8px 8px;
+}
+
+/* 搜索结果 */
+.search-item {
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.search-item:hover {
+  background: var(--bg-tertiary, #e8eaed);
+}
+
+.search-title {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-project {
+  color: var(--color-primary, #1890ff);
+  flex-shrink: 0;
+}
+
+.search-sep {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.search-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-version {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.search-snippet {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 自动快照 */
+.snapshot-chip {
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: rgba(24, 144, 255, 0.14);
+  color: var(--color-primary, #1890ff);
+  cursor: pointer;
+}
+
+.snapshot-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.snapshot-title {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.snapshot-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.snapshot-item:hover {
+  background: var(--bg-tertiary, #e8eaed);
+}
+
+.snapshot-restore {
+  font-size: 11px;
+  color: var(--color-primary, #1890ff);
+}
+
+/* 回收站入口 */
+.sidebar-footer {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.footer-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.footer-btn:hover {
+  background: var(--bg-tertiary, #e8eaed);
+}
+
+.footer-badge {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--color-primary, #1890ff);
   color: #fff;
 }
 

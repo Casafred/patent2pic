@@ -267,6 +267,32 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  /** 读取指定项目的画布文件（活动项目返回内存实时数据，其他项目读磁盘槽位） */
+  function getProjectFiles(projectId: string): CanvasFile[] | null {
+    if (projectId === activeProjectId.value) return graphStore.files
+    return loadProjectData(projectId)?.files ?? null
+  }
+
+  /** 回写指定项目的画布文件（活动项目写内存，其他项目直接改磁盘槽位，不切换项目） */
+  function commitProjectFiles(projectId: string, files: CanvasFile[]): boolean {
+    if (projectId === activeProjectId.value) {
+      graphStore.setFiles([...files])
+      return true
+    }
+    const data = loadProjectData(projectId)
+    if (!data) return false
+    persistProjectData(projectId, { ...data, files: [...files], savedAt: Date.now() })
+    return true
+  }
+
+  /** 删除项目前读取其完整数据（供回收站留存） */
+  function readProjectSnapshot(id: string): ProjectData | null {
+    if (id === activeProjectId.value) {
+      saveActiveProject()
+    }
+    return loadProjectData(id)
+  }
+
   /** 导入项目（.p2p 项目文件）：创建新项目并切换过去 */
   function importProject(
     name: string,
@@ -340,6 +366,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     switchProject,
     removeProject,
     renameProject,
+    getProjectFiles,
+    commitProjectFiles,
+    readProjectSnapshot,
     importProject,
     saveActiveProject,
     initWorkspace,

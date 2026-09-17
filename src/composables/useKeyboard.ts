@@ -26,7 +26,7 @@ export function useKeyboard() {
     }
     if (e.code === 'KeyB') {
       e.preventDefault()
-      editorStore.toggleSidebar()
+      editorStore.toggleWorkspaceDrawer()
       return true
     }
     if (e.code === 'KeyE') {

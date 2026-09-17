@@ -6,22 +6,24 @@ export type LayoutPreset = 'default' | 'focus' | 'compare' | 'review'
 
 interface LayoutState {
   preset: LayoutPreset
-  /** 工作区侧栏是否收起 */
-  sidebarCollapsed: boolean
+  /** 工作区抽屉是否展开（覆盖式浮层，不挤占画布宽度） */
+  drawerOpen: boolean
   /** 输入/阅读面板是否显示 */
   inputPanelVisible: boolean
+  /** 输入/阅读面板宽度 */
+  inputPanelWidth: number
   /** 强制显示右侧样式面板（不看选中状态） */
   forceStylePanel: boolean
 }
 
 const LAYOUT_KEY = 'patent2pic-layout'
 
-/** 各预设的面板组合 */
-export const LAYOUT_PRESETS: Record<LayoutPreset, Omit<LayoutState, 'preset'>> = {
-  default: { sidebarCollapsed: false, inputPanelVisible: true, forceStylePanel: false },
-  focus: { sidebarCollapsed: true, inputPanelVisible: false, forceStylePanel: false },
-  compare: { sidebarCollapsed: true, inputPanelVisible: true, forceStylePanel: false },
-  review: { sidebarCollapsed: false, inputPanelVisible: true, forceStylePanel: true },
+/** 各预设的面板组合（抽屉开关独立于预设，由用户单独控制） */
+export const LAYOUT_PRESETS: Record<LayoutPreset, Omit<LayoutState, 'preset' | 'drawerOpen'>> = {
+  default: { inputPanelVisible: true, inputPanelWidth: 360, forceStylePanel: false },
+  focus: { inputPanelVisible: false, inputPanelWidth: 360, forceStylePanel: false },
+  compare: { inputPanelVisible: true, inputPanelWidth: 480, forceStylePanel: false },
+  review: { inputPanelVisible: true, inputPanelWidth: 360, forceStylePanel: true },
 }
 
 function loadLayout(): LayoutState {
@@ -32,17 +34,21 @@ function loadLayout(): LayoutState {
       const preset: LayoutPreset = data.preset && data.preset in LAYOUT_PRESETS
         ? data.preset
         : 'default'
+      const width = Number(data.inputPanelWidth)
       return {
         preset,
-        sidebarCollapsed: !!data.sidebarCollapsed,
+        drawerOpen: !!data.drawerOpen,
         inputPanelVisible: data.inputPanelVisible !== false,
+        inputPanelWidth: Number.isFinite(width) && width >= 280 && width <= 600
+          ? width
+          : LAYOUT_PRESETS[preset].inputPanelWidth,
         forceStylePanel: !!data.forceStylePanel,
       }
     }
   } catch {
     // 读取失败则用默认布局
   }
-  return { preset: 'default', ...LAYOUT_PRESETS.default }
+  return { preset: 'default', drawerOpen: false, ...LAYOUT_PRESETS.default }
 }
 
 export const useEditorStore = defineStore('editor', () => {
@@ -64,18 +70,30 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   function applyLayoutPreset(preset: LayoutPreset): void {
-    layout.value = { preset, ...LAYOUT_PRESETS[preset] }
+    layout.value = { ...layout.value, preset, ...LAYOUT_PRESETS[preset] }
     persistLayout()
   }
 
-  function toggleSidebar(): void {
-    layout.value = { ...layout.value, sidebarCollapsed: !layout.value.sidebarCollapsed }
+  /** 工作区抽屉开合（覆盖式，不影响画布宽度） */
+  function toggleWorkspaceDrawer(): void {
+    layout.value = { ...layout.value, drawerOpen: !layout.value.drawerOpen }
+    persistLayout()
+  }
+
+  function closeWorkspaceDrawer(): void {
+    if (!layout.value.drawerOpen) return
+    layout.value = { ...layout.value, drawerOpen: false }
     persistLayout()
   }
 
   function toggleInputPanel(): void {
     layout.value = { ...layout.value, inputPanelVisible: !layout.value.inputPanelVisible }
     persistLayout()
+  }
+
+  /** 拖拽调整输入面板宽度（拖拽过程中不写 localStorage，由 persistLayout 收尾） */
+  function setInputPanelWidth(width: number): void {
+    layout.value = { ...layout.value, inputPanelWidth: width }
   }
 
   function toggleForceStylePanel(): void {
@@ -154,8 +172,11 @@ export const useEditorStore = defineStore('editor', () => {
     markDirty,
     markClean,
     applyLayoutPreset,
-    toggleSidebar,
+    persistLayout,
+    toggleWorkspaceDrawer,
+    closeWorkspaceDrawer,
     toggleInputPanel,
+    setInputPanelWidth,
     toggleForceStylePanel,
   }
 })
